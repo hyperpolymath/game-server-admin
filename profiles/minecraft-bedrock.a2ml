@@ -1,0 +1,114 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Minecraft Bedrock Edition game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="minecraft-bedrock", name="Minecraft Bedrock Edition", engine="Bedrock"):
+
+  @ports:
+    @port(name="game", number=19132, protocol="UDP"):
+      Primary game traffic port (IPv4)
+    @end
+    @port(name="query", number=19132, protocol="UDP"):
+      Query port (shares the game port)
+    @end
+  @end
+
+  @protocol(type="minecraft-query", variant="MC"):
+    Minecraft Bedrock query protocol. Uses RakNet-based UDP for both
+    game traffic and server list ping responses.
+  @end
+
+  @fingerprint:
+    @executable(name="bedrock_server") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="key-value", path="/data/server.properties"):
+    # Key=value properties file used by Bedrock Dedicated Server.
+    # Same format as Java edition but with different field names and defaults.
+
+    @field(key="server-name", type="string", label="Server Name"):
+      Display name shown in the server list.
+      @default("Dedicated Server") @end
+    @end
+
+    @field(key="gamemode", type="enum", label="Default Gamemode"):
+      Default game mode for new players joining the server.
+      @options("survival", "creative", "adventure") @end
+      @default("survival") @end
+    @end
+
+    @field(key="difficulty", type="enum", label="Difficulty"):
+      World difficulty level.
+      @options("peaceful", "easy", "normal", "hard") @end
+      @default("easy") @end
+    @end
+
+    @field(key="max-players", type="int", label="Max Players"):
+      Maximum number of concurrent players.
+      @constraint(min=1, max=30) @end
+      @default(10) @end
+    @end
+
+    @field(key="online-mode", type="bool", label="Online Mode"):
+      Verify player Xbox Live accounts. Disabling removes authentication.
+      @default(true) @end
+    @end
+
+    @field(key="allow-cheats", type="bool", label="Allow Cheats"):
+      Whether cheats (commands) are allowed on the server.
+      @default(false) @end
+    @end
+
+    @field(key="view-distance", type="int", label="View Distance"):
+      Maximum view distance in chunks sent to clients.
+      @constraint(min=5, max=128) @end
+      @default(32) @end
+    @end
+
+    @field(key="tick-distance", type="int", label="Tick Distance"):
+      Distance in chunks from the player where the world is ticked.
+      @constraint(min=4, max=12) @end
+      @default(4) @end
+    @end
+
+    @field(key="level-seed", type="string", label="Level Seed"):
+      World generation seed. Leave empty for a random seed.
+      @default("") @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start minecraft-bedrock
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 minecraft-bedrock
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 minecraft-bedrock
+    @end
+    @action(id="backup", label="Backup World"):
+      podman exec minecraft-bedrock /scripts/backup.sh
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 minecraft-bedrock
+    @end
+  @end
+
+  @container(runtime="podman", name="minecraft-bedrock"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/minecraft-bedrock", container="/data") @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Minecraft Bedrock Edition dedicated server profile for Game Server Admin.
+    Supports MC query protocol over RakNet UDP, key-value properties
+    configuration, and Podman container lifecycle management.
+  @end
+
+@end

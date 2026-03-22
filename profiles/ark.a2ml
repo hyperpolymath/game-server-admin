@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — ARK: Survival Evolved game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="ark", name="ARK: Survival Evolved", engine="Unreal Engine 4"):
+
+  @ports:
+    @port(name="query", number=27015, protocol="UDP"):
+      Steam server-list query port (A2S)
+    @end
+    @port(name="game", number=7777, protocol="UDP"):
+      Primary game traffic port
+    @end
+    @port(name="rcon", number=27020, protocol="TCP"):
+      RCON remote administration port
+    @end
+  @end
+
+  @protocol(type="steam-query", variant="A2S"):
+    Valve A2S (A2S_INFO, A2S_PLAYER, A2S_RULES) over UDP.
+    Used by Steam server browser and third-party query tools.
+  @end
+
+  @fingerprint:
+    @steam-appid(server=376030, client=346110) @end
+    @executable(name="ShooterGameServer") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="ini", path="/config/GameUserSettings.ini"):
+    # Unreal Engine INI format. Sections are [ServerSettings],
+    # [SessionSettings], etc. ARK reads this at startup.
+
+    @field(key="SessionName", type="string", label="Session Name"):
+      Display name shown in the server browser.
+      @default("ARK Server") @end
+    @end
+
+    @field(key="ServerPassword", type="secret", label="Server Password"):
+      Password required for players to join. Leave empty for an open server.
+    @end
+
+    @field(key="ServerAdminPassword", type="secret", label="Admin Password"):
+      Password required to access the in-game admin console.
+      This field is required for server administration.
+    @end
+
+    @field(key="MaxPlayers", type="int", label="Max Players"):
+      Maximum number of concurrent players.
+      @constraint(min=1, max=127) @end
+      @default(70) @end
+    @end
+
+    @field(key="DifficultyOffset", type="float", label="Difficulty Offset"):
+      Controls the difficulty scaling of wild creatures.
+      Higher values mean higher-level creatures spawn.
+      @constraint(min=0.0, max=1.0) @end
+      @default(0.2) @end
+    @end
+
+    @field(key="ServerPVE", type="bool", label="PvE Mode"):
+      When enabled, players cannot damage each other or each
+      other's structures.
+      @default(false) @end
+    @end
+
+    @field(key="ShowMapPlayerLocation", type="bool", label="Show Player Location on Map"):
+      Display player positions on the in-game map.
+      @default(true) @end
+    @end
+
+    @field(key="AllowThirdPersonPlayer", type="bool", label="Allow Third Person"):
+      Allow players to switch to third-person camera.
+      @default(true) @end
+    @end
+
+    @field(key="RCONEnabled", type="bool", label="RCON Enabled"):
+      Enable the RCON remote administration interface.
+      @default(true) @end
+    @end
+
+    @field(key="RCONPort", type="int", label="RCON Port"):
+      TCP port for RCON connections.
+      @default(27020) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start ark
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 60 ark
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 60 ark
+    @end
+    @action(id="update", label="Update Server"):
+      podman exec ark steamcmd +force_install_dir /opt/ark +login anonymous +app_update 376030 validate +quit
+    @end
+    @action(id="save", label="Force Save"):
+      podman exec ark rcon-cli saveworld
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 ark
+    @end
+  @end
+
+  @container(runtime="podman", name="ark"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/ark/saved", container="/opt/ark/ShooterGame/Saved") @end
+      @volume(host="/config", container="/config", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    ARK: Survival Evolved dedicated server profile for Game Server Admin.
+    Supports Steam query, Unreal Engine INI configuration, RCON
+    administration, and Podman container lifecycle management.
+  @end
+
+@end

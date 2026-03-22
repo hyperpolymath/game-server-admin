@@ -1,0 +1,123 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Factorio game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="factorio", name="Factorio", engine="Factorio"):
+
+  @ports:
+    @port(name="game", number=34197, protocol="UDP"):
+      Primary game traffic port
+    @end
+    @port(name="rcon", number=27015, protocol="TCP"):
+      RCON remote administration port
+    @end
+  @end
+
+  @protocol(type="custom-tcp", variant="Factorio"):
+    Factorio uses a custom UDP protocol for game traffic and a
+    standard RCON TCP protocol for remote administration. There is
+    no Steam query; server listing goes through factorio.com matchmaking.
+  @end
+
+  @fingerprint:
+    @executable(name="factorio") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="json", path="/config/server-settings.json"):
+    # JSON configuration file for the Factorio headless server.
+    # Parsed at startup; changes require a server restart.
+
+    @field(key="name", type="string", label="Server Name"):
+      Display name shown in the multiplayer server browser.
+      @default("My Factorio Server") @end
+    @end
+
+    @field(key="description", type="string", label="Description"):
+      Server description shown alongside the listing.
+      @default("") @end
+    @end
+
+    @field(key="max_players", type="int", label="Max Players"):
+      Maximum concurrent players. Set to 0 for unlimited.
+      @constraint(min=0, max=1000) @end
+      @default(0) @end
+    @end
+
+    @field(key="visibility.public", type="bool", label="Public Visibility"):
+      List the server on the public Factorio matchmaking service.
+      @default(true) @end
+    @end
+
+    @field(key="visibility.lan", type="bool", label="LAN Visibility"):
+      Broadcast the server on the local network.
+      @default(true) @end
+    @end
+
+    @field(key="game_password", type="secret", label="Game Password"):
+      Password required to join. Leave empty for an open server.
+    @end
+
+    @field(key="require_user_verification", type="bool", label="Require User Verification"):
+      Require a valid factorio.com account to join.
+      @default(true) @end
+    @end
+
+    @field(key="autosave_interval", type="int", label="Autosave Interval (minutes)"):
+      How often the server auto-saves the game in minutes.
+      @constraint(min=1, max=120) @end
+      @default(10) @end
+    @end
+
+    @field(key="autosave_slots", type="int", label="Autosave Slots"):
+      Number of rotating autosave slots before the oldest is overwritten.
+      @constraint(min=1, max=100) @end
+      @default(5) @end
+    @end
+
+    @field(key="afk_autokick_interval", type="int", label="AFK Autokick (minutes)"):
+      Kick idle players after this many minutes. Set to 0 to disable.
+      @constraint(min=0, max=3600) @end
+      @default(0) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start factorio
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 factorio
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 factorio
+    @end
+    @action(id="save", label="Force Save"):
+      podman exec factorio rcon /save
+    @end
+    @action(id="backup", label="Backup Save"):
+      podman exec factorio /scripts/backup.sh
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 factorio
+    @end
+  @end
+
+  @container(runtime="podman", name="factorio"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/factorio/saves", container="/opt/factorio/saves") @end
+      @volume(host="/data/factorio/mods", container="/opt/factorio/mods") @end
+      @volume(host="/config", container="/config", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Factorio headless server profile for Game Server Admin.
+    Supports custom UDP protocol, JSON-based configuration, RCON
+    administration, and Podman container lifecycle management.
+  @end
+
+@end

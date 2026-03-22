@@ -1,0 +1,145 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Minecraft Java Edition game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="minecraft-java", name="Minecraft Java Edition", engine="Java"):
+
+  @ports:
+    @port(name="query", number=25565, protocol="TCP"):
+      Minecraft query and game port (combined by default)
+    @end
+    @port(name="game", number=25565, protocol="TCP"):
+      Primary game traffic port
+    @end
+    @port(name="rcon", number=25575, protocol="TCP"):
+      RCON remote administration port
+    @end
+  @end
+
+  @protocol(type="minecraft-query", variant="MC"):
+    Minecraft native query protocol. Responds to SLP (Server List Ping)
+    on the game port, and optionally the legacy GS4 query protocol when
+    enable-query=true.
+  @end
+
+  @fingerprint:
+    @executable(name="java") @end
+    @jar(name="server.jar") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="key-value", path="/data/server.properties"):
+    # Standard Java properties file (key=value) used by Minecraft.
+    # Lines starting with # are comments. Changes require a server restart.
+
+    @field(key="server-name", type="string", label="Server Name"):
+      Internal server name (used by some query tools).
+      @default("A Minecraft Server") @end
+    @end
+
+    @field(key="motd", type="string", label="Message of the Day"):
+      Text displayed in the server list beneath the server name.
+      Supports section-sign colour codes.
+      @default("A Minecraft Server") @end
+    @end
+
+    @field(key="max-players", type="int", label="Max Players"):
+      Maximum number of concurrent players.
+      @constraint(min=1, max=1000) @end
+      @default(20) @end
+    @end
+
+    @field(key="difficulty", type="enum", label="Difficulty"):
+      World difficulty level affecting mob damage and hunger.
+      @options("peaceful", "easy", "normal", "hard") @end
+      @default("easy") @end
+    @end
+
+    @field(key="gamemode", type="enum", label="Default Gamemode"):
+      Default game mode assigned to new players.
+      @options("survival", "creative", "adventure", "spectator") @end
+      @default("survival") @end
+    @end
+
+    @field(key="level-seed", type="string", label="Level Seed"):
+      World generation seed. Leave empty for a random seed.
+      @default("") @end
+    @end
+
+    @field(key="online-mode", type="bool", label="Online Mode"):
+      Verify player accounts against Mojang session servers.
+      Disabling allows cracked clients but removes all authentication.
+      @default(true) @end
+    @end
+
+    @field(key="pvp", type="bool", label="PvP"):
+      Whether players can damage each other.
+      @default(true) @end
+    @end
+
+    @field(key="enable-command-block", type="bool", label="Enable Command Blocks"):
+      Allow command blocks to be used on the server.
+      @default(false) @end
+    @end
+
+    @field(key="spawn-protection", type="int", label="Spawn Protection Radius"):
+      Radius in blocks around spawn where non-ops cannot build.
+      Set to 0 to disable.
+      @constraint(min=0, max=256) @end
+      @default(16) @end
+    @end
+
+    @field(key="view-distance", type="int", label="View Distance"):
+      Number of chunks sent to the client in each direction.
+      Higher values increase memory and bandwidth usage.
+      @constraint(min=2, max=32) @end
+      @default(10) @end
+    @end
+
+    @field(key="rcon.password", type="secret", label="RCON Password"):
+      Password for RCON remote administration. Required if RCON is enabled.
+    @end
+
+    @field(key="white-list", type="bool", label="Whitelist"):
+      Only allow players listed in whitelist.json to join.
+      @default(false) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start minecraft-java
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 60 minecraft-java
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 60 minecraft-java
+    @end
+    @action(id="console", label="Send Console Command"):
+      podman exec minecraft-java rcon-cli
+    @end
+    @action(id="backup", label="Backup World"):
+      podman exec minecraft-java /scripts/backup.sh
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 minecraft-java
+    @end
+  @end
+
+  @container(runtime="podman", name="minecraft-java"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/minecraft-java", container="/data") @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Minecraft Java Edition dedicated server profile for Game Server Admin.
+    Supports MC query protocol, key-value properties configuration, RCON
+    remote administration, and Podman container lifecycle management.
+  @end
+
+@end

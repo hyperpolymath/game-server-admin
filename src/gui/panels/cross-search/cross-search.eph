@@ -1,0 +1,19 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- cross-search.eph — Cross-Server Search panel module for Game Server Admin
+--
+-- This module documents the Cross-Server Search panel's IPC contract.
+-- The panel HTML (panel.html) provides text, vector, and VQL search
+-- across all managed servers with faceted filtering by game type,
+-- server status, and drift level. All handler logic lives in GSA.Core.Bridge.
+--
+-- IPC commands used by this panel:
+--   search — Search across all managed servers
+--            Payload: {query, mode}  where mode is "text", "vector", or "vql"
+--            Returns: {query, mode, results: [{server_id, server_name, game_type,
+--                      match_context, score, version, status, drift_score}, ...]}
+
+module GSA.GUI.Panels.CrossSearch
+
+import GSA.Core.Bridge

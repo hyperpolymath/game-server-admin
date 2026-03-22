@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Burble voice platform profile
+# Burble is a self-hostable voice platform (Elixir control plane, WebRTC media).
+# Not a game server per se, but managed by GSA for integrated voice comms.
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="burble", name="Burble", engine="Elixir/WebRTC"):
+
+  @ports:
+    @port(name="control", number=4000, protocol="TCP"):
+      Elixir Phoenix control plane API and web interface
+    @end
+    @port(name="media", range="10000-10100", protocol="UDP"):
+      WebRTC media port range for audio/video streams
+    @end
+    @port(name="web", number=4443, protocol="TCP"):
+      HTTPS web interface and WebSocket signalling
+    @end
+  @end
+
+  @protocol(type="webrtc", variant="Burble"):
+    Burble uses WebRTC (ICE/DTLS/SRTP) for media transport and
+    WebSocket over TLS for signalling. The control plane exposes a
+    Phoenix LiveView web interface and a REST API for room management.
+  @end
+
+  @fingerprint:
+    @executable(name="burble") @end
+    @platform(os="linux", arch="x86_64") @end
+    @runtime(name="BEAM", version="OTP 27+") @end
+  @end
+
+  @config(format="toml", path="/config/burble/config.toml"):
+    # TOML configuration for the Burble voice platform.
+    # Parsed at startup by the Elixir release configuration loader.
+
+    @field(key="node_name", type="string", label="Node Name"):
+      Unique name for this Burble node in a cluster.
+      @default("burble@localhost") @end
+    @end
+
+    @field(key="max_rooms", type="int", label="Max Rooms"):
+      Maximum number of concurrent voice rooms.
+      @constraint(min=1, max=1000) @end
+      @default(100) @end
+    @end
+
+    @field(key="max_participants_per_room", type="int", label="Max Participants per Room"):
+      Maximum number of participants allowed in a single room.
+      @constraint(min=1, max=200) @end
+      @default(50) @end
+    @end
+
+    @field(key="media_port_range_start", type="int", label="Media Port Range Start"):
+      First UDP port in the media port range for WebRTC streams.
+      @default(10000) @end
+    @end
+
+    @field(key="media_port_range_end", type="int", label="Media Port Range End"):
+      Last UDP port in the media port range for WebRTC streams.
+      @default(10100) @end
+    @end
+
+    @field(key="stun_server", type="string", label="STUN Server"):
+      STUN server URI for ICE candidate gathering.
+      @default("stun:stun.l.google.com:19302") @end
+    @end
+
+    @field(key="turn_server", type="string", label="TURN Server"):
+      TURN server URI for relayed media when direct connections fail.
+      @default("") @end
+    @end
+
+    @field(key="tls_cert_path", type="string", label="TLS Certificate Path"):
+      Path to the TLS certificate file for HTTPS and WSS.
+      @default("/etc/burble/certs/fullchain.pem") @end
+    @end
+
+    @field(key="tls_key_path", type="string", label="TLS Key Path"):
+      Path to the TLS private key file.
+      @default("/etc/burble/certs/privkey.pem") @end
+    @end
+
+    @field(key="recording_enabled", type="bool", label="Recording Enabled"):
+      Enable server-side recording of voice sessions. Requires
+      additional storage and may have legal implications.
+      @default(false) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start burble
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 15 burble
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 15 burble
+    @end
+    @action(id="status", label="Health Check"):
+      podman exec burble burble rpc "Burble.Health.check()"
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 burble
+    @end
+  @end
+
+  @container(runtime="podman", name="burble"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/burble/recordings", container="/data/recordings") @end
+      @volume(host="/config/burble", container="/config/burble", readonly=true) @end
+      @volume(host="/etc/burble/certs", container="/etc/burble/certs", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Burble voice platform profile for Game Server Admin.
+    WebRTC-based voice comms with Elixir control plane, TOML
+    configuration, and Podman container lifecycle management.
+  @end
+
+@end

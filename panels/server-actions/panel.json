@@ -1,0 +1,26 @@
+{
+  "id": "gsa-server-actions",
+  "title": "Server Actions",
+  "description": "Start, stop, restart, update, backup, and validate game servers",
+  "version": "0.1.0",
+  "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
+  "license": "PMPL-1.0-or-later",
+  "runtime": "gossamer",
+  "dimensions": { "width": 1400, "height": 900, "resizable": true },
+  "entry": "../../src/gui/panels/server-actions/panel.html",
+  "data_sources": [
+    { "id": "action-result", "uri": "gossamer://gsa/actions", "refresh_interval_ms": 0 }
+  ],
+  "widgets": [
+    { "type": "action-bar", "actions": [
+      { "id": "start", "label": "Start", "icon": "play", "style": "success", "confirm": true },
+      { "id": "stop", "label": "Stop", "icon": "square", "style": "danger", "confirm": true },
+      { "id": "restart", "label": "Restart", "icon": "rotate-cw", "style": "warning", "confirm": true },
+      { "id": "update", "label": "Update", "icon": "download", "style": "primary", "confirm": true },
+      { "id": "backup", "label": "Backup", "icon": "archive", "style": "secondary", "confirm": true },
+      { "id": "validate", "label": "Validate Config", "icon": "check-circle", "style": "info" }
+    ]},
+    { "type": "log-viewer", "data_source": "action-result", "max_lines": 50 }
+  ],
+  "tags": ["actions", "start", "stop", "restart", "container", "podman"]
+}

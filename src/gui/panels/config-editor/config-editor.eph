@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- config-editor.eph — Config Editor panel module for Game Server Admin
+--
+-- This module documents the Config Editor panel's IPC contract.
+-- The panel HTML (panel.html) renders a dynamic form from A2ML field
+-- metadata and calls Gossamer IPC commands directly; all handler logic
+-- lives in GSA.Core.Bridge.
+--
+-- IPC commands used by this panel:
+--   get_config    — Load config for a server (returns A2ML field metadata + raw text)
+--   set_config    — Apply config changes (sends list of changed key/value pairs)
+--   revert_config — Revert to the stored VeriSimDB version of the config
+
+module GSA.GUI.Panels.ConfigEditor
+
+import GSA.Core.Bridge

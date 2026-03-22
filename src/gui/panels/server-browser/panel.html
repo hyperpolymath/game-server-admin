@@ -1,0 +1,395 @@
+<!--
+  SPDX-License-Identifier: PMPL-1.0-or-later
+  Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+  server-browser/panel.html — Server Browser panel for Game Server Admin
+
+  Provides server discovery via network probing, server list management,
+  and game type filtering. Calls gossamer IPC: probe_server, list_servers,
+  add_server, remove_server, list_profiles.
+-->
+
+<!-- Probe bar -->
+<div class="panel-header">
+  <h2>Server Browser</h2>
+  <span class="badge badge-blue" id="sb-server-count">0 servers</span>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="sb-probe-host" placeholder="Host / IP address" style="width: 200px;" />
+  <input type="number" id="sb-probe-port" placeholder="Port" min="1" max="65535" style="width: 100px;" />
+  <select id="sb-game-filter" style="width: 160px;">
+    <option value="">All Games</option>
+  </select>
+  <button class="btn btn-primary" onclick="probeServer()" id="sb-probe-btn">
+    <span class="sb-probe-icon">&#x25C9;</span> Probe
+  </button>
+  <div class="separator"></div>
+  <button class="btn" onclick="refreshServerBrowser()">
+    &#x21BB; Refresh
+  </button>
+</div>
+
+<!-- Server list table -->
+<div style="overflow-x: auto;">
+  <table id="sb-server-table">
+    <thead>
+      <tr>
+        <th style="width: 40px;">Status</th>
+        <th>Name</th>
+        <th>Game</th>
+        <th>Host:Port</th>
+        <th style="width: 80px;">Players</th>
+        <th style="width: 80px;">Version</th>
+        <th style="width: 120px;">Last Probed</th>
+        <th style="width: 60px;">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="sb-server-tbody">
+      <!-- Populated dynamically -->
+    </tbody>
+  </table>
+</div>
+
+<div class="empty-state" id="sb-empty-state">
+  <div class="empty-icon">&#x25C9;</div>
+  <p>No servers found. Probe a server to get started.</p>
+</div>
+
+<!-- Context menu (right-click on server row) -->
+<div id="sb-context-menu" style="display:none; position:fixed; background:var(--bg-elevated); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:4px 0; z-index:50; min-width:160px;">
+  <div class="ctx-item" style="padding:6px 14px; cursor:pointer; font-size:13px;" onmouseover="this.style.background='rgba(88,166,255,0.08)'" onmouseout="this.style.background='transparent'" onclick="ctxProbeAgain()">&#x21BB; Probe Again</div>
+  <div class="ctx-item" style="padding:6px 14px; cursor:pointer; font-size:13px;" onmouseover="this.style.background='rgba(88,166,255,0.08)'" onmouseout="this.style.background='transparent'" onclick="ctxViewConfig()">&#x2699; View Config</div>
+  <div style="height:1px; background:var(--border-color); margin:4px 0;"></div>
+  <div class="ctx-item" style="padding:6px 14px; cursor:pointer; font-size:13px; color:var(--danger-fg);" onmouseover="this.style.background='rgba(248,81,73,0.08)'" onmouseout="this.style.background='transparent'" onclick="ctxRemoveServer()">&#x2715; Remove</div>
+</div>
+
+<!-- Add Server modal (shown after successful probe) -->
+<div class="modal-overlay" id="sb-add-modal">
+  <div class="modal">
+    <h3>Add Server to Management</h3>
+    <div class="form-group">
+      <label>Server ID (unique identifier)</label>
+      <input type="text" id="sb-add-server-id" placeholder="e.g. valheim-prod-1" />
+    </div>
+    <div class="form-group">
+      <label>Detected Game</label>
+      <input type="text" id="sb-add-game" readonly style="color: var(--text-secondary);" />
+    </div>
+    <div class="form-group">
+      <label>Host</label>
+      <input type="text" id="sb-add-host" readonly style="color: var(--text-secondary);" />
+    </div>
+    <div class="form-group">
+      <label>Port</label>
+      <input type="text" id="sb-add-port" readonly style="color: var(--text-secondary);" />
+    </div>
+    <div class="collapsible-header" onclick="toggleCollapsible(this)">
+      <span class="collapse-arrow">&#x25B6;</span> Config Preview
+    </div>
+    <div class="collapsible-body">
+      <div class="code-block" id="sb-add-config-preview" style="max-height: 200px;">
+        <!-- Config A2ML preview -->
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="hideModal('sb-add-modal')">Cancel</button>
+      <button class="btn btn-success" onclick="addServer()">Add to Management</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /**
+   * Server Browser panel state.
+   * probeResult holds the last successful probe response for the add-server flow.
+   * contextServerId tracks which server the right-click menu was opened on.
+   */
+  var sbState = {
+    probeResult: null,
+    contextServerId: null
+  };
+
+  /**
+   * Refresh the server browser: fetch all managed servers from VeriSimDB
+   * and repopulate the table. Also updates the game filter dropdown.
+   */
+  async function refreshServerBrowser() {
+    var resp = await gossamerInvoke('list_servers', {});
+    if (!resp.ok) {
+      console.warn('[ServerBrowser] list_servers failed:', resp.error);
+      return;
+    }
+
+    var servers = Array.isArray(resp.data) ? resp.data : [];
+    gsaState.servers = servers;
+
+    var countBadge = document.getElementById('sb-server-count');
+    if (countBadge) {
+      countBadge.textContent = servers.length + ' server' + (servers.length !== 1 ? 's' : '');
+    }
+
+    var tbody = document.getElementById('sb-server-tbody');
+    var emptyState = document.getElementById('sb-empty-state');
+    if (!tbody) return;
+
+    if (servers.length === 0) {
+      tbody.innerHTML = '';
+      if (emptyState) emptyState.style.display = 'block';
+      return;
+    }
+
+    if (emptyState) emptyState.style.display = 'none';
+
+    // Collect unique game types for filter
+    var games = {};
+    servers.forEach(function(s) {
+      if (s.game_type) games[s.game_type] = true;
+    });
+    var filterEl = document.getElementById('sb-game-filter');
+    if (filterEl) {
+      var currentVal = filterEl.value;
+      filterEl.innerHTML = '<option value="">All Games</option>';
+      Object.keys(games).sort().forEach(function(g) {
+        var opt = document.createElement('option');
+        opt.value = g;
+        opt.textContent = g;
+        filterEl.appendChild(opt);
+      });
+      filterEl.value = currentVal;
+    }
+
+    // Apply game filter
+    var filterGame = filterEl ? filterEl.value : '';
+    var filtered = filterGame ? servers.filter(function(s) { return s.game_type === filterGame; }) : servers;
+
+    // Build table rows
+    var html = '';
+    filtered.forEach(function(srv) {
+      var statusDot = 'var(--text-muted)';
+      if (srv.status === 'running') statusDot = 'var(--success-fg)';
+      else if (srv.status === 'stopped') statusDot = 'var(--danger-fg)';
+      else if (srv.status === 'warning') statusDot = 'var(--warning-fg)';
+
+      var isSelected = gsaState.selectedServerId === srv.id;
+      var rowClass = isSelected ? 'selected' : '';
+
+      html += '<tr class="' + rowClass + '" data-server-id="' + escapeHtml(srv.id) + '" '
+        + 'onclick="selectServer(\'' + escapeHtml(srv.id) + '\', \'' + escapeHtml(srv.name) + '\', \'' + escapeHtml(srv.game_type) + '\', \'' + escapeHtml(srv.status) + '\')" '
+        + 'oncontextmenu="showServerContextMenu(event, \'' + escapeHtml(srv.id) + '\')">'
+        + '<td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + statusDot + ';"></span></td>'
+        + '<td style="font-weight:500;">' + escapeHtml(srv.name || srv.id) + '</td>'
+        + '<td><span class="badge badge-blue">' + escapeHtml(srv.game_type || '?') + '</span></td>'
+        + '<td style="font-family:var(--font-mono);font-size:12px;">' + escapeHtml(srv.host || '') + ':' + escapeHtml(String(srv.port || '')) + '</td>'
+        + '<td>' + escapeHtml(String(srv.players || '—')) + '</td>'
+        + '<td style="font-family:var(--font-mono);font-size:12px;">' + escapeHtml(srv.version || '—') + '</td>'
+        + '<td style="color:var(--text-secondary);">' + formatTime(srv.last_probed) + '</td>'
+        + '<td><button class="btn btn-sm btn-icon" title="Remove" onclick="event.stopPropagation();removeServer(\'' + escapeHtml(srv.id) + '\')">&#x2715;</button></td>'
+        + '</tr>';
+    });
+
+    tbody.innerHTML = html;
+
+    // Update status bar
+    updateStatusBar({
+      connected: true,
+      serverCount: servers.length,
+      lastProbe: new Date().toLocaleTimeString()
+    });
+  }
+
+  /**
+   * Probe a server at the specified host:port. On success, opens the
+   * add-server modal with the detected game info and config preview.
+   */
+  async function probeServer() {
+    var host = document.getElementById('sb-probe-host').value.trim();
+    var port = document.getElementById('sb-probe-port').value.trim();
+
+    if (!host) {
+      alert('Please enter a host address.');
+      return;
+    }
+
+    var btn = document.getElementById('sb-probe-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Probing...';
+
+    var resp = await gossamerInvoke('probe_server', { host: host, port: port || '27015' });
+
+    btn.disabled = false;
+    btn.innerHTML = '<span class="sb-probe-icon">&#x25C9;</span> Probe';
+
+    if (!resp.ok) {
+      alert('Probe failed: ' + (resp.error || 'Unknown error'));
+      return;
+    }
+
+    // Store probe result and open add modal
+    sbState.probeResult = resp.data;
+    var probe = resp.data.probe || {};
+    var config = resp.data.config || {};
+
+    document.getElementById('sb-add-server-id').value = '';
+    document.getElementById('sb-add-game').value = probe.game_id || 'Unknown';
+    document.getElementById('sb-add-host').value = host;
+    document.getElementById('sb-add-port').value = port || '27015';
+
+    var preview = document.getElementById('sb-add-config-preview');
+    if (preview) {
+      preview.textContent = JSON.stringify(config, null, 2);
+    }
+
+    showModal('sb-add-modal');
+  }
+
+  /**
+   * Select a server in the browser. Updates global state and highlights
+   * the selected row.
+   *
+   * @param {string} id - Server ID
+   * @param {string} name - Display name
+   * @param {string} game - Game type
+   * @param {string} status - Server status
+   */
+  function selectServer(id, name, game, status) {
+    selectServerGlobal(id, name, game, status);
+
+    // Update row highlights
+    document.querySelectorAll('#sb-server-tbody tr').forEach(function(tr) {
+      if (tr.dataset.serverId === id) {
+        tr.classList.add('selected');
+      } else {
+        tr.classList.remove('selected');
+      }
+    });
+  }
+
+  /**
+   * Add the probed server to VeriSimDB management.
+   * Reads the server ID from the modal form and sends the add_server command.
+   */
+  async function addServer() {
+    var serverId = document.getElementById('sb-add-server-id').value.trim();
+    if (!serverId) {
+      alert('Please enter a unique server ID.');
+      return;
+    }
+
+    if (!sbState.probeResult) {
+      alert('No probe result available.');
+      return;
+    }
+
+    var resp = await gossamerInvoke('add_server', {
+      server_id: serverId,
+      probe_result: sbState.probeResult.probe,
+      config: sbState.probeResult.config
+    });
+
+    hideModal('sb-add-modal');
+
+    if (!resp.ok) {
+      alert('Failed to add server: ' + (resp.error || 'Unknown error'));
+      return;
+    }
+
+    sbState.probeResult = null;
+    await refreshServerBrowser();
+  }
+
+  /**
+   * Remove a server from VeriSimDB management.
+   *
+   * @param {string} id - The server ID to remove
+   */
+  async function removeServer(id) {
+    if (!confirm('Remove server "' + id + '" from management?')) return;
+
+    var resp = await gossamerInvoke('remove_server', { server_id: id });
+    if (!resp.ok) {
+      alert('Failed to remove: ' + (resp.error || 'Unknown error'));
+      return;
+    }
+
+    if (gsaState.selectedServerId === id) {
+      gsaState.selectedServerId = null;
+      gsaState.selectedServerName = null;
+    }
+
+    await refreshServerBrowser();
+  }
+
+  /**
+   * Show the server context menu at the cursor position.
+   *
+   * @param {MouseEvent} event - The right-click event
+   * @param {string} serverId - The server that was right-clicked
+   */
+  function showServerContextMenu(event, serverId) {
+    event.preventDefault();
+    event.stopPropagation();
+    sbState.contextServerId = serverId;
+
+    var menu = document.getElementById('sb-context-menu');
+    menu.style.display = 'block';
+    menu.style.left = event.clientX + 'px';
+    menu.style.top = event.clientY + 'px';
+  }
+
+  /** Context menu action: probe the selected server again. */
+  async function ctxProbeAgain() {
+    document.getElementById('sb-context-menu').style.display = 'none';
+    var srv = gsaState.servers.find(function(s) { return s.id === sbState.contextServerId; });
+    if (srv) {
+      document.getElementById('sb-probe-host').value = srv.host || '';
+      document.getElementById('sb-probe-port').value = srv.port || '';
+      await probeServer();
+    }
+  }
+
+  /** Context menu action: navigate to config editor for the selected server. */
+  function ctxViewConfig() {
+    document.getElementById('sb-context-menu').style.display = 'none';
+    var srv = gsaState.servers.find(function(s) { return s.id === sbState.contextServerId; });
+    if (srv) {
+      selectServerGlobal(srv.id, srv.name, srv.game_type, srv.status);
+      switchPanel('config-editor');
+    }
+  }
+
+  /** Context menu action: remove the selected server. */
+  function ctxRemoveServer() {
+    document.getElementById('sb-context-menu').style.display = 'none';
+    if (sbState.contextServerId) {
+      removeServer(sbState.contextServerId);
+    }
+  }
+
+  // Hide context menu on click anywhere else
+  document.addEventListener('click', function() {
+    document.getElementById('sb-context-menu').style.display = 'none';
+  });
+
+  // Re-filter when game filter changes
+  var gameFilter = document.getElementById('sb-game-filter');
+  if (gameFilter) {
+    gameFilter.addEventListener('change', refreshServerBrowser);
+  }
+
+  // Load profiles for filter dropdown
+  (async function() {
+    var resp = await gossamerInvoke('list_profiles', {});
+    if (resp.ok && Array.isArray(resp.data)) {
+      var filterEl = document.getElementById('sb-game-filter');
+      if (filterEl) {
+        resp.data.forEach(function(p) {
+          var opt = document.createElement('option');
+          opt.value = p.id || p;
+          opt.textContent = p.name || p.id || p;
+          filterEl.appendChild(opt);
+        });
+      }
+    }
+  })();
+</script>

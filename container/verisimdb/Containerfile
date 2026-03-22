@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Containerfile for the GSA-dedicated VeriSimDB instance
+# Builds VeriSimDB with persistent storage feature enabled
+# Uses Chainguard base image per hyperpolymath container policy
+
+# --- Build stage ---
+FROM cgr.dev/chainguard/wolfi-base:latest AS builder
+
+RUN apk add --no-cache rust cargo gcc musl-dev
+
+WORKDIR /build
+
+# Copy VeriSimDB source (expected to be available at build context)
+COPY verisimdb-src/ .
+
+# Build with persistent feature
+RUN cargo build --release --features persistent \
+    --manifest-path rust-core/Cargo.toml
+
+# --- Runtime stage ---
+FROM cgr.dev/chainguard/wolfi-base:latest
+
+RUN apk add --no-cache libgcc
+
+COPY --from=builder /build/rust-core/target/release/verisim-api /usr/local/bin/verisim-api
+
+# Create data directory for persistent storage
+RUN mkdir -p /data && chown nonroot:nonroot /data
+
+# GSA-specific configuration
+ENV VERISIM_HTTP_HOST="[::1]"
+ENV VERISIM_HTTP_PORT="8090"
+ENV VERISIM_GRPC_PORT="50061"
+ENV VERISIM_PERSISTENCE_DIR="/data"
+ENV VERISIM_FEATURES="persistent"
+
+EXPOSE 8090 50061
+
+VOLUME /data
+
+USER nonroot:nonroot
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://[::1]:8090/health || exit 1
+
+ENTRYPOINT ["/usr/local/bin/verisim-api"]

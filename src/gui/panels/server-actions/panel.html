@@ -1,0 +1,284 @@
+<!--
+  SPDX-License-Identifier: PMPL-1.0-or-later
+  Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+  server-actions/panel.html — Server Actions panel for Game Server Admin
+
+  Provides start/stop/restart/update/backup/validate actions for the
+  selected server. Each action requires confirmation before execution.
+  Calls gossamer IPC: server_action.
+-->
+
+<!-- Header -->
+<div class="panel-header">
+  <h2>Server Actions</h2>
+  <span class="badge badge-gray" id="sa-server-badge">No server selected</span>
+  <span id="sa-status-badge" style="display:none;"></span>
+</div>
+
+<!-- No server selected state -->
+<div class="empty-state" id="sa-empty-state">
+  <div class="empty-icon">&#x25B6;</div>
+  <p>Select a server from the Server Browser to manage it.</p>
+</div>
+
+<!-- Actions content -->
+<div id="sa-content" style="display:none;">
+  <!-- Action buttons grid -->
+  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:24px;">
+    <button class="btn btn-success" id="sa-btn-start" onclick="showActionConfirmation('start')" style="padding:20px; font-size:15px; justify-content:center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,3 19,12 5,21"/></svg>
+      Start
+    </button>
+    <button class="btn btn-danger" id="sa-btn-stop" onclick="showActionConfirmation('stop')" style="padding:20px; font-size:15px; justify-content:center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12"/></svg>
+      Stop
+    </button>
+    <button class="btn btn-warning" id="sa-btn-restart" onclick="showActionConfirmation('restart')" style="padding:20px; font-size:15px; justify-content:center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      Restart
+    </button>
+    <button class="btn btn-primary" id="sa-btn-update" onclick="showActionConfirmation('update')" style="padding:20px; font-size:15px; justify-content:center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Update
+    </button>
+    <button class="btn btn-purple" id="sa-btn-backup" onclick="showActionConfirmation('backup')" style="padding:20px; font-size:15px; justify-content:center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>
+      Backup
+    </button>
+    <button class="btn btn-cyan" id="sa-btn-validate" onclick="showActionConfirmation('validate')" style="padding:20px; font-size:15px; justify-content:center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22,4 12,14.01 9,11.01"/></svg>
+      Validate Config
+    </button>
+  </div>
+
+  <!-- Action output -->
+  <div id="sa-output-section" style="display:none;">
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+      <h3 style="font-size:14px; font-weight:600;">Action Output</h3>
+      <span class="badge" id="sa-output-status"></span>
+      <span class="spinner" id="sa-output-spinner" style="display:none;"></span>
+    </div>
+    <div class="code-block" id="sa-output-text" style="min-height:100px; max-height:400px; font-size:12px; white-space:pre-wrap;">
+      <!-- Command output displayed here -->
+    </div>
+  </div>
+</div>
+
+<!-- Confirmation modal -->
+<div class="modal-overlay" id="sa-confirm-modal">
+  <div class="modal">
+    <h3 id="sa-confirm-title">Confirm Action</h3>
+    <p style="color:var(--text-secondary); margin-bottom:12px;" id="sa-confirm-description"></p>
+    <div style="background:var(--bg-primary); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:12px; margin-bottom:12px;">
+      <div style="font-size:12px; color:var(--text-secondary);">Server</div>
+      <div style="font-weight:600;" id="sa-confirm-server"></div>
+      <div style="font-size:12px; color:var(--text-secondary); margin-top:8px;">Impact</div>
+      <div id="sa-confirm-impact" style="font-size:13px;"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="hideModal('sa-confirm-modal')">Cancel</button>
+      <button class="btn" id="sa-confirm-btn" onclick="executeConfirmedAction()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /**
+   * Server Actions panel state.
+   * pendingAction: the action awaiting confirmation in the modal.
+   */
+  var saState = {
+    pendingAction: null
+  };
+
+  /**
+   * Action metadata: display name, description, button style, impact text,
+   * and preconditions (which server statuses allow this action).
+   */
+  var ACTION_META = {
+    start: {
+      label: 'Start Server',
+      description: 'Start the game server process.',
+      btnClass: 'btn-success',
+      impact: 'The server will begin accepting connections.',
+      allowWhen: ['stopped', 'unknown']
+    },
+    stop: {
+      label: 'Stop Server',
+      description: 'Gracefully stop the game server process.',
+      btnClass: 'btn-danger',
+      impact: 'All connected players will be disconnected. Unsaved data may be lost.',
+      allowWhen: ['running', 'unknown']
+    },
+    restart: {
+      label: 'Restart Server',
+      description: 'Stop and immediately restart the server.',
+      btnClass: 'btn-warning',
+      impact: 'Brief downtime while the server restarts. Players will be disconnected temporarily.',
+      allowWhen: ['running', 'stopped', 'unknown']
+    },
+    update: {
+      label: 'Update Server',
+      description: 'Download and install the latest server version.',
+      btnClass: 'btn-primary',
+      impact: 'The server will be stopped during the update. Depending on game, this may take several minutes.',
+      allowWhen: ['running', 'stopped', 'unknown']
+    },
+    backup: {
+      label: 'Backup Server',
+      description: 'Create a backup of server data and configuration.',
+      btnClass: 'btn-purple',
+      impact: 'A snapshot of the current state will be saved. This does not affect the running server.',
+      allowWhen: ['running', 'stopped', 'unknown']
+    },
+    validate: {
+      label: 'Validate Config',
+      description: 'Check the server configuration for errors and warnings.',
+      btnClass: 'btn-cyan',
+      impact: 'Read-only operation. No changes will be made to the server.',
+      allowWhen: ['running', 'stopped', 'unknown']
+    }
+  };
+
+  /**
+   * Refresh the Server Actions panel. Updates button enabled/disabled states
+   * based on the current server status.
+   */
+  function refreshServerActions() {
+    var emptyState = document.getElementById('sa-empty-state');
+    var content = document.getElementById('sa-content');
+    var serverBadge = document.getElementById('sa-server-badge');
+    var statusBadge = document.getElementById('sa-status-badge');
+
+    if (!gsaState.selectedServerId) {
+      emptyState.style.display = 'block';
+      content.style.display = 'none';
+      serverBadge.textContent = 'No server selected';
+      serverBadge.className = 'badge badge-gray';
+      statusBadge.style.display = 'none';
+      return;
+    }
+
+    emptyState.style.display = 'none';
+    content.style.display = 'block';
+    serverBadge.textContent = gsaState.selectedServerName || gsaState.selectedServerId;
+    serverBadge.className = 'badge badge-blue';
+
+    // Status badge
+    var status = gsaState.selectedServerStatus || 'unknown';
+    var statusClass = 'badge-gray';
+    if (status === 'running') statusClass = 'badge-green';
+    else if (status === 'stopped') statusClass = 'badge-red';
+    statusBadge.className = 'badge ' + statusClass;
+    statusBadge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+    statusBadge.style.display = 'inline-flex';
+
+    // Update button states
+    Object.keys(ACTION_META).forEach(function(action) {
+      var meta = ACTION_META[action];
+      var btn = document.getElementById('sa-btn-' + action);
+      if (btn) {
+        btn.disabled = meta.allowWhen.indexOf(status) === -1;
+      }
+    });
+  }
+
+  /**
+   * Show the confirmation modal for an action.
+   *
+   * @param {string} action - The action name (start, stop, restart, etc.)
+   */
+  function showActionConfirmation(action) {
+    var meta = ACTION_META[action];
+    if (!meta) return;
+
+    saState.pendingAction = action;
+
+    document.getElementById('sa-confirm-title').textContent = meta.label;
+    document.getElementById('sa-confirm-description').textContent = meta.description;
+    document.getElementById('sa-confirm-server').textContent =
+      (gsaState.selectedServerName || gsaState.selectedServerId) +
+      (gsaState.selectedServerGame ? ' (' + gsaState.selectedServerGame + ')' : '');
+    document.getElementById('sa-confirm-impact').textContent = meta.impact;
+
+    var confirmBtn = document.getElementById('sa-confirm-btn');
+    confirmBtn.className = 'btn ' + meta.btnClass;
+    confirmBtn.textContent = meta.label;
+
+    showModal('sa-confirm-modal');
+  }
+
+  /**
+   * Execute the confirmed action via the Gossamer IPC bridge.
+   * Hides the confirmation modal, shows the output section with a spinner,
+   * and displays the result when complete.
+   */
+  async function executeConfirmedAction() {
+    var action = saState.pendingAction;
+    if (!action) return;
+
+    hideModal('sa-confirm-modal');
+
+    // Show output section with spinner
+    var outputSection = document.getElementById('sa-output-section');
+    var outputText = document.getElementById('sa-output-text');
+    var outputStatus = document.getElementById('sa-output-status');
+    var outputSpinner = document.getElementById('sa-output-spinner');
+
+    outputSection.style.display = 'block';
+    outputText.textContent = 'Executing ' + action + '...\n';
+    outputStatus.textContent = 'Running';
+    outputStatus.className = 'badge badge-yellow';
+    outputSpinner.style.display = 'inline-block';
+
+    var resp = await gossamerInvoke('server_action', {
+      server_id: gsaState.selectedServerId,
+      action: action
+    });
+
+    outputSpinner.style.display = 'none';
+
+    if (resp.ok) {
+      outputStatus.textContent = 'Success';
+      outputStatus.className = 'badge badge-green';
+
+      var data = resp.data || {};
+      outputText.textContent = 'Action: ' + action + '\n'
+        + 'Server: ' + gsaState.selectedServerId + '\n'
+        + 'Status: Success\n'
+        + '---\n'
+        + (data.output || data.message || JSON.stringify(data, null, 2)) + '\n';
+
+      // Update server status if action changed it
+      if (action === 'start') gsaState.selectedServerStatus = 'running';
+      else if (action === 'stop') gsaState.selectedServerStatus = 'stopped';
+
+      updateServerStatus();
+    } else {
+      outputStatus.textContent = 'Failed';
+      outputStatus.className = 'badge badge-red';
+      outputText.textContent = 'Action: ' + action + '\n'
+        + 'Server: ' + gsaState.selectedServerId + '\n'
+        + 'Status: Failed\n'
+        + 'Error: ' + (resp.error || 'Unknown error') + '\n';
+    }
+
+    saState.pendingAction = null;
+  }
+
+  /**
+   * Update the server status display after an action completes.
+   * Re-reads the status and refreshes the badge + button states.
+   */
+  function updateServerStatus() {
+    refreshServerActions();
+  }
+
+  // Listen for server selection changes
+  document.addEventListener('gsa-server-selected', function() {
+    if (gsaState.activePanel === 'server-actions') {
+      refreshServerActions();
+    }
+  });
+</script>

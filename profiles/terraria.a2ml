@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Terraria (tModLoader) game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="terraria", name="Terraria", engine="tModLoader"):
+
+  @ports:
+    @port(name="game", number=7777, protocol="TCP"):
+      Primary game traffic port
+    @end
+    @port(name="rest", number=7878, protocol="TCP"):
+      REST API port for remote server management
+    @end
+  @end
+
+  @protocol(type="rest-api", variant="Terraria"):
+    Terraria uses a custom TCP protocol for game traffic and an
+    optional REST API (enabled via -rest flag) for remote queries
+    and administration over HTTP.
+  @end
+
+  @fingerprint:
+    @executable(name="TerrariaServer") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="key-value", path="/config/serverconfig.txt"):
+    # Key=value configuration file for the Terraria dedicated server.
+    # Despite the .txt extension, this is a structured config file
+    # where each line is a key=value pair.
+
+    @field(key="world", type="string", label="World File Path"):
+      Full path to the world file to load.
+      @default("/data/worlds/world.wld") @end
+    @end
+
+    @field(key="worldname", type="string", label="World Name"):
+      Name for a newly created world (used with autocreate).
+      @default("TerrariaWorld") @end
+    @end
+
+    @field(key="maxplayers", type="int", label="Max Players"):
+      Maximum number of concurrent players.
+      @constraint(min=1, max=255) @end
+      @default(8) @end
+    @end
+
+    @field(key="port", type="int", label="Game Port"):
+      Network port for game traffic.
+      @default(7777) @end
+    @end
+
+    @field(key="password", type="secret", label="Server Password"):
+      Password required to join. Leave empty for an open server.
+    @end
+
+    @field(key="motd", type="string", label="Message of the Day"):
+      Welcome message displayed to players on join.
+      @default("Welcome to Terraria!") @end
+    @end
+
+    @field(key="difficulty", type="enum", label="Difficulty"):
+      World difficulty level for newly created worlds.
+      @options("0=normal", "1=expert", "2=master", "3=journey") @end
+      @default("0") @end
+    @end
+
+    @field(key="autocreate", type="enum", label="Auto-Create World Size"):
+      Automatically create a new world of the specified size if no
+      world file is found.
+      @options("1=small", "2=medium", "3=large") @end
+      @default("2") @end
+    @end
+
+    @field(key="secure", type="bool", label="Secure Mode"):
+      Enable Terraria's built-in anti-cheat checks.
+      @default(true) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start terraria
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 terraria
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 terraria
+    @end
+    @action(id="save", label="Force Save"):
+      podman exec terraria /scripts/save.sh
+    @end
+    @action(id="backup", label="Backup World"):
+      podman exec terraria /scripts/backup.sh
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 terraria
+    @end
+  @end
+
+  @container(runtime="podman", name="terraria"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/terraria/worlds", container="/data/worlds") @end
+      @volume(host="/config", container="/config", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Terraria (tModLoader) dedicated server profile for Game Server Admin.
+    Supports REST API queries, key-value configuration, world auto-creation,
+    and Podman container lifecycle management.
+  @end
+
+@end

@@ -1,0 +1,309 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- Types.eph — Linear and affine type definitions for Game Server Admin
+-- Linear types enforce resource lifecycle (must consume exactly once)
+-- Affine types enforce read-only access (may consume at most once)
+
+module GSA.Core.Types
+
+-- =============================================================================
+-- Result type — mirrors Zig GsaResult / Idris2 Result
+-- =============================================================================
+
+type GsaResult =
+  | Ok
+  | Error(String)
+  | InvalidParam(String)
+  | ProbeTimeout
+  | ConnectionRefused
+  | AuthFailed
+  | ConfigParseError(String)
+  | VeriSimDBUnavailable
+
+-- =============================================================================
+-- Config format enumeration
+-- =============================================================================
+
+type ConfigFormat =
+  | XML
+  | INI
+  | JSON
+  | ENV
+  | YAML
+  | TOML
+  | Lua
+  | KeyValue
+  | A2ML
+  | Custom(String)
+
+-- =============================================================================
+-- Probe protocol enumeration
+-- =============================================================================
+
+type ProbeProtocol =
+  | SteamQuery
+  | RCON
+  | MinecraftQuery
+  | GameSpy
+  | REST
+  | SSH
+  | WebSocket
+  | WebRTC
+  | CustomTCP
+
+-- =============================================================================
+-- Server action enumeration
+-- =============================================================================
+
+type ServerAction =
+  | Start
+  | Stop
+  | Restart
+  | Status
+  | Logs(I32)          -- number of lines
+  | Update
+  | Backup
+  | ValidateConfig
+
+-- =============================================================================
+-- Health status
+-- =============================================================================
+
+type HealthStatus =
+  | Healthy
+  | Warning
+  | Degraded
+  | Critical
+
+-- =============================================================================
+-- LINEAR TYPES — resources that must be consumed exactly once
+-- =============================================================================
+
+-- ServerHandle: connection to a game server via SSH/RCON/API.
+-- MUST be closed after use — compiler enforces this.
+linear type ServerHandle = ServerHandle {
+  handle_id:  I64,
+  host:       String,
+  port:       I32,
+  server_id:  String,
+  game_id:    String,
+  protocol:   ProbeProtocol
+}
+
+-- ConfigTransaction: an in-flight config modification.
+-- MUST be committed or rolled back — no silent abandonment.
+linear type ConfigTransaction = ConfigTransaction {
+  tx_id:       I64,
+  server_id:   String,
+  original:    String,     -- original config A2ML
+  modified:    String,     -- modified config A2ML
+  diff_count:  I32         -- number of changed fields
+}
+
+-- SSHSession: an active SSH connection.
+-- MUST be closed — prevents connection leaks.
+linear type SSHSession = SSHSession {
+  session_id: I64,
+  host:       String,
+  user:       String,
+  connected:  Bool
+}
+
+-- ProbeSession: an active probing session scanning ports.
+-- MUST be finalised to collect results and release sockets.
+linear type ProbeSession = ProbeSession {
+  probe_id:    I64,
+  host:        String,
+  ports_total: I32,
+  ports_done:  I32
+}
+
+-- VeriSimDBConnection: connection to the dedicated VeriSimDB instance.
+-- MUST be closed to release HTTP client resources.
+linear type VeriSimDBConnection = VeriSimDBConnection {
+  conn_id:   I64,
+  base_url:  String,
+  connected: Bool
+}
+
+-- =============================================================================
+-- AFFINE TYPES — read-only data that may be consumed at most once
+-- =============================================================================
+
+-- ServerInfo: metadata about a managed server (read-only snapshot).
+affine type ServerInfo = ServerInfo {
+  server_id:      String,
+  game_id:        String,
+  game_name:      String,
+  host:           String,
+  port:           I32,
+  protocol:       ProbeProtocol,
+  config_format:  ConfigFormat,
+  config_path:    String,
+  container_name: String,
+  status:         String,       -- "running", "stopped", "unknown"
+  last_probed:    String,       -- ISO 8601 timestamp
+  player_count:   I32,
+  max_players:    I32,
+  version:        String
+}
+
+-- ProbeResult: the outcome of fingerprinting a game server.
+affine type ProbeResult = ProbeResult {
+  game_id:           String,
+  game_name:         String,
+  version:           String,
+  protocol:          ProbeProtocol,
+  fingerprint_sig:   String,
+  config_paths:      List(String),
+  host:              String,
+  port:              I32,
+  latency_ms:        I32,
+  confidence:        F64         -- 0.0 to 1.0, how confident the match is
+}
+
+-- ConfigSnapshot: a point-in-time capture of a server's configuration.
+affine type ConfigSnapshot = ConfigSnapshot {
+  server_id:    String,
+  game_id:      String,
+  format:       ConfigFormat,
+  config_path:  String,
+  a2ml_text:    String,          -- full A2ML representation
+  fields:       List(ConfigField),
+  captured_at:  String,          -- ISO 8601 timestamp
+  version:      I32              -- VeriSimDB temporal version
+}
+
+-- ConfigField: a single configuration field with metadata.
+affine type ConfigField = ConfigField {
+  key:         String,
+  value:       String,
+  field_type:  String,           -- "string", "int", "float", "bool", "secret", "enum"
+  label:       String,           -- human-readable label
+  default_val: String,           -- default value (empty if none)
+  range_min:   String,           -- min value for numeric types (empty if N/A)
+  range_max:   String,           -- max value for numeric types (empty if N/A)
+  enum_values: List(String),     -- possible values for enum type
+  is_secret:   Bool              -- true for passwords, keys, tokens
+}
+
+-- HealthReport: health and drift status for a server.
+affine type HealthReport = HealthReport {
+  server_id:            String,
+  status:               HealthStatus,
+  config_drift:         F64,     -- 0.0 = no drift, 1.0 = completely diverged
+  semantic_drift:       F64,
+  temporal_consistency: F64,
+  overall_score:        F64,
+  last_checked:         String,  -- ISO 8601 timestamp
+  alerts:               List(String)
+}
+
+-- GameProfile: a game server profile definition (loaded from A2ML).
+affine type GameProfile = GameProfile {
+  id:                 String,
+  name:               String,
+  engine:             String,
+  ports:              List(PortDef),
+  protocol:           ProbeProtocol,
+  fingerprint_pattern: String,
+  config_format:      ConfigFormat,
+  config_path:        String,
+  field_defs:         List(ConfigField),
+  actions:            List(ActionDef),
+  container_runtime:  String      -- "podman" or "docker"
+}
+
+-- PortDef: a named port definition within a game profile.
+affine type PortDef = PortDef {
+  name:     String,              -- "query", "game", "rcon", "steam"
+  number:   I32,
+  protocol: String               -- "tcp", "udp", "both"
+}
+
+-- ActionDef: a named server action command.
+affine type ActionDef = ActionDef {
+  name:    String,               -- "start", "stop", "restart", "logs", "status"
+  command: String                -- shell command template
+}
+
+-- ConfigDiff: a single change between two config versions.
+affine type ConfigDiff = ConfigDiff {
+  key:       String,
+  old_value: String,
+  new_value: String,
+  action:    DiffAction
+}
+
+type DiffAction =
+  | Added
+  | Modified
+  | Removed
+
+-- VQLResult: result of a VQL query to VeriSimDB.
+affine type VQLResult = VQLResult {
+  query:      String,
+  result_json: String,
+  row_count:  I32,
+  duration_ms: I32
+}
+
+-- ProvenanceEntry: a single provenance record.
+affine type ProvenanceEntry = ProvenanceEntry {
+  event_type:  String,           -- "created", "modified", "config_change", "probed"
+  actor:       String,           -- who made the change
+  description: String,
+  timestamp:   String,           -- ISO 8601
+  hash:        String            -- SHA-256 hash-chain entry
+}
+
+-- =============================================================================
+-- Octad mapping — how a server maps to VeriSimDB's 8 modalities
+-- =============================================================================
+
+affine type ServerOctad = ServerOctad {
+  -- Graph: server→game-profile, server→cluster, mod→server edges
+  graph_relationships: List(GraphEdge),
+  -- Vector: config embedding for similarity search
+  vector_embedding:    List(F64),
+  -- Tensor: performance metrics over time [player_count, tps, memory_mb, cpu_pct]
+  tensor_metrics:      List(List(F64)),
+  -- Semantic: typed annotations (game_type, version, mods, status)
+  semantic_types:      List(SemanticAnnotation),
+  -- Document: full config file text for full-text search
+  document_text:       String,
+  -- Temporal: config version number
+  temporal_version:    I32,
+  -- Provenance: hash-chain entry
+  provenance_hash:     String,
+  -- Spatial: datacenter geolocation (lat, lon, alt)
+  spatial_coords:      Maybe(SpatialCoord)
+}
+
+affine type GraphEdge = GraphEdge {
+  predicate: String,             -- "has-profile", "in-cluster", "uses-mod"
+  target:    String              -- target entity ID
+}
+
+affine type SemanticAnnotation = SemanticAnnotation {
+  key:   String,                 -- "game_type", "version", "status"
+  value: String
+}
+
+affine type SpatialCoord = SpatialCoord {
+  latitude:  F64,
+  longitude: F64,
+  altitude:  F64
+}
+
+-- =============================================================================
+-- Type aliases for common patterns
+-- =============================================================================
+
+type ServerList    = List(ServerInfo)
+type ProfileList   = List(GameProfile)
+type FieldList     = List(ConfigField)
+type DiffList      = List(ConfigDiff)
+type HistoryList   = List(ConfigSnapshot)
+type AlertList     = List(String)

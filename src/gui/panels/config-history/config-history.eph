@@ -1,0 +1,21 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- config-history.eph — Config History panel module for Game Server Admin
+--
+-- This module documents the Config History panel's IPC contract.
+-- The panel HTML (panel.html) displays a version timeline, side-by-side
+-- diff viewer, and provenance chain with hash verification.
+-- All handler logic lives in GSA.Core.Bridge.
+--
+-- IPC commands used by this panel:
+--   get_history     — Get config version history for a server
+--                     Payload: {server_id, limit}
+--                     Returns: {versions: [...], provenance: [...]}
+--   rollback_config — Rollback to a specific version
+--                     Payload: {server_id, version}
+--                     Records provenance: config_rollback event
+
+module GSA.GUI.Panels.ConfigHistory
+
+import GSA.Core.Bridge

@@ -1,0 +1,130 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — DayZ game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="dayz", name="DayZ", engine="Enfusion"):
+
+  @ports:
+    @port(name="game", number=2302, protocol="UDP"):
+      Primary game traffic port
+    @end
+    @port(name="steam", number=27016, protocol="UDP"):
+      Steam communication port for authentication and server browser
+    @end
+    @port(name="query", number=27016, protocol="UDP"):
+      Steam query port (shares the Steam port)
+    @end
+  @end
+
+  @protocol(type="steam-query", variant="A2S"):
+    Valve A2S (A2S_INFO, A2S_PLAYER, A2S_RULES) over UDP.
+    DayZ uses standard Steam query on the Steam port.
+  @end
+
+  @fingerprint:
+    @steam-appid(server=223350, client=221100) @end
+    @executable(name="DayZServer_x64") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="xml", path="/config/serverDZ.cfg"):
+    # DayZ server configuration file. Despite the .cfg extension, the
+    # format uses C-style syntax with semicolons. Some fields also have
+    # XML mission files that override behaviour.
+
+    @field(key="hostname", type="string", label="Server Hostname"):
+      Display name shown in the server browser.
+      @default("DayZ Server") @end
+    @end
+
+    @field(key="password", type="secret", label="Server Password"):
+      Password required to join. Leave empty for an open server.
+    @end
+
+    @field(key="maxPlayers", type="int", label="Max Players"):
+      Maximum number of concurrent players.
+      @constraint(min=1, max=127) @end
+      @default(60) @end
+    @end
+
+    @field(key="verifySignatures", type="int", label="Verify Signatures"):
+      Mod signature verification level. 0 = disabled, 1 = relaxed,
+      2 = strict (recommended for public servers).
+      @constraint(min=0, max=2) @end
+      @default(2) @end
+    @end
+
+    @field(key="forceSameBuild", type="bool", label="Force Same Build"):
+      Require all clients to run the same game build version.
+      @default(true) @end
+    @end
+
+    @field(key="disable3rdPerson", type="bool", label="Disable Third Person"):
+      Force first-person perspective only. Common for hardcore servers.
+      @default(false) @end
+    @end
+
+    @field(key="disableCrosshair", type="bool", label="Disable Crosshair"):
+      Remove the on-screen crosshair for increased difficulty.
+      @default(false) @end
+    @end
+
+    @field(key="serverTime", type="string", label="Server Time"):
+      Initial in-game time in "YYYY/MM/DD/HH/MM" format. The server
+      advances from this point using the acceleration settings.
+      @default("2024/04/15/12/00") @end
+    @end
+
+    @field(key="serverTimeAcceleration", type="float", label="Time Acceleration"):
+      Day-time acceleration multiplier. 1.0 = real-time, higher = faster.
+      @constraint(min=0.1, max=64.0) @end
+      @default(1.0) @end
+    @end
+
+    @field(key="nightTimeAcceleration", type="float", label="Night Time Acceleration"):
+      Night-time acceleration multiplier relative to serverTimeAcceleration.
+      Higher values make nights pass faster.
+      @constraint(min=0.1, max=64.0) @end
+      @default(1.0) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start dayz
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 dayz
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 dayz
+    @end
+    @action(id="update", label="Update Server"):
+      podman exec dayz steamcmd +force_install_dir /opt/dayz +login anonymous +app_update 223350 validate +quit
+    @end
+    @action(id="backup", label="Backup Persistence"):
+      podman exec dayz /scripts/backup.sh
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 dayz
+    @end
+  @end
+
+  @container(runtime="podman", name="dayz"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/dayz/profiles", container="/opt/dayz/profiles") @end
+      @volume(host="/data/dayz/mpmissions", container="/opt/dayz/mpmissions") @end
+      @volume(host="/config", container="/config", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    DayZ dedicated server profile for Game Server Admin.
+    Supports Steam query, C-style configuration, time acceleration,
+    and Podman container lifecycle management.
+  @end
+
+@end

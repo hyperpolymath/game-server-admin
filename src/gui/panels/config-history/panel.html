@@ -1,0 +1,392 @@
+<!--
+  SPDX-License-Identifier: PMPL-1.0-or-later
+  Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+  config-history/panel.html — Config History panel for Game Server Admin
+
+  Displays a vertical timeline of config versions, a side-by-side diff viewer,
+  and a provenance chain table with hash verification. Supports rollback
+  to any previous version with confirmation.
+  Calls gossamer IPC: get_history, rollback_config.
+-->
+
+<!-- Header -->
+<div class="panel-header">
+  <h2>Config History</h2>
+  <span class="badge badge-gray" id="ch-server-badge">No server selected</span>
+</div>
+
+<!-- No server selected state -->
+<div class="empty-state" id="ch-empty-state">
+  <div class="empty-icon">&#x2387;</div>
+  <p>Select a server from the Server Browser to view its config history.</p>
+</div>
+
+<!-- History content -->
+<div id="ch-content" style="display:none;">
+  <div style="display:flex; gap:16px; height:calc(100vh - 220px);">
+    <!-- Timeline (left) -->
+    <div id="ch-timeline" style="width:300px; min-width:300px; overflow-y:auto; border-right:1px solid var(--border-color); padding-right:16px;">
+      <div style="font-size:12px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px;">
+        Version Timeline
+      </div>
+      <div id="ch-timeline-entries">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+
+    <!-- Diff viewer (right) -->
+    <div style="flex:1; overflow-y:auto; display:flex; flex-direction:column;">
+      <!-- Diff header -->
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+        <span style="font-size:13px; color:var(--text-secondary);">Comparing:</span>
+        <span class="badge badge-blue" id="ch-diff-old-version">—</span>
+        <span style="color:var(--text-muted);">vs</span>
+        <span class="badge badge-green" id="ch-diff-new-version">current</span>
+        <div style="flex:1;"></div>
+        <button class="btn btn-sm btn-warning" id="ch-rollback-btn" onclick="confirmRollback()" disabled>
+          &#x21BA; Rollback to this version
+        </button>
+      </div>
+
+      <!-- Side-by-side diff -->
+      <div style="display:flex; gap:2px; flex:1; overflow:auto; border:1px solid var(--border-color); border-radius:var(--radius-md);">
+        <!-- Old version -->
+        <div style="flex:1; overflow:auto;">
+          <div style="padding:4px 8px; background:var(--bg-surface); border-bottom:1px solid var(--border-color); font-size:11px; color:var(--text-secondary); font-weight:600; position:sticky; top:0;">
+            OLD (selected version)
+          </div>
+          <pre id="ch-diff-old" style="padding:8px; font-family:var(--font-mono); font-size:12px; line-height:1.6; margin:0; min-height:200px;">Select a version from the timeline.</pre>
+        </div>
+        <div style="width:1px; background:var(--border-color);"></div>
+        <!-- New version (current) -->
+        <div style="flex:1; overflow:auto;">
+          <div style="padding:4px 8px; background:var(--bg-surface); border-bottom:1px solid var(--border-color); font-size:11px; color:var(--text-secondary); font-weight:600; position:sticky; top:0;">
+            CURRENT
+          </div>
+          <pre id="ch-diff-new" style="padding:8px; font-family:var(--font-mono); font-size:12px; line-height:1.6; margin:0; min-height:200px;">Select a version from the timeline.</pre>
+        </div>
+      </div>
+
+      <!-- Provenance chain (collapsible) -->
+      <div style="margin-top:16px;">
+        <div class="collapsible-header" onclick="toggleCollapsible(this)">
+          <span class="collapse-arrow">&#x25B6;</span> Provenance Chain
+        </div>
+        <div class="collapsible-body">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <span style="font-size:12px; color:var(--text-secondary);">Hash-chain integrity:</span>
+            <span id="ch-chain-status" class="badge badge-gray">Not verified</span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table id="ch-provenance-table">
+              <thead>
+                <tr>
+                  <th>Event Type</th>
+                  <th>Actor</th>
+                  <th>Description</th>
+                  <th style="width:120px;">Timestamp</th>
+                  <th style="width:180px;">Hash</th>
+                </tr>
+              </thead>
+              <tbody id="ch-provenance-tbody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Rollback confirmation modal -->
+<div class="modal-overlay" id="ch-rollback-modal">
+  <div class="modal">
+    <h3>Confirm Rollback</h3>
+    <p style="color:var(--text-secondary); margin-bottom:12px;">
+      This will replace the current server configuration with version
+      <strong id="ch-rollback-version-num"></strong>.
+    </p>
+    <div style="background:rgba(218,54,51,0.1); border:1px solid var(--danger-color); border-radius:var(--radius-md); padding:12px; margin-bottom:12px;">
+      <div style="font-weight:600; color:var(--danger-fg); margin-bottom:4px;">Warning</div>
+      <div style="font-size:13px; color:var(--text-secondary);">
+        The server configuration will be reverted. The current config will be saved as a new version in the history.
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="hideModal('ch-rollback-modal')">Cancel</button>
+      <button class="btn btn-warning" onclick="executeRollback()">Rollback</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /**
+   * Config History panel state.
+   * versions: array of version objects from the history response.
+   * selectedVersion: the version number selected in the timeline.
+   * provenanceChain: the provenance chain for the current server.
+   */
+  var chState = {
+    versions: [],
+    selectedVersion: null,
+    provenanceChain: []
+  };
+
+  /**
+   * Refresh the config history panel. Loads the version timeline
+   * for the currently selected server.
+   */
+  async function refreshConfigHistory() {
+    var emptyState = document.getElementById('ch-empty-state');
+    var content = document.getElementById('ch-content');
+    var serverBadge = document.getElementById('ch-server-badge');
+
+    if (!gsaState.selectedServerId) {
+      emptyState.style.display = 'block';
+      content.style.display = 'none';
+      serverBadge.textContent = 'No server selected';
+      serverBadge.className = 'badge badge-gray';
+      return;
+    }
+
+    emptyState.style.display = 'none';
+    content.style.display = 'block';
+    serverBadge.textContent = gsaState.selectedServerName || gsaState.selectedServerId;
+    serverBadge.className = 'badge badge-blue';
+
+    await loadHistory(gsaState.selectedServerId);
+  }
+
+  /**
+   * Load the config version history for a server.
+   *
+   * @param {string} serverId - The server ID
+   */
+  async function loadHistory(serverId) {
+    var resp = await gossamerInvoke('get_history', { server_id: serverId, limit: 50 });
+
+    if (!resp.ok) {
+      document.getElementById('ch-timeline-entries').innerHTML =
+        '<div style="color:var(--danger-fg);font-size:13px;">Failed to load history: ' + escapeHtml(resp.error) + '</div>';
+      return;
+    }
+
+    var data = resp.data || {};
+    chState.versions = data.versions || [];
+    chState.provenanceChain = data.provenance || [];
+
+    renderTimeline(chState.versions);
+    renderProvenance(chState.provenanceChain);
+
+    // Select latest version by default if available
+    if (chState.versions.length > 0) {
+      selectVersion(chState.versions[0].version);
+    }
+  }
+
+  /**
+   * Render the version timeline in the left sidebar.
+   *
+   * @param {Array} versions - Array of version objects with version, timestamp, actor, description
+   */
+  function renderTimeline(versions) {
+    var container = document.getElementById('ch-timeline-entries');
+    if (!container) return;
+
+    if (versions.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:16px 0;">No version history available.</div>';
+      return;
+    }
+
+    var html = '';
+    versions.forEach(function(v, idx) {
+      var isSelected = chState.selectedVersion === v.version;
+      var isCurrent = idx === 0;
+      var dotColor = isCurrent ? 'var(--success-fg)' : (isSelected ? 'var(--link-color)' : 'var(--border-color)');
+
+      html += '<div style="display:flex; gap:12px; cursor:pointer; padding:8px 0; '
+        + (isSelected ? 'background:rgba(88,166,255,0.06); margin:0 -8px; padding-left:8px; padding-right:8px; border-radius:var(--radius-sm);' : '')
+        + '" onclick="selectVersion(' + v.version + ')">'
+        + '  <div style="display:flex; flex-direction:column; align-items:center; min-width:16px;">'
+        + '    <div style="width:12px;height:12px;border-radius:50%;background:' + dotColor + ';flex-shrink:0;border:2px solid var(--bg-primary);"></div>'
+        + (idx < versions.length - 1 ? '<div style="width:1px;flex:1;background:var(--border-color);margin-top:4px;"></div>' : '')
+        + '  </div>'
+        + '  <div style="flex:1;min-width:0;">'
+        + '    <div style="display:flex;align-items:center;gap:6px;">'
+        + '      <span style="font-weight:600;font-size:13px;">v' + v.version + '</span>'
+        + (isCurrent ? '<span class="badge badge-green" style="font-size:10px;">current</span>' : '')
+        + '    </div>'
+        + '    <div style="font-size:11px;color:var(--text-muted);">' + formatTime(v.timestamp) + '</div>'
+        + '    <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">' + escapeHtml(v.actor || 'system') + '</div>'
+        + '    <div style="font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(v.description || '') + '</div>'
+        + '  </div>'
+        + '</div>';
+    });
+
+    container.innerHTML = html;
+  }
+
+  /**
+   * Select a version from the timeline and render the diff against current.
+   *
+   * @param {number} version - The version number to select
+   */
+  function selectVersion(version) {
+    chState.selectedVersion = version;
+
+    document.getElementById('ch-diff-old-version').textContent = 'v' + version;
+
+    // Enable rollback if not the current version
+    var isLatest = chState.versions.length > 0 && chState.versions[0].version === version;
+    document.getElementById('ch-rollback-btn').disabled = isLatest;
+
+    // Find old and new version data
+    var oldVersion = chState.versions.find(function(v) { return v.version === version; });
+    var newVersion = chState.versions.length > 0 ? chState.versions[0] : null;
+
+    renderDiff(oldVersion, newVersion);
+    renderTimeline(chState.versions); // Re-render to update selection highlight
+  }
+
+  /**
+   * Render a side-by-side diff of two config versions.
+   * Added lines are green, removed lines are red, context lines are gray.
+   *
+   * @param {object} oldVersion - The older version object (with .config text)
+   * @param {object} newVersion - The newer (current) version object
+   */
+  function renderDiff(oldVersion, newVersion) {
+    var oldPre = document.getElementById('ch-diff-old');
+    var newPre = document.getElementById('ch-diff-new');
+
+    var oldText = oldVersion ? (oldVersion.config || oldVersion.document || '') : '';
+    var newText = newVersion ? (newVersion.config || newVersion.document || '') : '';
+
+    var oldLines = String(oldText).split('\n');
+    var newLines = String(newText).split('\n');
+
+    // Simple line-by-line diff
+    var maxLen = Math.max(oldLines.length, newLines.length);
+    var oldHtml = '';
+    var newHtml = '';
+
+    for (var i = 0; i < maxLen; i++) {
+      var oLine = i < oldLines.length ? oldLines[i] : '';
+      var nLine = i < newLines.length ? newLines[i] : '';
+      var lineNum = String(i + 1).padStart(3, ' ');
+
+      if (oLine === nLine) {
+        // Context (unchanged)
+        oldHtml += '<span class="diff-line-num">' + lineNum + '</span><span class="diff-context">' + escapeHtml(oLine) + '</span>\n';
+        newHtml += '<span class="diff-line-num">' + lineNum + '</span><span class="diff-context">' + escapeHtml(nLine) + '</span>\n';
+      } else {
+        // Changed
+        if (oLine) {
+          oldHtml += '<span class="diff-line-num">' + lineNum + '</span><span class="diff-removed">' + escapeHtml(oLine) + '</span>\n';
+        } else {
+          oldHtml += '<span class="diff-line-num">' + lineNum + '</span>\n';
+        }
+        if (nLine) {
+          newHtml += '<span class="diff-line-num">' + lineNum + '</span><span class="diff-added">' + escapeHtml(nLine) + '</span>\n';
+        } else {
+          newHtml += '<span class="diff-line-num">' + lineNum + '</span>\n';
+        }
+      }
+    }
+
+    oldPre.innerHTML = oldHtml || '<span style="color:var(--text-muted);">Empty</span>';
+    newPre.innerHTML = newHtml || '<span style="color:var(--text-muted);">Empty</span>';
+  }
+
+  /**
+   * Render the provenance chain table and verify hash integrity.
+   *
+   * @param {Array} chain - Array of provenance event objects
+   */
+  function renderProvenance(chain) {
+    var tbody = document.getElementById('ch-provenance-tbody');
+    var statusEl = document.getElementById('ch-chain-status');
+    if (!tbody) return;
+
+    if (!chain || chain.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">No provenance data available.</td></tr>';
+      statusEl.textContent = 'No data';
+      statusEl.className = 'badge badge-gray';
+      return;
+    }
+
+    // Check hash chain integrity
+    var chainValid = true;
+    for (var i = 1; i < chain.length; i++) {
+      if (chain[i].prev_hash && chain[i].prev_hash !== chain[i - 1].hash) {
+        chainValid = false;
+        break;
+      }
+    }
+
+    statusEl.textContent = chainValid ? 'Verified' : 'Broken';
+    statusEl.className = chainValid ? 'badge badge-green' : 'badge badge-red';
+
+    var html = '';
+    chain.forEach(function(evt) {
+      var hashDisplay = evt.hash ? evt.hash.substring(0, 16) + '...' : '—';
+      html += '<tr>'
+        + '<td><span class="badge badge-blue" style="font-size:10px;">' + escapeHtml(evt.event_type || '—') + '</span></td>'
+        + '<td>' + escapeHtml(evt.actor || '—') + '</td>'
+        + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(evt.description || '—') + '</td>'
+        + '<td style="font-size:12px;color:var(--text-secondary);">' + formatTime(evt.timestamp) + '</td>'
+        + '<td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);" title="' + escapeHtml(evt.hash || '') + '">' + escapeHtml(hashDisplay) + '</td>'
+        + '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  /**
+   * Show the rollback confirmation modal.
+   */
+  function confirmRollback() {
+    if (!chState.selectedVersion) return;
+    document.getElementById('ch-rollback-version-num').textContent = 'v' + chState.selectedVersion;
+    showModal('ch-rollback-modal');
+  }
+
+  /**
+   * Execute the rollback to the selected version via IPC.
+   */
+  async function executeRollback() {
+    hideModal('ch-rollback-modal');
+
+    var resp = await gossamerInvoke('rollback_config', {
+      server_id: gsaState.selectedServerId,
+      version: chState.selectedVersion
+    });
+
+    if (!resp.ok) {
+      alert('Rollback failed: ' + (resp.error || 'Unknown error'));
+      return;
+    }
+
+    // Refresh history to show the new state
+    await refreshConfigHistory();
+  }
+
+  /**
+   * Rollback to a specific version (called from external code if needed).
+   *
+   * @param {string} serverId - The server ID
+   * @param {number} version - The version to roll back to
+   */
+  async function rollbackToVersion(serverId, version) {
+    chState.selectedVersion = version;
+    await executeRollback();
+  }
+
+  // Listen for server selection changes
+  document.addEventListener('gsa-server-selected', function() {
+    if (gsaState.activePanel === 'config-history') {
+      refreshConfigHistory();
+    }
+  });
+</script>

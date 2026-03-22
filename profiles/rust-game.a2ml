@@ -1,0 +1,123 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Rust (the game) profile
+# NOTE: This is the survival game by Facepunch Studios, NOT the Rust
+# programming language.
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="rust-game", name="Rust", engine="Unity"):
+
+  @ports:
+    @port(name="game", number=28015, protocol="UDP"):
+      Primary game traffic port
+    @end
+    @port(name="rcon", number=28016, protocol="TCP"):
+      RCON remote administration port (WebSocket-based)
+    @end
+    @port(name="query", number=28017, protocol="UDP"):
+      Steam query port for server browser listing
+    @end
+  @end
+
+  @protocol(type="steam-query", variant="A2S"):
+    Valve A2S (A2S_INFO, A2S_PLAYER, A2S_RULES) over UDP.
+    RCON uses a WebSocket-based variant rather than standard Source RCON.
+  @end
+
+  @fingerprint:
+    @steam-appid(server=258550, client=252490) @end
+    @executable(name="RustDedicated") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="key-value", path="/config/server.cfg"):
+    # Key-value configuration executed as console commands at startup.
+    # Each line is a convar assignment: key "value"
+
+    @field(key="server.hostname", type="string", label="Server Hostname"):
+      Display name shown in the server browser.
+      @default("My Rust Server") @end
+    @end
+
+    @field(key="server.description", type="string", label="Server Description"):
+      Description text shown in the server info panel.
+      @default("") @end
+    @end
+
+    @field(key="server.maxplayers", type="int", label="Max Players"):
+      Maximum number of concurrent players.
+      @constraint(min=1, max=500) @end
+      @default(50) @end
+    @end
+
+    @field(key="server.worldsize", type="int", label="World Size"):
+      Procedurally generated map size in metres.
+      @constraint(min=1000, max=6000) @end
+      @default(3000) @end
+    @end
+
+    @field(key="server.seed", type="int", label="World Seed"):
+      Seed for procedural map generation. Changing this regenerates
+      the entire map.
+      @default(12345) @end
+    @end
+
+    @field(key="server.saveinterval", type="int", label="Save Interval (seconds)"):
+      How often the server auto-saves the world in seconds.
+      @constraint(min=60, max=3600) @end
+      @default(300) @end
+    @end
+
+    @field(key="server.pve", type="bool", label="PvE Mode"):
+      Disable player-versus-player damage.
+      @default(false) @end
+    @end
+
+    @field(key="rcon.password", type="secret", label="RCON Password"):
+      Password for WebSocket RCON administration. Required for
+      remote management.
+    @end
+
+    @field(key="server.radiation", type="bool", label="Radiation"):
+      Enable radiation zones on the map (monuments and launch site).
+      @default(true) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start rust-game
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 60 rust-game
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 60 rust-game
+    @end
+    @action(id="update", label="Update Server"):
+      podman exec rust-game steamcmd +force_install_dir /opt/rust +login anonymous +app_update 258550 validate +quit
+    @end
+    @action(id="wipe", label="Wipe Map"):
+      podman exec rust-game /scripts/wipe.sh
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 rust-game
+    @end
+  @end
+
+  @container(runtime="podman", name="rust-game"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/rust-game/server", container="/opt/rust/server/rustds") @end
+      @volume(host="/config", container="/config", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Rust (Facepunch Studios) dedicated server profile for Game Server Admin.
+    Supports Steam query, key-value console-variable configuration,
+    WebSocket RCON, and Podman container lifecycle management.
+  @end
+
+@end

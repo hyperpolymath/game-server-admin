@@ -1,0 +1,19 @@
+{
+  "id": "gsa-live-logs",
+  "title": "Live Logs",
+  "description": "Real-time game server log streaming with ANSI color and search",
+  "version": "0.1.0",
+  "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
+  "license": "PMPL-1.0-or-later",
+  "runtime": "gossamer",
+  "dimensions": { "width": 1400, "height": 900, "resizable": true },
+  "entry": "../../src/gui/panels/live-logs/panel.html",
+  "data_sources": [
+    { "id": "log-stream", "uri": "gossamer://gsa/logs", "refresh_interval_ms": 2000 }
+  ],
+  "widgets": [
+    { "type": "log-viewer", "data_source": "log-stream", "max_lines": 1000,
+      "features": ["ansi-color", "auto-scroll", "search", "severity-filter", "download"] }
+  ],
+  "tags": ["logs", "streaming", "real-time", "terminal", "ssh"]
+}

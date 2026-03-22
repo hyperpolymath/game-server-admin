@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Barotrauma game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="barotrauma", name="Barotrauma", engine="Barotrauma"):
+
+  @ports:
+    @port(name="query", number=27016, protocol="UDP"):
+      Steam server-list query port (A2S)
+    @end
+    @port(name="game", number=27015, protocol="UDP"):
+      Primary game traffic port
+    @end
+  @end
+
+  @protocol(type="steam-query", variant="A2S"):
+    Valve A2S (A2S_INFO, A2S_PLAYER, A2S_RULES) over UDP.
+    Used by Steam server browser and third-party query tools.
+  @end
+
+  @fingerprint:
+    @steam-appid(server=1026340, client=602960) @end
+    @executable(name="DedicatedServer") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="xml", path="/config/serversettings.xml"):
+    # XML configuration parsed by the Barotrauma dedicated server.
+
+    @field(key="name", type="string", label="Server Name"):
+      Display name shown in the server browser.
+      @default("My Barotrauma Server") @end
+    @end
+
+    @field(key="port", type="int", label="Game Port"):
+      Network port for game traffic.
+      @constraint(min=1024, max=65535) @end
+      @default(27015) @end
+    @end
+
+    @field(key="maxplayers", type="int", label="Max Players"):
+      Maximum number of concurrent players.
+      @constraint(min=1, max=128) @end
+      @default(16) @end
+    @end
+
+    @field(key="public", type="bool", label="Public Server"):
+      Whether the server is listed in the public server browser.
+      @default(true) @end
+    @end
+
+    @field(key="password", type="secret", label="Server Password"):
+      Password required to join. Leave empty for no password.
+    @end
+
+    @field(key="language", type="string", label="Language"):
+      Server language locale string.
+      @default("English") @end
+    @end
+
+    @field(key="playstyle", type="enum", label="Play Style"):
+      Determines the server's gameplay focus.
+      @options("Casual", "Mission", "Sandbox") @end
+      @default("Casual") @end
+    @end
+
+    @field(key="AllowRespawn", type="bool", label="Allow Respawn"):
+      Whether dead players can respawn during a round.
+      @default(true) @end
+    @end
+
+    @field(key="Traitormode", type="enum", label="Traitor Mode"):
+      Controls whether traitor events can occur during rounds.
+      @options("No", "Yes", "Maybe") @end
+      @default("No") @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start barotrauma
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 barotrauma
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 barotrauma
+    @end
+    @action(id="update", label="Update Server"):
+      podman exec barotrauma steamcmd +force_install_dir /opt/barotrauma +login anonymous +app_update 1026340 validate +quit
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 barotrauma
+    @end
+  @end
+
+  @container(runtime="podman", name="barotrauma"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/barotrauma/saves", container="/opt/barotrauma/Daedalic Entertainment GmbH/Barotrauma/Multiplayer") @end
+      @volume(host="/config", container="/config", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Barotrauma dedicated server profile for Game Server Admin.
+    Supports Steam query, XML-based configuration, traitor modes,
+    and Podman container lifecycle management.
+  @end
+
+@end

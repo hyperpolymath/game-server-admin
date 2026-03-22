@@ -1,0 +1,21 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- server-browser.eph — Server Browser panel module for Game Server Admin
+--
+-- This module documents the Server Browser panel's IPC contract.
+-- The panel HTML (panel.html) calls Gossamer IPC commands directly;
+-- all handler logic lives in GSA.Core.Bridge. This module exists as
+-- the Ephapax-side declaration for panel-level concerns such as
+-- type annotations for the data flowing between the GUI and Bridge.
+--
+-- IPC commands used by this panel:
+--   probe_server   — Probe a host:port to detect game type and extract config
+--   list_servers   — List all managed servers from VeriSimDB
+--   add_server     — Add a newly probed server to VeriSimDB management
+--   remove_server  — Remove a server from management
+--   list_profiles  — List available game profile definitions
+
+module GSA.GUI.Panels.ServerBrowser
+
+import GSA.Core.Bridge

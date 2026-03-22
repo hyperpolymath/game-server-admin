@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+= Game Server Admin — Show Me The Receipts
+:toc:
+:icons: font
+
+The README makes claims. This file backs them up.
+
+== Claim: "Probes any game server"
+
+**Where the code is:** `src/interface/ffi/src/probe.zig`
+
+**How it works:** Table-driven port scanning with protocol-specific handshakes. For each open port, the probe engine tries Steam A2S_INFO query, Minecraft server list ping, RCON handshake, HTTP probe, and raw TCP banner grab — in that order. The first successful match is looked up against the game profile registry (`profiles/*.a2ml`) by fingerprint pattern.
+
+**Caveat:** "Any" means any game with a known profile. Unknown games get a best-effort fingerprint but no structured config extraction. Adding a new game requires writing a `.a2ml` profile — there is no fully automatic config schema discovery.
+
+== Claim: "Extracts config into A2ML"
+
+**Where the code is:** `src/interface/ffi/src/config_extract.zig` and `src/interface/ffi/src/a2ml_emit.zig`
+
+**How it works:** Config files are fetched via SSH (`cat`), container exec, or RCON commands. The raw text is parsed according to the detected format (XML, INI, JSON, ENV, YAML, TOML, Lua). The parsed fields are then serialised into A2ML `@server/@config/@field` blocks using the game profile's field definitions as metadata overlay.
+
+**Caveat:** Format detection is heuristic — ambiguous files may be misclassified. Lua table parsing handles simple key-value patterns but not deeply nested tables or computed values.
+
+== Claim: "Rich GUI via Gossamer"
+
+**Where the code is:** `src/gui/` (16 files — host.html + 7 panel pairs)
+
+**How it works:** Gossamer creates a native webview window with Ephapax linear types enforcing resource lifecycle. The IPC bridge exposes `window.gossamer.*` functions that call through to the Zig FFI layer. Each of the 7 panels is a self-contained HTML page with JavaScript calling the bridge.
+
+**Caveat:** Gossamer is currently Linux-only (GTK3 + WebKitGTK). macOS and Windows support is Phase 2. The GUI requires a running VeriSimDB instance to display data.
+
+== Claim: "VeriSimDB underpinning"
+
+**Where the code is:** `src/interface/ffi/src/verisimdb_client.zig`, `container/verisimdb/`
+
+**How it works:** A dedicated VeriSimDB instance (port 8090) stores each managed server as an octad with all 8 modalities populated. Config changes are recorded in the temporal modality with provenance tracking. Drift detection runs every 15 seconds, comparing stored vs live config to flag divergence.
+
+**Caveat:** Per the VeriSimDB production readiness assessment, normaliser regeneration is partially stubbed (5/6 strategies return `[regenerated]`), and federation is unimplemented. These limitations do not affect single-instance GSA usage.
+
+== Claim: "Panels in the Clade system"
+
+**Where the code is:** `panel-clades/` (9 clade directories + game profile children)
+
+**How it works:** Each panel declares a clade A2ML file with `inherits-from` pointing to the parent. CladeBrowserEngine resolves traits via recursive OR-merge up the inheritance chain. New game profiles in `profiles/*.a2ml` automatically generate child clades under `gsa-game`, extending the cladogram without manual registration.
+
+**Caveat:** The `just generate-clades` recipe must be run after adding new profiles. The cladogram does not auto-extend at runtime — it's a build-time operation reflected in static A2ML files.
+
+== Technology Stack
+
+[cols="1,1,2"]
+|===
+| Layer | Language | Purpose
+
+| ABI | Idris2 | Formal type specs with dependent type proofs
+| FFI | Zig | C-compatible implementation (probe, parse, emit)
+| Core | Ephapax | Linear type enforcement for Gossamer lifecycle
+| GUI | HTML/JS | Panel frontends in Gossamer webview
+| Data | VeriSimDB (Rust) | 8-modality database with drift detection
+| Orchestration | VeriSimDB (Elixir) | OTP supervision (in dedicated instance)
+|===

@@ -1,0 +1,202 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- Capabilities.eph — Linear capability tokens for Game Server Admin
+--
+-- Capabilities gate dangerous operations behind linear tokens:
+-- you must hold the token to perform the operation, and the token
+-- is consumed (or borrowed and returned) by each use. This prevents
+-- capability escalation and ensures permissions are explicit.
+--
+-- Gossamer's capability system is used underneath:
+--   grant(kind) -> linear Cap token
+--   check(token) -> borrowed result
+--   revoke(token) -> consumes token
+
+module GSA.Core.Capabilities
+
+import GSA.Core.Types
+
+-- =============================================================================
+-- Capability resource kinds
+-- =============================================================================
+
+-- GSA requires these Gossamer capabilities:
+--   NETWORK   (0x01) — probe servers, VeriSimDB REST, SSH connections
+--   SHELL     (0x02) — execute server actions, container commands
+--   SPAWN     (0x03) — background probe workers, log streaming
+--   SECRETS   (0x04) — access server passwords, SSH keys, RCON passwords
+
+type CapKind =
+  | CapNetwork
+  | CapShell
+  | CapSpawn
+  | CapSecrets
+
+-- Map CapKind to Gossamer's integer resource codes
+fn capKindToInt(kind: CapKind) -> I32 =
+  match kind {
+    CapNetwork -> 1,    -- Gossamer RESOURCE_NETWORK
+    CapShell   -> 2,    -- Gossamer RESOURCE_SHELL
+    CapSpawn   -> 3,    -- Gossamer RESOURCE_PROCESS_SPAWN (custom extension)
+    CapSecrets -> 4     -- Gossamer RESOURCE_SECRET_MANAGEMENT (custom extension)
+  }
+
+-- =============================================================================
+-- Linear capability token
+-- =============================================================================
+
+-- Cap: a linear token proving permission to perform a class of operations.
+-- Once granted, it MUST eventually be revoked — the compiler enforces this.
+linear type Cap = Cap {
+  token_id: I64,
+  kind:     CapKind
+}
+
+-- =============================================================================
+-- Capability lifecycle — grant, check, use, revoke
+-- =============================================================================
+
+-- Grant a capability token. Returns a linear Cap that must be revoked.
+-- Calls Gossamer's gossamer_cap_grant(resourceKind) underneath.
+fn grant(kind: CapKind) -> Cap =
+  region cap_region:
+    let! token_id = __ffi("gossamer_cap_grant", capKindToInt(kind)) in
+    Cap { token_id = token_id, kind = kind }
+
+-- Check if a capability is still valid (has not been revoked).
+-- BORROWS the Cap — returns it alongside the check result.
+fn check(cap: &Cap) -> (Bool, &Cap) =
+  let result = __ffi("gossamer_cap_check", cap.token_id) in
+  (result == 0, cap)
+
+-- Revoke a capability token. CONSUMES the Cap — it cannot be used after this.
+fn revoke(cap: Cap) -> () =
+  __ffi("gossamer_cap_revoke", cap.token_id)
+
+-- Get the kind of a capability token. BORROWS the Cap.
+fn kind(cap: &Cap) -> (CapKind, &Cap) =
+  (cap.kind, cap)
+
+-- =============================================================================
+-- Capability-gated operations
+-- =============================================================================
+
+-- Execute a function that requires Network capability.
+-- The capability is borrowed for the duration of the call.
+fn withNetwork(cap: Cap, f: fn(&Cap) -> (a, &Cap)) -> (a, Cap) =
+  match cap.kind {
+    CapNetwork -> {
+      let (result, cap_ref) = f(&cap) in
+      (result, cap)
+    },
+    _ -> __ffi("panic", "withNetwork requires CapNetwork token")
+  }
+
+-- Execute a function that requires Shell capability.
+fn withShell(cap: Cap, f: fn(&Cap) -> (a, &Cap)) -> (a, Cap) =
+  match cap.kind {
+    CapShell -> {
+      let (result, cap_ref) = f(&cap) in
+      (result, cap)
+    },
+    _ -> __ffi("panic", "withShell requires CapShell token")
+  }
+
+-- Execute a function that requires Spawn capability.
+fn withSpawn(cap: Cap, f: fn(&Cap) -> (a, &Cap)) -> (a, Cap) =
+  match cap.kind {
+    CapSpawn -> {
+      let (result, cap_ref) = f(&cap) in
+      (result, cap)
+    },
+    _ -> __ffi("panic", "withSpawn requires CapSpawn token")
+  }
+
+-- Execute a function that requires Secrets capability.
+fn withSecrets(cap: Cap, f: fn(&Cap) -> (a, &Cap)) -> (a, Cap) =
+  match cap.kind {
+    CapSecrets -> {
+      let (result, cap_ref) = f(&cap) in
+      (result, cap)
+    },
+    _ -> __ffi("panic", "withSecrets requires CapSecrets token")
+  }
+
+-- =============================================================================
+-- Multi-capability operations
+-- =============================================================================
+
+-- Some operations require multiple capabilities simultaneously.
+-- For example, applying a config change requires both Network (to connect
+-- to the server) and Shell (to restart the container).
+
+-- Borrow two capabilities for a single operation.
+fn withNetworkAndShell(
+  net_cap: Cap,
+  shell_cap: Cap,
+  f: fn(&Cap, &Cap) -> (a, &Cap, &Cap)
+) -> (a, Cap, Cap) =
+  match (net_cap.kind, shell_cap.kind) {
+    (CapNetwork, CapShell) -> {
+      let (result, net_ref, shell_ref) = f(&net_cap, &shell_cap) in
+      (result, net_cap, shell_cap)
+    },
+    _ -> __ffi("panic", "withNetworkAndShell requires CapNetwork + CapShell tokens")
+  }
+
+-- Borrow Network + Secrets for operations involving passwords/keys.
+fn withNetworkAndSecrets(
+  net_cap: Cap,
+  secret_cap: Cap,
+  f: fn(&Cap, &Cap) -> (a, &Cap, &Cap)
+) -> (a, Cap, Cap) =
+  match (net_cap.kind, secret_cap.kind) {
+    (CapNetwork, CapSecrets) -> {
+      let (result, net_ref, secret_ref) = f(&net_cap, &secret_cap) in
+      (result, net_cap, secret_cap)
+    },
+    _ -> __ffi("panic", "withNetworkAndSecrets requires CapNetwork + CapSecrets tokens")
+  }
+
+-- =============================================================================
+-- GSA capability set — all capabilities needed for the application
+-- =============================================================================
+
+-- The full set of capabilities required by GSA, as a linear record.
+-- All four must be granted at startup and revoked at shutdown.
+linear type GsaCapSet = GsaCapSet {
+  network: Cap,
+  shell:   Cap,
+  spawn:   Cap,
+  secrets: Cap
+}
+
+-- Grant all GSA capabilities at once.
+fn grantAll() -> GsaCapSet =
+  region gsa_caps:
+    let! net     = grant(CapNetwork)  in
+    let! shell   = grant(CapShell)    in
+    let! spawn   = grant(CapSpawn)    in
+    let! secrets = grant(CapSecrets)  in
+    GsaCapSet {
+      network = net,
+      shell   = shell,
+      spawn   = spawn,
+      secrets = secrets
+    }
+
+-- Revoke all GSA capabilities at once. CONSUMES the entire set.
+fn revokeAll(caps: GsaCapSet) -> () =
+  revoke(caps.network);
+  revoke(caps.shell);
+  revoke(caps.spawn);
+  revoke(caps.secrets)
+
+-- Check all capabilities are still valid.
+fn checkAll(caps: &GsaCapSet) -> (Bool, &GsaCapSet) =
+  let (net_ok, _)     = check(&caps.network)  in
+  let (shell_ok, _)   = check(&caps.shell)    in
+  let (spawn_ok, _)   = check(&caps.spawn)    in
+  let (secrets_ok, _) = check(&caps.secrets)   in
+  (net_ok && shell_ok && spawn_ok && secrets_ok, caps)

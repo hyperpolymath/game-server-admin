@@ -1,0 +1,194 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- Shell.eph — Gossamer webview lifecycle for Game Server Admin
+--
+-- Creates the main GSA window, loads the panel host HTML, and manages
+-- the webview event loop. Uses Gossamer's linear webview handles to
+-- guarantee the window is properly destroyed on exit.
+
+module GSA.Core.Shell
+
+import GSA.Core.Types
+import GSA.Core.Capabilities
+import GSA.Core.Bridge
+
+-- =============================================================================
+-- Constants
+-- =============================================================================
+
+let GSA_TITLE     = "Game Server Admin — Gossamer"
+let GSA_WIDTH     = 1400
+let GSA_HEIGHT    = 900
+let GSA_MIN_WIDTH = 1000
+let GSA_MIN_HEIGHT = 700
+
+-- VeriSimDB defaults
+let VERISIMDB_DEFAULT_URL  = "http://[::1]:8090"
+let PROFILES_DEFAULT_DIR   = "./profiles"
+
+-- =============================================================================
+-- Application state
+-- =============================================================================
+
+-- GsaApp: the top-level application state, holding all linear resources.
+-- Every field that is linear MUST be consumed in shutdown.
+linear type GsaApp = GsaApp {
+  webview:    I64,               -- Gossamer webview handle (linear)
+  channel:    I64,               -- Gossamer IPC channel handle (linear)
+  caps:       GsaCapSet,         -- Capability token set (linear)
+  verisimdb_url: String,
+  profiles_dir:  String
+}
+
+-- =============================================================================
+-- Lifecycle functions
+-- =============================================================================
+
+-- Create the GSA application. Returns a linear GsaApp that MUST be run or destroyed.
+--
+-- 1. Grant all capabilities (Network, Shell, Spawn, Secrets)
+-- 2. Initialise the Zig FFI layer (load profiles, connect VeriSimDB)
+-- 3. Create the Gossamer webview window
+-- 4. Open an IPC channel and bind all command handlers
+-- 5. Load the panel host HTML
+fn create(verisimdb_url: String, profiles_dir: String) -> GsaApp =
+  region app:
+    -- Step 1: Grant capabilities
+    let! caps = grantAll() in
+
+    -- Step 2: Initialise Zig FFI
+    let init_result = __ffi("gossamer_gsa_init", verisimdb_url, profiles_dir) in
+    if init_result != 0 then
+      __ffi("panic", "GSA FFI initialisation failed")
+    else ();
+
+    -- Step 3: Create webview
+    let! webview = __ffi("gossamer_create", GSA_TITLE, GSA_WIDTH, GSA_HEIGHT) in
+    let! webview = __ffi("gossamer_resize", webview, GSA_MIN_WIDTH, GSA_MIN_HEIGHT) in
+
+    -- Step 4: Open IPC channel and bind handlers
+    let! channel = __ffi("gossamer_channel_open", webview) in
+    let! channel = bindAllHandlers(channel, &caps) in
+
+    -- Step 5: Load panel host HTML
+    let host_html = loadHostHTML() in
+    let! webview = __ffi("gossamer_load_html", webview, host_html) in
+
+    GsaApp {
+      webview     = webview,
+      channel     = channel,
+      caps        = caps,
+      verisimdb_url = verisimdb_url,
+      profiles_dir  = profiles_dir
+    }
+
+-- Run the GSA application. CONSUMES the GsaApp — this blocks until the
+-- window is closed, then cleans up all resources.
+fn run(app: GsaApp) -> I32 =
+  -- Run the webview event loop (blocks until window close)
+  __ffi("gossamer_run", app.webview);
+
+  -- Close the IPC channel (CONSUMES channel)
+  __ffi("gossamer_channel_close", app.channel);
+
+  -- Shutdown the Zig FFI layer
+  __ffi("gossamer_gsa_shutdown");
+
+  -- Revoke all capabilities (CONSUMES caps)
+  revokeAll(app.caps);
+
+  -- Return success
+  0
+
+-- Destroy the GSA application without running. CONSUMES the GsaApp.
+-- Used for error paths where we need to clean up without entering the event loop.
+fn destroy(app: GsaApp) -> I32 =
+  __ffi("gossamer_destroy", app.webview);
+  __ffi("gossamer_channel_close", app.channel);
+  __ffi("gossamer_gsa_shutdown");
+  revokeAll(app.caps);
+  1
+
+-- =============================================================================
+-- IPC handler binding
+-- =============================================================================
+
+-- Bind all IPC command handlers to the channel.
+-- Each handler is defined in Bridge.eph.
+-- BORROWS the channel — returns it after binding.
+fn bindAllHandlers(channel: I64, caps: &GsaCapSet) -> I64 =
+  -- Server Browser panel handlers
+  let! channel = __ffi("gossamer_channel_bind", channel, "list_servers",
+    fn(payload: String) -> String { Bridge.handleListServers(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "probe_server",
+    fn(payload: String) -> String { Bridge.handleProbeServer(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "add_server",
+    fn(payload: String) -> String { Bridge.handleAddServer(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "remove_server",
+    fn(payload: String) -> String { Bridge.handleRemoveServer(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "list_profiles",
+    fn(payload: String) -> String { Bridge.handleListProfiles(payload) }) in
+
+  -- Config Editor panel handlers
+  let! channel = __ffi("gossamer_channel_bind", channel, "get_config",
+    fn(payload: String) -> String { Bridge.handleGetConfig(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "set_config",
+    fn(payload: String) -> String { Bridge.handleSetConfig(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "revert_config",
+    fn(payload: String) -> String { Bridge.handleRevertConfig(payload, caps) }) in
+
+  -- Server Actions panel handlers
+  let! channel = __ffi("gossamer_channel_bind", channel, "server_action",
+    fn(payload: String) -> String { Bridge.handleServerAction(payload, caps) }) in
+
+  -- Live Logs panel handler
+  let! channel = __ffi("gossamer_channel_bind", channel, "get_logs",
+    fn(payload: String) -> String { Bridge.handleGetLogs(payload, caps) }) in
+
+  -- Health Dashboard panel handlers
+  let! channel = __ffi("gossamer_channel_bind", channel, "get_health",
+    fn(payload: String) -> String { Bridge.handleGetHealth(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "get_drift",
+    fn(payload: String) -> String { Bridge.handleGetDrift(payload, caps) }) in
+
+  -- Config History panel handlers
+  let! channel = __ffi("gossamer_channel_bind", channel, "get_history",
+    fn(payload: String) -> String { Bridge.handleGetHistory(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "rollback_config",
+    fn(payload: String) -> String { Bridge.handleRollbackConfig(payload, caps) }) in
+
+  -- Cross-Server Search panel handler
+  let! channel = __ffi("gossamer_channel_bind", channel, "search",
+    fn(payload: String) -> String { Bridge.handleSearch(payload, caps) }) in
+
+  -- Profile management
+  let! channel = __ffi("gossamer_channel_bind", channel, "add_profile",
+    fn(payload: String) -> String { Bridge.handleAddProfile(payload) }) in
+
+  channel
+
+-- =============================================================================
+-- Host HTML loader
+-- =============================================================================
+
+-- Load the panel host HTML from the embedded resource or file path.
+-- The host HTML provides the sidebar navigation, panel content area,
+-- and status bar.
+fn loadHostHTML() -> String =
+  __ffi("read_file", "src/gui/host.html")
+
+-- =============================================================================
+-- Entry point
+-- =============================================================================
+
+-- Main entry point for the GSA application.
+-- Parses command-line arguments for VeriSimDB URL and profiles directory,
+-- creates the application, and runs it.
+fn main() -> I32 =
+  region main_region:
+    let verisimdb_url = __ffi("env_or", "GSA_VERISIMDB_URL", VERISIMDB_DEFAULT_URL) in
+    let profiles_dir  = __ffi("env_or", "GSA_PROFILES_DIR", PROFILES_DEFAULT_DIR) in
+
+    let! app = create(verisimdb_url, profiles_dir) in
+    run(app)

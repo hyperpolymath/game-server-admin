@@ -1,0 +1,35 @@
+= game-server-admin - Citation Guide
+:toc:
+
+== BibTeX
+
+[source,bibtex]
+----
+@software{game-server-admin_2026,
+  author = {Jewell, Jonathan},
+  title = {game-server-admin},
+  year = {2026},
+  url = {https://github.com/hyperpolymath/game-server-admin},
+  license = {PMPL-1.0-or-later}
+}
+----
+
+== Harvard Style
+
+Jewell, JDAJ (2026) _game-server-admin_ [Computer software]. Available at: https://github.com/hyperpolymath/game-server-admin
+
+== OSCOLA
+
+Jonathan D.A. Jewell, 'game-server-admin' (2026) <https://github.com/hyperpolymath/game-server-admin>
+
+== MLA
+
+Jewell, Jonathan "game-server-admin." 2026, github.com/hyperpolymath/game-server-admin.
+
+== APA 7
+
+Jewell, JDAJ (2026). _game-server-admin_ [Computer software]. GitHub. https://github.com/hyperpolymath/game-server-admin
+
+== See Also
+
+* link:CITATION.cff[CITATION.cff]

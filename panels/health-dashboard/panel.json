@@ -1,0 +1,33 @@
+{
+  "id": "gsa-health-dashboard",
+  "title": "Health Dashboard",
+  "description": "Server health monitoring and VeriSimDB config drift detection",
+  "version": "0.1.0",
+  "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
+  "license": "PMPL-1.0-or-later",
+  "runtime": "gossamer",
+  "dimensions": { "width": 1400, "height": 900, "resizable": true },
+  "entry": "../../src/gui/panels/health-dashboard/panel.html",
+  "data_sources": [
+    { "id": "health-data", "uri": "gossamer://gsa/health", "refresh_interval_ms": 15000 },
+    { "id": "drift-data", "uri": "gossamer://gsa/health", "refresh_interval_ms": 15000 }
+  ],
+  "widgets": [
+    { "type": "summary-bar", "data_source": "health-data", "fields": [
+      { "field": "total_servers", "label": "Total", "style": "neutral" },
+      { "field": "healthy_count", "label": "Healthy", "style": "success" },
+      { "field": "warning_count", "label": "Warning", "style": "warning" },
+      { "field": "critical_count", "label": "Critical", "style": "danger" }
+    ]},
+    { "type": "data-table", "data_source": "drift-data", "fields": [
+      { "field": "server_id", "label": "Server", "width": "150px" },
+      { "field": "game_name", "label": "Game", "width": "100px" },
+      { "field": "status", "label": "Status", "width": "80px" },
+      { "field": "config_drift", "label": "Config Drift", "width": "120px", "render": "progress-bar" },
+      { "field": "overall_score", "label": "Score", "width": "80px" },
+      { "field": "last_checked", "label": "Last Check", "width": "150px" }
+    ]},
+    { "type": "gauge-cluster", "data_source": "drift-data", "gauges": 8 }
+  ],
+  "tags": ["health", "drift", "monitoring", "verisimdb", "dashboard"]
+}

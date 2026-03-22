@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — IDApTIK game profile
+# IDApTIK is a custom asymmetric co-op game (Jessica + Q).
+# This is NOT a standard game server — it is a hyperpolymath original.
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="idaptik", name="IDApTIK", engine="Custom"):
+
+  @ports:
+    @port(name="game", number=9100, protocol="TCP"):
+      Primary game server port for client connections
+    @end
+    @port(name="ws", number=9101, protocol="TCP"):
+      WebSocket port for real-time game state synchronisation
+    @end
+  @end
+
+  @protocol(type="websocket", variant="IDApTIK"):
+    IDApTIK uses WebSocket (RFC 6455) for real-time bidirectional
+    communication between clients and the game server. The game port
+    handles initial authentication and session setup; the WebSocket
+    port carries live game state updates for asymmetric co-op play.
+  @end
+
+  @fingerprint:
+    @executable(name="idaptik-server") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="a2ml", path="/config/idaptik/server.a2ml"):
+    # A2ML configuration for the IDApTIK game server.
+    # Uses the same A2ML format as the rest of the hyperpolymath ecosystem.
+
+    @field(key="server_name", type="string", label="Server Name"):
+      Display name for the IDApTIK game instance.
+      @default("IDApTIK Server") @end
+    @end
+
+    @field(key="max_players", type="int", label="Max Players"):
+      Maximum number of concurrent players. IDApTIK is designed for
+      small groups (2-4 players) in asymmetric co-op.
+      @constraint(min=2, max=4) @end
+      @default(2) @end
+    @end
+
+    @field(key="difficulty", type="enum", label="Difficulty"):
+      Game difficulty level. Tutorial provides guided gameplay;
+      nightmare is for experienced players only.
+      @options("tutorial", "normal", "hard", "nightmare") @end
+      @default("normal") @end
+    @end
+
+    @field(key="level_pack", type="string", label="Level Pack"):
+      Name of the level pack to load. Corresponds to a directory
+      in the server's level data folder.
+      @default("core") @end
+    @end
+
+    @field(key="enable_spectators", type="bool", label="Enable Spectators"):
+      Allow additional connections in spectator mode (view-only).
+      @default(false) @end
+    @end
+
+    @field(key="enable_training_grounds", type="bool", label="Enable Training Grounds"):
+      Make training ground levels available for practice sessions
+      before entering the main campaign.
+      @default(true) @end
+    @end
+
+    @field(key="asymmetric_mode", type="bool", label="Asymmetric Mode"):
+      Enable asymmetric co-op where Jessica (platformer) and Q
+      (CCTV/blueprints) never see the same view. When disabled,
+      both players share a symmetric perspective.
+      @default(true) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start idaptik
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 15 idaptik
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 15 idaptik
+    @end
+    @action(id="load-level", label="Load Level Pack"):
+      podman exec idaptik idaptik-cli load-level
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 idaptik
+    @end
+  @end
+
+  @container(runtime="podman", name="idaptik"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/idaptik/levels", container="/data/levels") @end
+      @volume(host="/data/idaptik/saves", container="/data/saves") @end
+      @volume(host="/config/idaptik", container="/config/idaptik", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    IDApTIK custom game server profile for Game Server Admin.
+    Asymmetric co-op game with WebSocket protocol, A2ML-native
+    configuration, and Podman container lifecycle management.
+  @end
+
+@end

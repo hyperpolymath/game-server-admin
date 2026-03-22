@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Garry's Mod game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="garrysmod", name="Garry's Mod", engine="Source"):
+
+  @ports:
+    @port(name="game", number=27015, protocol="UDP"):
+      Primary game traffic port
+    @end
+    @port(name="query", number=27015, protocol="UDP"):
+      Steam query port (shares game port number)
+    @end
+    @port(name="rcon", number=27015, protocol="TCP"):
+      RCON remote administration (shares game port number)
+    @end
+  @end
+
+  @protocol(type="steam-query", variant="A2S"):
+    Valve A2S (A2S_INFO, A2S_PLAYER, A2S_RULES) over UDP.
+    Standard Source engine query protocol.
+  @end
+
+  @fingerprint:
+    @steam-appid(server=4020, client=4000) @end
+    @executable(name="srcds_linux") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="lua", path="/config/garrysmod/cfg/server.cfg"):
+    # Source engine server.cfg (key-value console commands) and
+    # Lua autorun scripts for extended configuration.
+    # Secondary config: /config/garrysmod/lua/autorun/server/config.lua
+
+    @field(key="hostname", type="string", label="Server Hostname"):
+      Display name shown in the server browser.
+      @default("Garry's Mod Server") @end
+    @end
+
+    @field(key="sv_password", type="secret", label="Server Password"):
+      Password required to join. Leave empty for an open server.
+    @end
+
+    @field(key="maxplayers", type="int", label="Max Players"):
+      Maximum number of concurrent players. Set via command line,
+      but reflected here for reference.
+      @constraint(min=1, max=128) @end
+      @default(16) @end
+    @end
+
+    @field(key="gamemode", type="string", label="Gamemode"):
+      Active gamemode name (e.g. sandbox, terrortown, darkrp).
+      @default("sandbox") @end
+    @end
+
+    @field(key="sv_defaultgamemode", type="string", label="Default Gamemode"):
+      Fallback gamemode if the primary gamemode fails to load.
+      @default("sandbox") @end
+    @end
+
+    @field(key="sv_loadingurl", type="string", label="Loading Screen URL"):
+      URL displayed in the loading screen while players download content.
+      @default("") @end
+    @end
+
+    @field(key="sv_allowcslua", type="bool", label="Allow Client-Side Lua"):
+      Allow clients to run their own Lua scripts. Disable for
+      stricter anti-cheat environments.
+      @default(false) @end
+    @end
+
+    @field(key="sbox_maxprops", type="int", label="Max Props per Player"):
+      Maximum number of props a single player can spawn in sandbox mode.
+      @constraint(min=0, max=5000) @end
+      @default(256) @end
+    @end
+  @end
+
+  @config-secondary(format="lua", path="/config/garrysmod/lua/autorun/server/config.lua"):
+    # Lua autorun script for server-side configuration that cannot be
+    # expressed via console variables. Loaded automatically at startup.
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start garrysmod
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 garrysmod
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 garrysmod
+    @end
+    @action(id="update", label="Update Server"):
+      podman exec garrysmod steamcmd +force_install_dir /opt/garrysmod +login anonymous +app_update 4020 validate +quit
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 garrysmod
+    @end
+  @end
+
+  @container(runtime="podman", name="garrysmod"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/garrysmod/addons", container="/opt/garrysmod/garrysmod/addons") @end
+      @volume(host="/data/garrysmod/data", container="/opt/garrysmod/garrysmod/data") @end
+      @volume(host="/config/garrysmod", container="/config/garrysmod", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Garry's Mod dedicated server profile for Game Server Admin.
+    Supports Steam query, dual configuration (server.cfg + Lua autorun),
+    RCON administration, and Podman container lifecycle management.
+  @end
+
+@end

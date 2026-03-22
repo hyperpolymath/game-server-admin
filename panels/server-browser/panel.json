@@ -1,0 +1,29 @@
+{
+  "id": "gsa-server-browser",
+  "title": "Server Browser",
+  "description": "Discover, fingerprint, and manage game servers",
+  "version": "0.1.0",
+  "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
+  "license": "PMPL-1.0-or-later",
+  "runtime": "gossamer",
+  "dimensions": { "width": 1400, "height": 900, "resizable": true },
+  "entry": "../../src/gui/panels/server-browser/panel.html",
+  "data_sources": [
+    { "id": "server-list", "uri": "gossamer://gsa/servers", "refresh_interval_ms": 10000 },
+    { "id": "probe-result", "uri": "gossamer://gsa/probe", "refresh_interval_ms": 0 },
+    { "id": "profile-list", "uri": "gossamer://gsa/profiles", "refresh_interval_ms": 0 }
+  ],
+  "widgets": [
+    { "type": "search-bar", "data_source": "server-list", "placeholder": "Filter servers..." },
+    { "type": "sidebar-list", "data_source": "server-list", "fields": [
+      { "field": "game_name", "label": "Game", "width": "120px" },
+      { "field": "host", "label": "Host", "width": "150px" },
+      { "field": "status", "label": "Status", "width": "80px" }
+    ]},
+    { "type": "action-bar", "actions": [
+      { "id": "probe", "label": "Probe Server", "icon": "radar", "target": "gossamer://gsa/probe" },
+      { "id": "remove", "label": "Remove", "icon": "trash", "target": "gossamer://gsa/servers", "confirm": true }
+    ]}
+  ],
+  "tags": ["game-server", "probe", "fingerprint", "discovery", "admin"]
+}

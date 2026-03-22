@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Don't Starve Together game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="dst", name="Don't Starve Together", engine="Klei"):
+
+  @ports:
+    @port(name="query", number=27016, protocol="UDP"):
+      Steam server-list query port
+    @end
+    @port(name="game", number=10999, protocol="UDP"):
+      Primary game traffic port
+    @end
+    @port(name="steam", range="8766-8767", protocol="UDP"):
+      Steam communication ports for authentication and NAT traversal
+    @end
+  @end
+
+  @protocol(type="steam-query", variant="A2S"):
+    Valve Steam Query protocol for server browser integration.
+  @end
+
+  @fingerprint:
+    @steam-appid(server=343050, client=322330) @end
+    @executable(name="dontstarve_dedicated_server_nullrenderer_x64") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="ini", path="/config/dst/cluster.ini"):
+    # INI-format cluster configuration for Don't Starve Together.
+    # This is the top-level cluster config; individual shard configs
+    # (Master/Caves) are managed separately.
+
+    @field(key="cluster_name", type="string", label="Cluster Name"):
+      Display name shown in the server browser.
+      @default("My DST Server") @end
+    @end
+
+    @field(key="cluster_description", type="string", label="Cluster Description"):
+      Description text displayed alongside the server listing.
+      @default("") @end
+    @end
+
+    @field(key="cluster_password", type="secret", label="Cluster Password"):
+      Password required to join. Leave empty for an open server.
+    @end
+
+    @field(key="game_mode", type="enum", label="Game Mode"):
+      Core game mode controlling death and world persistence.
+      @options("survival", "endless", "wilderness") @end
+      @default("survival") @end
+    @end
+
+    @field(key="max_players", type="int", label="Max Players"):
+      Maximum number of concurrent players across all shards.
+      @constraint(min=1, max=64) @end
+      @default(6) @end
+    @end
+
+    @field(key="pvp", type="bool", label="PvP"):
+      Whether players can damage each other.
+      @default(false) @end
+    @end
+
+    @field(key="pause_when_empty", type="bool", label="Pause When Empty"):
+      Pause the world simulation when no players are connected.
+      @default(true) @end
+    @end
+
+    @field(key="vote_enabled", type="bool", label="Vote Enabled"):
+      Allow players to vote on server actions (kick, rollback, etc.).
+      @default(true) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start dst
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 dst
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 dst
+    @end
+    @action(id="update", label="Update Server"):
+      podman exec dst steamcmd +force_install_dir /opt/dst +login anonymous +app_update 343050 validate +quit
+    @end
+    @action(id="rollback", label="Rollback World"):
+      podman exec dst /scripts/rollback.sh
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 dst
+    @end
+  @end
+
+  @container(runtime="podman", name="dst"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/dst/save", container="/root/.klei/DoNotStarveTogether") @end
+      @volume(host="/config/dst", container="/config/dst", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Don't Starve Together dedicated server profile for Game Server Admin.
+    Supports Steam query, INI-based cluster configuration, multi-shard
+    architecture, and Podman container lifecycle management.
+  @end
+
+@end

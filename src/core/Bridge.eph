@@ -1,0 +1,332 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- Bridge.eph — IPC command handlers for Game Server Admin
+--
+-- Each handler receives a JSON payload from the Gossamer frontend,
+-- dispatches to the Zig FFI layer, and returns a JSON response.
+-- Capability tokens are borrowed (not consumed) for each operation.
+
+module GSA.Core.Bridge
+
+import GSA.Core.Types
+import GSA.Core.Capabilities
+
+-- =============================================================================
+-- JSON helpers — thin wrappers around Zig FFI JSON operations
+-- =============================================================================
+
+fn jsonField(payload: String, field: String) -> String =
+  __ffi("json_field", payload, field)
+
+fn jsonOk(data: String) -> String =
+  "{\"ok\":true,\"data\":" ++ data ++ "}"
+
+fn jsonError(msg: String) -> String =
+  "{\"ok\":false,\"error\":\"" ++ msg ++ "\"}"
+
+fn jsonBool(b: Bool) -> String =
+  if b then "true" else "false"
+
+-- =============================================================================
+-- Server Browser panel handlers
+-- =============================================================================
+
+-- List all managed servers from VeriSimDB.
+-- VQL: SELECT * FROM octads WHERE semantic.game_type IS NOT NULL
+fn handleListServers(payload: String, caps: &GsaCapSet) -> String =
+  let vql = "SELECT document, semantic, temporal FROM octads LIMIT 100" in
+  let result = __ffi("gossamer_gsa_verisimdb_query", vql) in
+  if result == "" then
+    jsonError("VeriSimDB query failed — is gsa-verisimdb running?")
+  else
+    jsonOk(result)
+
+-- Probe a new server by host:port.
+-- Payload: {"host": "1.2.3.4", "port": 27015}
+fn handleProbeServer(payload: String, caps: &GsaCapSet) -> String =
+  let host = jsonField(payload, "host") in
+  let port = jsonField(payload, "port") in
+  if host == "" then
+    jsonError("Missing 'host' in probe request")
+  else {
+    let result = __ffi("gossamer_gsa_probe", host, port) in
+    if result < 0 then
+      jsonError("Probe failed: " ++ __ffi("gossamer_gsa_last_error"))
+    else {
+      -- Fingerprint succeeded, extract config
+      let profile_id = jsonField(result, "game_id") in
+      let config_a2ml = __ffi("gossamer_gsa_extract_config", result, profile_id) in
+      jsonOk("{\"probe\":" ++ result ++ ",\"config\":" ++ config_a2ml ++ "}")
+    }
+  }
+
+-- Add a probed server to VeriSimDB management.
+-- Payload: {"server_id": "valheim-1", "probe_result": {...}, "config": {...}}
+fn handleAddServer(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  let probe_json = jsonField(payload, "probe_result") in
+  let config_json = jsonField(payload, "config") in
+  if server_id == "" then
+    jsonError("Missing 'server_id'")
+  else {
+    -- Store as VeriSimDB octad
+    let octad_json = __ffi("gossamer_gsa_build_octad", server_id, probe_json, config_json) in
+    let store_result = __ffi("gossamer_gsa_verisimdb_store", octad_json) in
+    if store_result < 0 then
+      jsonError("Failed to store in VeriSimDB: " ++ __ffi("gossamer_gsa_last_error"))
+    else
+      jsonOk("{\"server_id\":\"" ++ server_id ++ "\",\"stored\":true}")
+  }
+
+-- Remove a server from VeriSimDB management.
+-- Payload: {"server_id": "valheim-1"}
+fn handleRemoveServer(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  let result = __ffi("gossamer_gsa_verisimdb_delete", server_id) in
+  if result < 0 then
+    jsonError("Failed to remove: " ++ __ffi("gossamer_gsa_last_error"))
+  else
+    jsonOk("{\"server_id\":\"" ++ server_id ++ "\",\"removed\":true}")
+
+-- List available game profiles.
+fn handleListProfiles(payload: String) -> String =
+  let profiles = __ffi("gossamer_gsa_list_profiles") in
+  jsonOk(profiles)
+
+-- =============================================================================
+-- Config Editor panel handlers
+-- =============================================================================
+
+-- Get the current config for a server as A2ML.
+-- Payload: {"server_id": "valheim-1"}
+fn handleGetConfig(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  if server_id == "" then
+    jsonError("Missing 'server_id'")
+  else {
+    -- Look up server in VeriSimDB to get connection details
+    let server_info = __ffi("gossamer_gsa_verisimdb_query",
+      "SELECT document, semantic FROM octads WHERE id = '" ++ server_id ++ "'") in
+    if server_info == "" then
+      jsonError("Server not found: " ++ server_id)
+    else {
+      -- Extract game_id and profile
+      let game_id = jsonField(server_info, "game_id") in
+      let host = jsonField(server_info, "host") in
+      let port = jsonField(server_info, "port") in
+
+      -- Probe to get fresh config
+      let handle = __ffi("gossamer_gsa_probe", host, port) in
+      let config_a2ml = __ffi("gossamer_gsa_extract_config", handle, game_id) in
+
+      -- Also get stored config for drift comparison
+      let stored = jsonField(server_info, "document") in
+
+      jsonOk("{\"live\":" ++ config_a2ml ++ ",\"stored\":\"" ++ stored ++ "\"}")
+    }
+  }
+
+-- Apply config changes to a server.
+-- Payload: {"server_id": "valheim-1", "changes": [{"key": "...", "value": "..."}]}
+fn handleSetConfig(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  let changes = jsonField(payload, "changes") in
+  if server_id == "" then
+    jsonError("Missing 'server_id'")
+  else {
+    -- Apply changes via FFI (writes to server, updates VeriSimDB)
+    let result = __ffi("gossamer_gsa_apply_config", server_id, changes) in
+    if result < 0 then
+      jsonError("Config apply failed: " ++ __ffi("gossamer_gsa_last_error"))
+    else {
+      -- Record provenance
+      let prov = "{\"event_type\":\"config_change\",\"actor\":\"gsa-gui\",\"description\":\"Config modified via GUI\"}" in
+      __ffi("gossamer_gsa_verisimdb_provenance", server_id, prov);
+      jsonOk("{\"server_id\":\"" ++ server_id ++ "\",\"applied\":true,\"change_count\":" ++ changes ++ "}")
+    }
+  }
+
+-- Revert config to the VeriSimDB stored version.
+-- Payload: {"server_id": "valheim-1"}
+fn handleRevertConfig(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  let stored = __ffi("gossamer_gsa_verisimdb_query",
+    "SELECT document FROM octads WHERE id = '" ++ server_id ++ "'") in
+  if stored == "" then
+    jsonError("No stored config for: " ++ server_id)
+  else {
+    let result = __ffi("gossamer_gsa_apply_stored_config", server_id, stored) in
+    if result < 0 then
+      jsonError("Revert failed: " ++ __ffi("gossamer_gsa_last_error"))
+    else {
+      let prov = "{\"event_type\":\"config_revert\",\"actor\":\"gsa-gui\",\"description\":\"Config reverted to stored version\"}" in
+      __ffi("gossamer_gsa_verisimdb_provenance", server_id, prov);
+      jsonOk("{\"server_id\":\"" ++ server_id ++ "\",\"reverted\":true}")
+    }
+  }
+
+-- =============================================================================
+-- Server Actions panel handler
+-- =============================================================================
+
+-- Execute a server action (start/stop/restart/status/logs/update/backup).
+-- Payload: {"server_id": "valheim-1", "action": "restart"}
+fn handleServerAction(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  let action = jsonField(payload, "action") in
+  if server_id == "" || action == "" then
+    jsonError("Missing 'server_id' or 'action'")
+  else {
+    let action_json = "{\"server_id\":\"" ++ server_id ++ "\",\"action\":\"" ++ action ++ "\"}" in
+    let result = __ffi("gossamer_gsa_server_action", 0, action_json) in
+    if result == "" then
+      jsonError("Action failed: " ++ __ffi("gossamer_gsa_last_error"))
+    else {
+      -- Record provenance for state-changing actions
+      if action == "start" || action == "stop" || action == "restart" || action == "update" then {
+        let prov = "{\"event_type\":\"server_action\",\"actor\":\"gsa-gui\",\"description\":\"" ++ action ++ " via GUI\"}" in
+        __ffi("gossamer_gsa_verisimdb_provenance", server_id, prov)
+      } else ();
+      jsonOk(result)
+    }
+  }
+
+-- =============================================================================
+-- Live Logs panel handler
+-- =============================================================================
+
+-- Get recent log lines for a server.
+-- Payload: {"server_id": "valheim-1", "lines": 100}
+fn handleGetLogs(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  let lines = jsonField(payload, "lines") in
+  let line_count = if lines == "" then "100" else lines in
+  if server_id == "" then
+    jsonError("Missing 'server_id'")
+  else {
+    let result = __ffi("gossamer_gsa_get_logs", 0, line_count) in
+    if result == "" then
+      jsonError("Log retrieval failed: " ++ __ffi("gossamer_gsa_last_error"))
+    else
+      jsonOk("{\"server_id\":\"" ++ server_id ++ "\",\"lines\":" ++ result ++ "}")
+  }
+
+-- =============================================================================
+-- Health Dashboard panel handlers
+-- =============================================================================
+
+-- Get overall health status of all managed servers.
+fn handleGetHealth(payload: String, caps: &GsaCapSet) -> String =
+  let result = __ffi("gossamer_gsa_verisimdb_health") in
+  if result < 0 then
+    jsonError("VeriSimDB health check failed")
+  else {
+    let drift_status = __ffi("gossamer_gsa_verisimdb_drift_all") in
+    jsonOk("{\"verisimdb_healthy\":" ++ jsonBool(result == 0) ++ ",\"drift\":" ++ drift_status ++ "}")
+  }
+
+-- Get drift report for a specific server.
+-- Payload: {"server_id": "valheim-1"}
+fn handleGetDrift(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  if server_id == "" then
+    jsonError("Missing 'server_id'")
+  else {
+    let drift = __ffi("gossamer_gsa_verisimdb_drift", server_id) in
+    if drift == "" then
+      jsonError("Drift check failed for: " ++ server_id)
+    else
+      jsonOk(drift)
+  }
+
+-- =============================================================================
+-- Config History panel handlers
+-- =============================================================================
+
+-- Get config version history for a server.
+-- Payload: {"server_id": "valheim-1", "limit": 50}
+fn handleGetHistory(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  let limit = jsonField(payload, "limit") in
+  let limit_val = if limit == "" then "50" else limit in
+  if server_id == "" then
+    jsonError("Missing 'server_id'")
+  else {
+    -- Query temporal modality for version history
+    let vql = "SELECT temporal, provenance FROM octads WHERE id = '" ++ server_id ++ "' LIMIT " ++ limit_val in
+    let result = __ffi("gossamer_gsa_verisimdb_query", vql) in
+    if result == "" then
+      jsonError("History query failed")
+    else
+      jsonOk(result)
+  }
+
+-- Rollback config to a specific version.
+-- Payload: {"server_id": "valheim-1", "version": 3}
+fn handleRollbackConfig(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  let version = jsonField(payload, "version") in
+  if server_id == "" || version == "" then
+    jsonError("Missing 'server_id' or 'version'")
+  else {
+    -- Fetch historical version from temporal modality
+    let vql = "SELECT document FROM octads WHERE id = '" ++ server_id ++ "' AT VERSION " ++ version in
+    let historical = __ffi("gossamer_gsa_verisimdb_query", vql) in
+    if historical == "" then
+      jsonError("Version " ++ version ++ " not found for: " ++ server_id)
+    else {
+      -- Apply historical config
+      let result = __ffi("gossamer_gsa_apply_stored_config", server_id, historical) in
+      if result < 0 then
+        jsonError("Rollback failed: " ++ __ffi("gossamer_gsa_last_error"))
+      else {
+        let prov = "{\"event_type\":\"config_rollback\",\"actor\":\"gsa-gui\",\"description\":\"Rolled back to version " ++ version ++ "\"}" in
+        __ffi("gossamer_gsa_verisimdb_provenance", server_id, prov);
+        jsonOk("{\"server_id\":\"" ++ server_id ++ "\",\"rolled_back_to\":" ++ version ++ "}")
+      }
+    }
+  }
+
+-- =============================================================================
+-- Cross-Server Search panel handler
+-- =============================================================================
+
+-- Search across all managed servers using VQL.
+-- Payload: {"query": "MaxPlayers > 32", "mode": "text|vector|vql"}
+fn handleSearch(payload: String, caps: &GsaCapSet) -> String =
+  let query = jsonField(payload, "query") in
+  let mode = jsonField(payload, "mode") in
+  if query == "" then
+    jsonError("Missing 'query'")
+  else {
+    let vql = match mode {
+      "text"   -> "SEARCH TEXT '" ++ query ++ "' LIMIT 50",
+      "vector" -> "SEARCH VECTOR " ++ query ++ " LIMIT 20",
+      "vql"    -> query,
+      _        -> "SEARCH TEXT '" ++ query ++ "' LIMIT 50"
+    } in
+    let result = __ffi("gossamer_gsa_verisimdb_query", vql) in
+    if result == "" then
+      jsonError("Search failed: " ++ __ffi("gossamer_gsa_last_error"))
+    else
+      jsonOk("{\"query\":\"" ++ query ++ "\",\"mode\":\"" ++ mode ++ "\",\"results\":" ++ result ++ "}")
+  }
+
+-- =============================================================================
+-- Profile management handler
+-- =============================================================================
+
+-- Add a new game profile from A2ML text.
+-- Payload: {"a2ml": "@game-profile(...): ... @end"}
+fn handleAddProfile(payload: String) -> String =
+  let a2ml = jsonField(payload, "a2ml") in
+  if a2ml == "" then
+    jsonError("Missing 'a2ml' profile definition")
+  else {
+    let result = __ffi("gossamer_gsa_add_profile", a2ml) in
+    if result < 0 then
+      jsonError("Profile registration failed: " ++ __ffi("gossamer_gsa_last_error"))
+    else
+      jsonOk("{\"registered\":true}")
+  }

@@ -1,0 +1,102 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Valheim game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="valheim", name="Valheim", engine="Unity"):
+
+  @ports:
+    @port(name="query", number=2457, protocol="UDP"):
+      Steam server-list query port (A2S)
+    @end
+    @port(name="game", number=2456, protocol="UDP"):
+      Primary game traffic port
+    @end
+    @port(name="game-range", range="2456-2458", protocol="UDP"):
+      Full game port range used by the dedicated server
+    @end
+  @end
+
+  @protocol(type="steam-query", variant="A2S"):
+    Valve A2S (A2S_INFO, A2S_PLAYER, A2S_RULES) over UDP.
+    Used by Steam server browser and third-party query tools.
+  @end
+
+  @fingerprint:
+    @steam-appid(server=896660, client=892970) @end
+    @executable(name="valheim_server.x86_64") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="env", path="/config/valheim/server.env"):
+    # Environment-variable key=value pairs loaded at container start.
+
+    @field(key="SERVER_NAME", type="string", label="Server Name"):
+      Display name shown in the Steam server browser.
+      @default("My Valheim Server") @end
+    @end
+
+    @field(key="WORLD_NAME", type="string", label="World Name"):
+      Name of the world save file (without extension).
+      @default("Dedicated") @end
+    @end
+
+    @field(key="SERVER_PASS", type="secret", label="Server Password"):
+      Password required to join. Must be at least 5 characters and must
+      not contain the server name.
+      @constraint(min-length=5) @end
+    @end
+
+    @field(key="SERVER_PUBLIC", type="bool", label="Public Server"):
+      Whether the server appears in the community server list.
+      @default(true) @end
+    @end
+
+    @field(key="SERVER_ARGS", type="string", label="Additional Arguments"):
+      Extra command-line arguments passed to the dedicated server binary.
+      @default("") @end
+    @end
+
+    @field(key="BACKUPS", type="bool", label="Automatic Backups"):
+      Enable periodic world backups managed by the container entrypoint.
+      @default(true) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start valheim
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 valheim
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 valheim
+    @end
+    @action(id="update", label="Update Server"):
+      podman exec valheim steamcmd +force_install_dir /opt/valheim +login anonymous +app_update 896660 validate +quit
+    @end
+    @action(id="backup", label="Backup World"):
+      podman exec valheim /scripts/backup.sh
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 valheim
+    @end
+  @end
+
+  @container(runtime="podman", name="valheim"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/valheim/worlds", container="/root/.config/unity3d/IronGate/Valheim/worlds_local") @end
+      @volume(host="/config/valheim", container="/config/valheim", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Valheim dedicated server profile for Game Server Admin.
+    Supports Steam query, environment-based configuration, and
+    automated world backups via Podman container lifecycle.
+  @end
+
+@end

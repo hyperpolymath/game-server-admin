@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# VeriSimDB dedicated instance configuration for Game Server Admin
+# This is a SEPARATE instance — never store GSA data in the VeriSimDB source repo.
+
+@verisimdb-instance(name="gsa-verisimdb", version="0.1.0"):
+  @network:
+    http_host = "[::1]"
+    http_port = 8090
+    grpc_port = 50061
+    max_request_body = "10MB"
+    request_timeout_seconds = 30
+  @end
+
+  @storage:
+    mode = "persistent"
+    persistence_dir = "/data"
+    wal_enabled = true
+    wal_sync_interval_ms = 100
+    graph_backend = "redb"
+    vector_backend = "redb"
+    document_backend = "tantivy"
+  @end
+
+  @drift:
+    enabled = true
+    check_interval_seconds = 15
+    thresholds:
+      semantic_vector_drift = 0.3
+      graph_document_drift = 0.4
+      temporal_consistency = 0.2
+      tensor_drift = 0.35
+      schema_drift = 0.1
+      provenance_drift = 0.1
+      spatial_drift = 0.3
+      quality_drift = 0.25
+    @end
+  @end
+
+  @auth:
+    mode = "local-only"
+    public_read = false
+    require_api_key = false
+  @end
+
+  @features:
+    federation = false
+    zkp_proofs = false
+    vql_typed = false
+    query_planning = true
+    slow_query_log = true
+    slow_query_threshold_ms = 500
+  @end
+
+  @labels:
+    application = "game-server-admin"
+    domain = "infrastructure/game-servers"
+    clade = "ix"
+  @end
+@end

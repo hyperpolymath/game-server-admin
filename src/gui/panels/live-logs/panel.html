@@ -1,0 +1,354 @@
+<!--
+  SPDX-License-Identifier: PMPL-1.0-or-later
+  Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+  live-logs/panel.html — Live Logs panel for Game Server Admin
+
+  Displays server log output with severity filtering, ANSI color rendering,
+  search highlighting, and auto-refresh polling. Supports pause/resume
+  and log download.
+  Calls gossamer IPC: get_logs.
+-->
+
+<!-- Header -->
+<div class="panel-header">
+  <h2>Live Logs</h2>
+  <span class="badge badge-gray" id="ll-server-badge">No server selected</span>
+</div>
+
+<!-- No server selected state -->
+<div class="empty-state" id="ll-empty-state">
+  <div class="empty-icon">&#x2630;</div>
+  <p>Select a server from the Server Browser to view its logs.</p>
+</div>
+
+<!-- Logs content -->
+<div id="ll-content" style="display:none;">
+  <!-- Controls bar -->
+  <div class="toolbar">
+    <select id="ll-lines-count" style="width:90px;" onchange="refreshLiveLogs()">
+      <option value="50">50 lines</option>
+      <option value="100" selected>100 lines</option>
+      <option value="500">500 lines</option>
+      <option value="1000">1000 lines</option>
+    </select>
+    <select id="ll-severity-filter" style="width:100px;" onchange="filterLogsBySeverity()">
+      <option value="all">All</option>
+      <option value="error">Error</option>
+      <option value="warning">Warning</option>
+      <option value="info">Info</option>
+      <option value="debug">Debug</option>
+    </select>
+    <div class="separator"></div>
+    <input type="text" id="ll-search-input" placeholder="Search logs..." style="width:200px;" oninput="searchLogs(this.value)" />
+    <div class="separator"></div>
+    <button class="btn btn-sm" id="ll-pause-btn" onclick="toggleLogPause()">
+      &#x23F8; Pause
+    </button>
+    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer;">
+      <input type="checkbox" id="ll-autoscroll" checked style="width:auto;" /> Auto-scroll
+    </label>
+    <div style="flex:1;"></div>
+    <button class="btn btn-sm" onclick="downloadLogs()">&#x2B73; Download</button>
+  </div>
+
+  <!-- Log viewer -->
+  <div style="position:relative;">
+    <pre id="ll-log-viewer" style="
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.6;
+      max-height: calc(100vh - 260px);
+      overflow-y: auto;
+      overflow-x: auto;
+      white-space: pre;
+      tab-size: 4;
+      color: var(--text-primary);
+    ">Waiting for logs...</pre>
+    <!-- Paused overlay -->
+    <div id="ll-paused-overlay" style="
+      display: none;
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(210, 153, 34, 0.15);
+      border: 1px solid var(--warning-color);
+      border-radius: var(--radius-md);
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--warning-fg);
+    ">PAUSED</div>
+  </div>
+
+  <!-- Log stats -->
+  <div style="display:flex; align-items:center; gap:16px; margin-top:8px; font-size:11px; color:var(--text-muted);">
+    <span id="ll-line-count-display">0 lines</span>
+    <span id="ll-error-count">0 errors</span>
+    <span id="ll-warn-count">0 warnings</span>
+    <span id="ll-last-refresh">—</span>
+  </div>
+</div>
+
+<script>
+  /**
+   * Live Logs panel state.
+   * logBuffer: array of parsed log line objects.
+   * paused: whether auto-refresh is paused.
+   * refreshTimer: the setInterval reference for polling.
+   * searchQuery: the current search filter text.
+   */
+  var llState = {
+    logBuffer: [],
+    paused: false,
+    refreshTimer: null,
+    searchQuery: '',
+    maxLines: 1000
+  };
+
+  /**
+   * Refresh the live logs panel. Fetches logs from the server and
+   * renders them with line numbers and ANSI color coding.
+   */
+  async function refreshLiveLogs() {
+    var emptyState = document.getElementById('ll-empty-state');
+    var content = document.getElementById('ll-content');
+    var serverBadge = document.getElementById('ll-server-badge');
+
+    if (!gsaState.selectedServerId) {
+      emptyState.style.display = 'block';
+      content.style.display = 'none';
+      serverBadge.textContent = 'No server selected';
+      serverBadge.className = 'badge badge-gray';
+      stopLogPolling();
+      return;
+    }
+
+    emptyState.style.display = 'none';
+    content.style.display = 'block';
+    serverBadge.textContent = gsaState.selectedServerName || gsaState.selectedServerId;
+    serverBadge.className = 'badge badge-blue';
+
+    await loadLogs();
+    startLogPolling();
+  }
+
+  /**
+   * Load logs from the server. Parses each line for severity level and
+   * appends to the log buffer.
+   */
+  async function loadLogs() {
+    if (llState.paused) return;
+
+    var lines = document.getElementById('ll-lines-count').value || '100';
+    var resp = await gossamerInvoke('get_logs', {
+      server_id: gsaState.selectedServerId,
+      lines: lines
+    });
+
+    if (!resp.ok) {
+      var viewer = document.getElementById('ll-log-viewer');
+      if (viewer) viewer.textContent = 'Error loading logs: ' + (resp.error || 'Unknown');
+      return;
+    }
+
+    var rawLines = [];
+    if (resp.data && resp.data.lines) {
+      rawLines = Array.isArray(resp.data.lines) ? resp.data.lines : String(resp.data.lines).split('\n');
+    }
+
+    // Parse lines into structured objects
+    llState.logBuffer = rawLines.map(function(line, idx) {
+      var severity = detectSeverity(line);
+      return { num: idx + 1, text: line, severity: severity };
+    });
+
+    // Trim buffer to max size
+    if (llState.logBuffer.length > llState.maxLines) {
+      llState.logBuffer = llState.logBuffer.slice(-llState.maxLines);
+    }
+
+    renderLogs();
+
+    // Update last refresh time
+    var lastRefresh = document.getElementById('ll-last-refresh');
+    if (lastRefresh) lastRefresh.textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  }
+
+  /**
+   * Detect the severity level of a log line based on common patterns.
+   *
+   * @param {string} line - The raw log line
+   * @returns {string} Severity: "error", "warning", "info", "debug", or "default"
+   */
+  function detectSeverity(line) {
+    if (!line) return 'default';
+    var lower = line.toLowerCase();
+    if (lower.indexOf('error') !== -1 || lower.indexOf('fatal') !== -1 || lower.indexOf('critical') !== -1 || lower.indexOf('panic') !== -1) return 'error';
+    if (lower.indexOf('warn') !== -1) return 'warning';
+    if (lower.indexOf('info') !== -1) return 'info';
+    if (lower.indexOf('debug') !== -1 || lower.indexOf('trace') !== -1) return 'debug';
+    return 'default';
+  }
+
+  /**
+   * Render the log buffer into the viewer element. Applies severity
+   * filtering, search highlighting, and ANSI color mapping.
+   */
+  function renderLogs() {
+    var viewer = document.getElementById('ll-log-viewer');
+    if (!viewer) return;
+
+    var filter = document.getElementById('ll-severity-filter').value;
+    var query = llState.searchQuery.toLowerCase();
+
+    var filtered = llState.logBuffer.filter(function(line) {
+      if (filter !== 'all' && line.severity !== filter) return false;
+      if (query && line.text.toLowerCase().indexOf(query) === -1) return false;
+      return true;
+    });
+
+    // Count stats
+    var errorCount = 0, warnCount = 0;
+    llState.logBuffer.forEach(function(l) {
+      if (l.severity === 'error') errorCount++;
+      if (l.severity === 'warning') warnCount++;
+    });
+
+    document.getElementById('ll-line-count-display').textContent = filtered.length + ' lines';
+    document.getElementById('ll-error-count').textContent = errorCount + ' error' + (errorCount !== 1 ? 's' : '');
+    document.getElementById('ll-warn-count').textContent = warnCount + ' warning' + (warnCount !== 1 ? 's' : '');
+
+    // Build rendered output
+    var html = '';
+    filtered.forEach(function(line) {
+      var numStr = String(line.num).padStart(4, ' ');
+      var color = 'var(--text-primary)';
+      switch (line.severity) {
+        case 'error':   color = 'var(--danger-fg)'; break;
+        case 'warning': color = 'var(--warning-fg)'; break;
+        case 'info':    color = 'var(--success-fg)'; break;
+        case 'debug':   color = 'var(--cyan-color)'; break;
+      }
+
+      var text = escapeHtml(line.text);
+
+      // Apply search highlighting
+      if (query) {
+        var escapedQuery = escapeHtml(query);
+        var re = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+        text = text.replace(re, '<mark style="background:var(--warning-color);color:#000;border-radius:2px;padding:0 2px;">$1</mark>');
+      }
+
+      html += '<span style="color:var(--text-muted);user-select:none;">' + numStr + '  </span>'
+        + '<span style="color:' + color + ';">' + text + '</span>\n';
+    });
+
+    viewer.innerHTML = html || '<span style="color:var(--text-secondary);">No matching log lines.</span>';
+
+    // Auto-scroll to bottom
+    var autoscroll = document.getElementById('ll-autoscroll');
+    if (autoscroll && autoscroll.checked) {
+      viewer.scrollTop = viewer.scrollHeight;
+    }
+  }
+
+  /**
+   * Filter logs by severity level. Triggers a re-render of the log buffer.
+   */
+  function filterLogsBySeverity() {
+    renderLogs();
+  }
+
+  /**
+   * Search/filter logs by a text query. Highlights matching text.
+   *
+   * @param {string} query - The search text
+   */
+  function searchLogs(query) {
+    llState.searchQuery = query;
+    renderLogs();
+  }
+
+  /**
+   * Toggle the pause/resume state of log polling.
+   */
+  function toggleLogPause() {
+    llState.paused = !llState.paused;
+    var btn = document.getElementById('ll-pause-btn');
+    var overlay = document.getElementById('ll-paused-overlay');
+
+    if (llState.paused) {
+      btn.innerHTML = '&#x25B6; Resume';
+      btn.className = 'btn btn-sm btn-success';
+      overlay.style.display = 'block';
+      stopLogPolling();
+    } else {
+      btn.innerHTML = '&#x23F8; Pause';
+      btn.className = 'btn btn-sm';
+      overlay.style.display = 'none';
+      startLogPolling();
+      loadLogs();
+    }
+  }
+
+  /**
+   * Start the log polling interval (every 2 seconds).
+   */
+  function startLogPolling() {
+    stopLogPolling();
+    if (!llState.paused && gsaState.selectedServerId) {
+      llState.refreshTimer = setInterval(loadLogs, 2000);
+      gsaState.panelTimers['live-logs'] = llState.refreshTimer;
+    }
+  }
+
+  /**
+   * Stop the log polling interval.
+   */
+  function stopLogPolling() {
+    if (llState.refreshTimer) {
+      clearInterval(llState.refreshTimer);
+      llState.refreshTimer = null;
+    }
+    if (gsaState.panelTimers['live-logs']) {
+      clearInterval(gsaState.panelTimers['live-logs']);
+      delete gsaState.panelTimers['live-logs'];
+    }
+  }
+
+  /**
+   * Download the current log buffer as a text file.
+   */
+  function downloadLogs() {
+    var text = llState.logBuffer.map(function(l) { return l.text; }).join('\n');
+    var blob = new Blob([text], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (gsaState.selectedServerId || 'server') + '-logs-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // Listen for server selection changes
+  document.addEventListener('gsa-server-selected', function() {
+    if (gsaState.activePanel === 'live-logs') {
+      llState.paused = false;
+      var btn = document.getElementById('ll-pause-btn');
+      if (btn) {
+        btn.innerHTML = '&#x23F8; Pause';
+        btn.className = 'btn btn-sm';
+      }
+      var overlay = document.getElementById('ll-paused-overlay');
+      if (overlay) overlay.style.display = 'none';
+      refreshLiveLogs();
+    }
+  });
+</script>

@@ -1,0 +1,24 @@
+{
+  "id": "gsa-config-editor",
+  "title": "Config Editor",
+  "description": "A2ML-aware game server configuration editor with type validation",
+  "version": "0.1.0",
+  "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
+  "license": "PMPL-1.0-or-later",
+  "runtime": "gossamer",
+  "dimensions": { "width": 1400, "height": 900, "resizable": true },
+  "entry": "../../src/gui/panels/config-editor/panel.html",
+  "data_sources": [
+    { "id": "config-data", "uri": "gossamer://gsa/config", "refresh_interval_ms": 0 }
+  ],
+  "widgets": [
+    { "type": "dynamic-form", "data_source": "config-data", "fields": "auto" },
+    { "type": "diff-viewer", "data_source": "config-data" },
+    { "type": "action-bar", "actions": [
+      { "id": "save", "label": "Save Changes", "icon": "save", "target": "gossamer://gsa/config" },
+      { "id": "revert", "label": "Revert", "icon": "undo", "target": "gossamer://gsa/config", "confirm": true },
+      { "id": "refresh", "label": "Refresh", "icon": "refresh", "target": "gossamer://gsa/config" }
+    ]}
+  ],
+  "tags": ["config", "editor", "a2ml", "form", "validation"]
+}

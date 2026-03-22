@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Starbound game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="starbound", name="Starbound", engine="Starbound"):
+
+  @ports:
+    @port(name="game", number=21025, protocol="TCP"):
+      Primary game traffic port
+    @end
+  @end
+
+  @protocol(type="custom-tcp", variant="Starbound"):
+    Starbound uses a custom TCP protocol for game traffic.
+    There is no standard query protocol; server status is obtained
+    by attempting a TCP connection or via RCON if enabled.
+  @end
+
+  @fingerprint:
+    @steam-appid(server=211820, client=211820) @end
+    @executable(name="starbound_server") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="json", path="/config/starbound_server.config"):
+    # JSON configuration file for the Starbound dedicated server.
+    # Parsed at startup; changes require a server restart.
+
+    @field(key="serverName", type="string", label="Server Name"):
+      Display name shown to players when they connect.
+      @default("A Starbound Server") @end
+    @end
+
+    @field(key="maxPlayers", type="int", label="Max Players"):
+      Maximum number of concurrent players.
+      @constraint(min=1, max=128) @end
+      @default(8) @end
+    @end
+
+    @field(key="gameServerPort", type="int", label="Game Server Port"):
+      TCP port for game traffic.
+      @default(21025) @end
+    @end
+
+    @field(key="allowAnonymousConnections", type="bool", label="Allow Anonymous Connections"):
+      Allow players without a Steam account to connect.
+      @default(true) @end
+    @end
+
+    @field(key="allowAssetsMismatch", type="bool", label="Allow Assets Mismatch"):
+      Allow players with different asset versions to connect.
+      Useful for modded servers but may cause visual glitches.
+      @default(true) @end
+    @end
+
+    @field(key="serverFidelity", type="enum", label="Server Fidelity"):
+      Server-side simulation quality. Higher values use more CPU
+      but produce smoother world simulation.
+      @options("minimum", "low", "medium", "high", "ultra") @end
+      @default("medium") @end
+    @end
+
+    @field(key="checkAssetsDigest", type="bool", label="Check Assets Digest"):
+      Verify client asset integrity on connection. Prevents modified
+      clients from joining.
+      @default(false) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start starbound
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 starbound
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 starbound
+    @end
+    @action(id="update", label="Update Server"):
+      podman exec starbound steamcmd +force_install_dir /opt/starbound +login anonymous +app_update 211820 validate +quit
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 starbound
+    @end
+  @end
+
+  @container(runtime="podman", name="starbound"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/starbound/storage", container="/opt/starbound/storage") @end
+      @volume(host="/config", container="/config", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Starbound dedicated server profile for Game Server Admin.
+    Supports custom TCP protocol, JSON-based configuration,
+    and Podman container lifecycle management.
+  @end
+
+@end

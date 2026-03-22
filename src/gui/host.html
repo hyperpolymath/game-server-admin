@@ -1,0 +1,1064 @@
+<!--
+  SPDX-License-Identifier: PMPL-1.0-or-later
+  Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+  host.html — Main Gossamer host page for Game Server Admin
+
+  This is the single-page shell that contains the sidebar navigation,
+  content area with all seven panel divs, and the status bar.
+  Panel content is embedded inline; switching is handled by showing/hiding
+  the appropriate panel div.
+
+  IPC bridge: all panels call window.gossamer.invoke(command, payload)
+  which routes through Gossamer's IPC channel to Bridge.eph handlers.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Server Admin — Gossamer</title>
+  <style>
+    /* ====================================================================
+       CSS Reset & Variables
+       ==================================================================== */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-primary:    #0d1117;
+      --bg-sidebar:    #161b22;
+      --bg-surface:    #161b22;
+      --bg-elevated:   #1c2128;
+      --border-color:  #30363d;
+      --border-active: #58a6ff;
+      --text-primary:  #c9d1d9;
+      --text-secondary:#8b949e;
+      --text-muted:    #484f58;
+      --link-color:    #58a6ff;
+      --success-color: #238636;
+      --success-fg:    #3fb950;
+      --danger-color:  #da3633;
+      --danger-fg:     #f85149;
+      --warning-color: #d29922;
+      --warning-fg:    #d29922;
+      --info-color:    #1f6feb;
+      --purple-color:  #8957e5;
+      --cyan-color:    #39d2c0;
+      --font-ui:       system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono:     'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+      --sidebar-width: 240px;
+      --statusbar-height: 32px;
+      --radius-sm:     4px;
+      --radius-md:     6px;
+      --radius-lg:     8px;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ====================================================================
+       Layout: Sidebar + Content + Status Bar
+       ==================================================================== */
+    .app-layout {
+      display: flex;
+      height: calc(100% - var(--statusbar-height));
+    }
+
+    /* ====================================================================
+       Sidebar
+       ==================================================================== */
+    .sidebar {
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      background-color: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sidebar-logo {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, var(--link-color), var(--purple-color));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    .sidebar-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.2;
+    }
+
+    .sidebar-subtitle {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 8px 0;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      border-left: 3px solid transparent;
+      transition: all 0.15s ease;
+      user-select: none;
+      position: relative;
+    }
+
+    .nav-item:hover {
+      background-color: var(--bg-elevated);
+      color: var(--text-primary);
+    }
+
+    .nav-item.active {
+      color: var(--text-primary);
+      border-left-color: var(--link-color);
+      background-color: rgba(88, 166, 255, 0.08);
+    }
+
+    .nav-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+
+    .nav-item.active .nav-icon {
+      opacity: 1;
+    }
+
+    .nav-label {
+      font-size: 13px;
+      font-weight: 500;
+      flex: 1;
+    }
+
+    .nav-status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .nav-status.connected {
+      background-color: var(--success-fg);
+    }
+
+    /* ====================================================================
+       Content Area
+       ==================================================================== */
+    .content-area {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background-color: var(--bg-primary);
+    }
+
+    .panel-content {
+      display: none;
+      height: 100%;
+      overflow-y: auto;
+      padding: 20px 24px;
+    }
+
+    .panel-content.active {
+      display: block;
+    }
+
+    /* ====================================================================
+       Status Bar
+       ==================================================================== */
+    .status-bar {
+      height: var(--statusbar-height);
+      background-color: var(--bg-sidebar);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 20px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-dot.green { background-color: var(--success-fg); }
+    .status-dot.red   { background-color: var(--danger-fg); }
+    .status-dot.yellow { background-color: var(--warning-fg); }
+
+    .status-bar .spacer {
+      flex: 1;
+    }
+
+    /* ====================================================================
+       Shared Component Styles (used by all panels)
+       ==================================================================== */
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .panel-header h2 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-green  { background: rgba(35,134,54,0.2); color: var(--success-fg); }
+    .badge-red    { background: rgba(218,54,51,0.2); color: var(--danger-fg); }
+    .badge-yellow { background: rgba(210,153,34,0.2); color: var(--warning-fg); }
+    .badge-blue   { background: rgba(31,111,235,0.2); color: var(--link-color); }
+    .badge-gray   { background: rgba(139,148,158,0.2); color: var(--text-secondary); }
+    .badge-purple { background: rgba(137,87,229,0.2); color: var(--purple-color); }
+    .badge-cyan   { background: rgba(57,210,192,0.2); color: var(--cyan-color); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      background-color: var(--bg-elevated);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: var(--font-ui);
+    }
+
+    .btn:hover { background-color: #2d333b; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background-color: var(--info-color); border-color: var(--info-color); color: #fff; }
+    .btn-primary:hover { background-color: #388bfd; }
+    .btn-success { background-color: var(--success-color); border-color: var(--success-color); color: #fff; }
+    .btn-success:hover { background-color: #2ea043; }
+    .btn-danger  { background-color: var(--danger-color); border-color: var(--danger-color); color: #fff; }
+    .btn-danger:hover { background-color: #f85149; }
+    .btn-warning { background-color: var(--warning-color); border-color: var(--warning-color); color: #fff; }
+    .btn-warning:hover { background-color: #e3b341; }
+    .btn-purple  { background-color: var(--purple-color); border-color: var(--purple-color); color: #fff; }
+    .btn-purple:hover { background-color: #a371f7; }
+    .btn-cyan    { background-color: #0d9488; border-color: #0d9488; color: #fff; }
+    .btn-cyan:hover { background-color: #14b8a6; }
+
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .btn-icon { padding: 6px 8px; }
+
+    input[type="text"],
+    input[type="number"],
+    input[type="password"],
+    select,
+    textarea {
+      background-color: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      padding: 6px 10px;
+      font-size: 13px;
+      font-family: var(--font-ui);
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--link-color);
+    }
+
+    textarea {
+      font-family: var(--font-mono);
+      resize: vertical;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-color);
+      background-color: var(--bg-surface);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    td {
+      padding: 8px 12px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    tr:hover td {
+      background-color: rgba(88, 166, 255, 0.04);
+    }
+
+    tr.selected td {
+      background-color: rgba(88, 166, 255, 0.1);
+    }
+
+    .card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card-stat {
+      text-align: center;
+    }
+
+    .card-stat .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .card-stat .stat-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .collapsible-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 600;
+      user-select: none;
+    }
+
+    .collapsible-header:hover { color: var(--text-primary); }
+
+    .collapsible-body {
+      display: none;
+      padding: 8px 0;
+    }
+
+    .collapsible-body.open {
+      display: block;
+    }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.visible {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .modal h3 {
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+
+    .progress-bar {
+      height: 6px;
+      background: var(--bg-primary);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border-color);
+      border-top-color: var(--link-color);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state .empty-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+      opacity: 0.3;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .toolbar .separator {
+      width: 1px;
+      height: 24px;
+      background: var(--border-color);
+      margin: 0 4px;
+    }
+
+    code, .code-block {
+      font-family: var(--font-mono);
+      font-size: 13px;
+    }
+
+    .code-block {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      overflow-x: auto;
+      white-space: pre;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+    }
+
+    .form-group.changed input,
+    .form-group.changed select {
+      border-color: var(--link-color);
+      background-color: rgba(88, 166, 255, 0.05);
+    }
+
+    .form-group.invalid input,
+    .form-group.invalid select {
+      border-color: var(--danger-fg);
+      background-color: rgba(248, 81, 73, 0.05);
+    }
+
+    .toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      display: inline-block;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--border-color);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+
+    .toggle-slider::after {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      background: #fff;
+      border-radius: 50%;
+      top: 3px;
+      left: 3px;
+      transition: transform 0.2s ease;
+    }
+
+    .toggle input:checked + .toggle-slider {
+      background: var(--success-color);
+    }
+
+    .toggle input:checked + .toggle-slider::after {
+      transform: translateX(16px);
+    }
+
+    /* Diff styles */
+    .diff-added { background: rgba(35,134,54,0.15); color: var(--success-fg); }
+    .diff-removed { background: rgba(218,54,51,0.15); color: var(--danger-fg); }
+    .diff-context { color: var(--text-secondary); }
+    .diff-line-num { color: var(--text-muted); min-width: 40px; text-align: right; padding-right: 8px; user-select: none; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+  <!-- ====================================================================
+       Sidebar Navigation
+       ==================================================================== -->
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">G</div>
+        <div>
+          <div class="sidebar-title">Game Server Admin</div>
+          <div class="sidebar-subtitle">Gossamer Shell</div>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-item active" data-panel="server-browser" onclick="switchPanel('server-browser')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/>
+          </svg>
+          <span class="nav-label">Server Browser</span>
+          <span class="nav-status" id="status-server-browser"></span>
+        </div>
+        <div class="nav-item" data-panel="config-editor" onclick="switchPanel('config-editor')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
+          </svg>
+          <span class="nav-label">Config Editor</span>
+          <span class="nav-status" id="status-config-editor"></span>
+        </div>
+        <div class="nav-item" data-panel="server-actions" onclick="switchPanel('server-actions')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16"/>
+          </svg>
+          <span class="nav-label">Server Actions</span>
+          <span class="nav-status" id="status-server-actions"></span>
+        </div>
+        <div class="nav-item" data-panel="live-logs" onclick="switchPanel('live-logs')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4,17 10,11 4,5"/><line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+          <span class="nav-label">Live Logs</span>
+          <span class="nav-status" id="status-live-logs"></span>
+        </div>
+        <div class="nav-item" data-panel="health-dashboard" onclick="switchPanel('health-dashboard')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>
+          </svg>
+          <span class="nav-label">Health Dashboard</span>
+          <span class="nav-status" id="status-health-dashboard"></span>
+        </div>
+        <div class="nav-item" data-panel="config-history" onclick="switchPanel('config-history')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
+          </svg>
+          <span class="nav-label">Config History</span>
+          <span class="nav-status" id="status-config-history"></span>
+        </div>
+        <div class="nav-item" data-panel="cross-search" onclick="switchPanel('cross-search')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <span class="nav-label">Cross-Server Search</span>
+          <span class="nav-status" id="status-cross-search"></span>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- ====================================================================
+         Content Area — Panel Containers
+         ==================================================================== -->
+    <main class="content-area">
+      <div id="panel-server-browser" class="panel-content active">
+        <!-- Loaded from panels/server-browser/panel.html -->
+      </div>
+      <div id="panel-config-editor" class="panel-content">
+        <!-- Loaded from panels/config-editor/panel.html -->
+      </div>
+      <div id="panel-server-actions" class="panel-content">
+        <!-- Loaded from panels/server-actions/panel.html -->
+      </div>
+      <div id="panel-live-logs" class="panel-content">
+        <!-- Loaded from panels/live-logs/panel.html -->
+      </div>
+      <div id="panel-health-dashboard" class="panel-content">
+        <!-- Loaded from panels/health-dashboard/panel.html -->
+      </div>
+      <div id="panel-config-history" class="panel-content">
+        <!-- Loaded from panels/config-history/panel.html -->
+      </div>
+      <div id="panel-cross-search" class="panel-content">
+        <!-- Loaded from panels/cross-search/panel.html -->
+      </div>
+    </main>
+  </div>
+
+  <!-- ====================================================================
+       Status Bar
+       ==================================================================== -->
+  <footer class="status-bar">
+    <div class="status-item">
+      <span class="status-dot red" id="verisimdb-status-dot"></span>
+      <span id="verisimdb-status-text">Disconnected</span>
+    </div>
+    <div class="status-item">
+      <span id="server-count">0 servers</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="status-item">
+      <span id="last-probe-time">—</span>
+    </div>
+  </footer>
+
+  <!-- ====================================================================
+       Core JavaScript — Gossamer Bridge & Panel Management
+       ==================================================================== -->
+  <script>
+    // =========================================================================
+    // Gossamer IPC bridge
+    // =========================================================================
+
+    /**
+     * Global state for the GSA application.
+     * selectedServerId tracks which server is active across all panels.
+     * panelTimers holds setInterval references for auto-refresh features.
+     */
+    const gsaState = {
+      selectedServerId: null,
+      selectedServerName: null,
+      selectedServerGame: null,
+      selectedServerStatus: 'unknown',
+      servers: [],
+      verisimdbConnected: false,
+      panelTimers: {},
+      activePanel: 'server-browser'
+    };
+
+    /**
+     * Invoke a Gossamer IPC command. Returns a Promise that resolves with
+     * the parsed JSON response from Bridge.eph.
+     *
+     * @param {string} command - The IPC command name (e.g. "list_servers")
+     * @param {object} payload - The payload object (serialised to JSON)
+     * @returns {Promise<object>} The parsed response
+     */
+    async function gossamerInvoke(command, payload) {
+      try {
+        if (window.gossamer && typeof window.gossamer.invoke === 'function') {
+          const raw = await window.gossamer.invoke(command, JSON.stringify(payload || {}));
+          return JSON.parse(raw);
+        }
+        // Fallback for development: return a mock error
+        console.warn('[GSA] Gossamer bridge not available, command:', command);
+        return { ok: false, error: 'Gossamer bridge not available' };
+      } catch (err) {
+        console.error('[GSA] IPC error:', command, err);
+        return { ok: false, error: String(err) };
+      }
+    }
+
+    // =========================================================================
+    // Panel switching
+    // =========================================================================
+
+    /**
+     * Switch the visible panel. Hides all panels, shows the target one,
+     * updates sidebar active state, and triggers panel-specific init/refresh.
+     *
+     * @param {string} panelId - The panel identifier (e.g. "server-browser")
+     */
+    function switchPanel(panelId) {
+      // Hide all panels
+      document.querySelectorAll('.panel-content').forEach(function(el) {
+        el.classList.remove('active');
+      });
+
+      // Deactivate all nav items
+      document.querySelectorAll('.nav-item').forEach(function(el) {
+        el.classList.remove('active');
+      });
+
+      // Show target panel
+      var panel = document.getElementById('panel-' + panelId);
+      if (panel) {
+        panel.classList.add('active');
+      }
+
+      // Activate nav item
+      var navItem = document.querySelector('.nav-item[data-panel="' + panelId + '"]');
+      if (navItem) {
+        navItem.classList.add('active');
+      }
+
+      gsaState.activePanel = panelId;
+
+      // Trigger panel-specific refresh
+      switch (panelId) {
+        case 'server-browser':   if (typeof refreshServerBrowser === 'function') refreshServerBrowser(); break;
+        case 'config-editor':    if (typeof refreshConfigEditor === 'function') refreshConfigEditor(); break;
+        case 'server-actions':   if (typeof refreshServerActions === 'function') refreshServerActions(); break;
+        case 'live-logs':        if (typeof refreshLiveLogs === 'function') refreshLiveLogs(); break;
+        case 'health-dashboard': if (typeof refreshHealthDashboard === 'function') refreshHealthDashboard(); break;
+        case 'config-history':   if (typeof refreshConfigHistory === 'function') refreshConfigHistory(); break;
+        case 'cross-search':     break; // No auto-refresh for search
+      }
+    }
+
+    // =========================================================================
+    // Status bar updates
+    // =========================================================================
+
+    /**
+     * Update the status bar with current connection info.
+     *
+     * @param {object} data - Status data with fields: connected, serverCount, lastProbe
+     */
+    function updateStatusBar(data) {
+      var dot = document.getElementById('verisimdb-status-dot');
+      var text = document.getElementById('verisimdb-status-text');
+      var count = document.getElementById('server-count');
+      var probe = document.getElementById('last-probe-time');
+
+      if (data.connected) {
+        dot.className = 'status-dot green';
+        text.textContent = 'Connected';
+        gsaState.verisimdbConnected = true;
+      } else {
+        dot.className = 'status-dot red';
+        text.textContent = 'Disconnected';
+        gsaState.verisimdbConnected = false;
+      }
+
+      if (typeof data.serverCount === 'number') {
+        count.textContent = data.serverCount + ' server' + (data.serverCount !== 1 ? 's' : '');
+      }
+
+      if (data.lastProbe) {
+        probe.textContent = 'Last probe: ' + data.lastProbe;
+      }
+    }
+
+    /**
+     * Set the status indicator dot for a nav item.
+     *
+     * @param {string} panelId - The panel identifier
+     * @param {boolean} connected - Whether the panel's data source is connected
+     */
+    function setPanelStatus(panelId, connected) {
+      var dot = document.getElementById('status-' + panelId);
+      if (dot) {
+        dot.className = connected ? 'nav-status connected' : 'nav-status';
+      }
+    }
+
+    // =========================================================================
+    // Shared utility functions
+    // =========================================================================
+
+    /**
+     * Format a timestamp into a human-readable relative or absolute time.
+     *
+     * @param {string|number} ts - ISO timestamp or Unix epoch milliseconds
+     * @returns {string} Formatted time string
+     */
+    function formatTime(ts) {
+      if (!ts) return '—';
+      var d = new Date(ts);
+      var now = new Date();
+      var diffMs = now - d;
+      var diffSec = Math.floor(diffMs / 1000);
+      if (diffSec < 60) return diffSec + 's ago';
+      if (diffSec < 3600) return Math.floor(diffSec / 60) + 'm ago';
+      if (diffSec < 86400) return Math.floor(diffSec / 3600) + 'h ago';
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+    }
+
+    /**
+     * Escape HTML entities to prevent XSS in rendered content.
+     *
+     * @param {string} str - Raw string
+     * @returns {string} Escaped string safe for innerHTML
+     */
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    /**
+     * Toggle a collapsible section's visibility.
+     *
+     * @param {HTMLElement} header - The collapsible header element
+     */
+    function toggleCollapsible(header) {
+      var body = header.nextElementSibling;
+      if (body) {
+        body.classList.toggle('open');
+        var arrow = header.querySelector('.collapse-arrow');
+        if (arrow) {
+          arrow.textContent = body.classList.contains('open') ? '\u25BC' : '\u25B6';
+        }
+      }
+    }
+
+    /**
+     * Show a modal overlay by ID.
+     *
+     * @param {string} modalId - The modal overlay element ID
+     */
+    function showModal(modalId) {
+      var el = document.getElementById(modalId);
+      if (el) el.classList.add('visible');
+    }
+
+    /**
+     * Hide a modal overlay by ID.
+     *
+     * @param {string} modalId - The modal overlay element ID
+     */
+    function hideModal(modalId) {
+      var el = document.getElementById(modalId);
+      if (el) el.classList.remove('visible');
+    }
+
+    /**
+     * Select a server globally — sets the active server across all panels.
+     * Dispatches a custom event so panels can react.
+     *
+     * @param {string} id - Server ID
+     * @param {string} name - Server display name
+     * @param {string} game - Game type identifier
+     * @param {string} status - Server status (running/stopped/unknown)
+     */
+    function selectServerGlobal(id, name, game, status) {
+      gsaState.selectedServerId = id;
+      gsaState.selectedServerName = name || id;
+      gsaState.selectedServerGame = game || 'unknown';
+      gsaState.selectedServerStatus = status || 'unknown';
+      document.dispatchEvent(new CustomEvent('gsa-server-selected', {
+        detail: { id: id, name: name, game: game, status: status }
+      }));
+    }
+
+    // =========================================================================
+    // Panel HTML loading (inline include)
+    // =========================================================================
+
+    /**
+     * Load panel HTML from file paths and inject into panel containers.
+     * In production Gossamer, these are embedded at build time.
+     * For development, we use fetch() to load them.
+     */
+    async function loadPanelContent() {
+      var panels = [
+        { id: 'server-browser',   path: 'src/gui/panels/server-browser/panel.html' },
+        { id: 'config-editor',    path: 'src/gui/panels/config-editor/panel.html' },
+        { id: 'server-actions',   path: 'src/gui/panels/server-actions/panel.html' },
+        { id: 'live-logs',        path: 'src/gui/panels/live-logs/panel.html' },
+        { id: 'health-dashboard', path: 'src/gui/panels/health-dashboard/panel.html' },
+        { id: 'config-history',   path: 'src/gui/panels/config-history/panel.html' },
+        { id: 'cross-search',     path: 'src/gui/panels/cross-search/panel.html' }
+      ];
+
+      for (var i = 0; i < panels.length; i++) {
+        var p = panels[i];
+        try {
+          var resp = await fetch(p.path);
+          if (resp.ok) {
+            var html = await resp.text();
+            var container = document.getElementById('panel-' + p.id);
+            if (container) {
+              container.innerHTML = html;
+              // Execute any script tags in the loaded HTML
+              container.querySelectorAll('script').forEach(function(oldScript) {
+                var newScript = document.createElement('script');
+                newScript.textContent = oldScript.textContent;
+                oldScript.parentNode.replaceChild(newScript, oldScript);
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('[GSA] Failed to load panel:', p.id, err);
+        }
+      }
+    }
+
+    // =========================================================================
+    // Initialisation
+    // =========================================================================
+
+    /**
+     * Application boot sequence:
+     * 1. Load all panel HTML
+     * 2. Check VeriSimDB connectivity
+     * 3. Load initial server list
+     * 4. Start status bar polling
+     */
+    async function initGSA() {
+      await loadPanelContent();
+
+      // Check VeriSimDB connection
+      var healthResp = await gossamerInvoke('get_health', {});
+      if (healthResp.ok) {
+        updateStatusBar({ connected: true, serverCount: 0, lastProbe: null });
+        setPanelStatus('health-dashboard', true);
+      } else {
+        updateStatusBar({ connected: false, serverCount: 0, lastProbe: null });
+      }
+
+      // Load initial server list
+      var serversResp = await gossamerInvoke('list_servers', {});
+      if (serversResp.ok && serversResp.data) {
+        var servers = Array.isArray(serversResp.data) ? serversResp.data : [];
+        gsaState.servers = servers;
+        updateStatusBar({
+          connected: true,
+          serverCount: servers.length,
+          lastProbe: new Date().toLocaleTimeString()
+        });
+        // Set all panel statuses to connected
+        ['server-browser', 'config-editor', 'server-actions', 'live-logs',
+         'health-dashboard', 'config-history', 'cross-search'].forEach(function(pid) {
+          setPanelStatus(pid, true);
+        });
+      }
+
+      // Trigger initial panel refresh
+      if (typeof refreshServerBrowser === 'function') {
+        refreshServerBrowser();
+      }
+
+      // Status bar polling every 30 seconds
+      setInterval(async function() {
+        var resp = await gossamerInvoke('get_health', {});
+        updateStatusBar({
+          connected: resp.ok,
+          serverCount: gsaState.servers.length,
+          lastProbe: new Date().toLocaleTimeString()
+        });
+      }, 30000);
+    }
+
+    // Boot the application when the DOM is ready
+    document.addEventListener('DOMContentLoaded', initGSA);
+  </script>
+</body>
+</html>

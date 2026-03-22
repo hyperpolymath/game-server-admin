@@ -1,0 +1,114 @@
+= Game Server Admin (GSA)
+:toc: preamble
+:icons: font
+Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+
+[TIP]
+====
+**AI-Assisted Install:** Just tell any AI assistant: +
+`Set up game-server-admin from https://github.com/hyperpolymath/game-server-admin` +
+The AI reads the manifest, asks you a few questions, and handles everything.
+====
+
+== Overview
+
+**Universal game server probe, configuration management, and administration** — built on Gossamer (linearly-typed webview shell) with VeriSimDB (8-modality database) underpinning.
+
+GSA can attach to _any_ game server, fingerprint it via protocol probing, extract its configuration into A2ML format, and provide a rich GUI for viewing, editing, and tracking config changes with full provenance.
+
+=== Architecture
+
+[source]
+----
+┌─────────────────────────────────────────────────┐
+│  Gossamer GUI (Ephapax + HTML/JS)               │
+│  7 panels, each a Clade citizen with inheritance │
+└────────────────────┬────────────────────────────┘
+                     │ IPC (gossamer:// bridge)
+┌────────────────────┴────────────────────────────┐
+│  Probe Engine (Ephapax + Zig FFI)               │
+│  Protocol fingerprint → game profile → config   │
+└────────────────────┬────────────────────────────┘
+                     │ REST (localhost:8090)
+┌────────────────────┴────────────────────────────┐
+│  VeriSimDB Instance (gsa-verisimdb)             │
+│  8 modalities per server, drift detection       │
+└─────────────────────────────────────────────────┘
+----
+
+=== Panels
+
+[cols="1,1,2"]
+|===
+| Panel | Kind | Description
+
+| Server Browser | inspector | Discover/fingerprint servers, add to management
+| Config Editor | editor | A2ML-aware form generation with type validation
+| Server Actions | terminal | Start/stop/restart with confirmation
+| Live Logs | terminal | Real-time log streaming with ANSI color
+| Health Dashboard | scanner | VeriSimDB drift detection and health gauges
+| Config History | database | Temporal version timeline with diff viewer
+| Cross-Server Search | database | VQL full-text + vector search across configs
+|===
+
+All panels are registered in the PanLL Clade system with full inheritance. The cladogram grows automatically as new game profiles are added.
+
+=== Supported Games (Initial)
+
+Valheim, Barotrauma, Don't Starve Together, Minecraft Java/Bedrock, Factorio, Terraria, ARK, Rust (game), CS2, Garry's Mod, Project Zomboid, Starbound, DayZ, Void Expanse — plus IDApTIK and Burble.
+
+== Quick Start
+
+[source,bash]
+----
+# Start the VeriSimDB instance
+just verisimdb-up
+
+# Build and launch the GUI
+just build && just gui
+----
+
+== Adding a Game Profile
+
+Create a new `.a2ml` file in `profiles/`:
+
+[source]
+----
+@game-profile(id="my-game", name="My Game", engine="custom"):
+  @ports(query=27015, game=27016):@end
+  @protocol(type="steam-query", version="a2s"):@end
+  @config(format="json", path="/config/server.json"):
+    @field(key="name", type="string", label="Server Name"):@end
+  @end
+  @clade(inherits="gsa-game", kind="game-profile"):@end
+@end
+----
+
+Then run `just generate-clades` — the cladogram updates automatically.
+
+== ABI/FFI Standard
+
+* **ABI (Idris2):** `src/interface/abi/` — formal type specs with dependent type proofs
+* **FFI (Zig):** `src/interface/ffi/` — C-compatible implementation
+* **Core (Ephapax):** `src/core/` — linear type enforcement for resource safety
+
+== VeriSimDB Integration
+
+Each managed server is a VeriSimDB octad with all 8 modalities:
+
+* **Graph:** server→game-profile, server→cluster edges
+* **Vector:** config embedding for similarity search
+* **Tensor:** performance metrics over time
+* **Semantic:** game type, version, mods, status
+* **Document:** full config text (A2ML, full-text indexed)
+* **Temporal:** every config version with timestamp
+* **Provenance:** who changed what, when, why (hash-chain)
+* **Spatial:** datacenter geolocation
+
+Dedicated instance on port 8090 with persistent storage and 15s drift detection.
+
+== License
+
+SPDX-License-Identifier: PMPL-1.0-or-later
+
+Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>

@@ -1,0 +1,19 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- main.eph — Gossamer GUI entry point for Game Server Admin
+--
+-- Thin launcher that delegates to the Shell module for webview lifecycle
+-- management. All GUI logic lives in the panel HTML files; all IPC
+-- routing lives in Bridge.eph; all resource management lives in Shell.eph.
+-- This file exists solely as the compilation entry point for the GUI target.
+
+module GSA.GUI.Main
+
+import GSA.Core.Shell
+
+-- Entry point: delegates to Shell.main() which handles the full lifecycle
+-- (create webview, bind IPC handlers, load host HTML, run event loop,
+-- clean up linear resources on exit).
+fn main() -> I32 =
+  Shell.main()

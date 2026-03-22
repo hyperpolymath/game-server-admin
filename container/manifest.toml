@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+#
+# Cerro Torre manifest for game-server-admin .ctp bundle
+#
+# This manifest describes the container image for verified
+# container packaging. Used by `ct pack` to create .ctp bundles.
+
+[metadata]
+name = "gsa"
+version = "{{VERSION}}"
+revision = 1
+summary = "Universal game server probe, config management, and administration via Gossamer + VeriSimDB"
+description = """
+game-server-admin — containerised service packaged as a verified
+cerro-torre .ctp bundle with Ed25519 signing and full provenance
+tracking.
+"""
+license = "PMPL-1.0-or-later"
+homepage = "https://github/hyperpolymath/game-server-admin"
+maintainer = "Jonathan D.A. Jewell <{{EMAIL}}>"
+
+[provenance]
+upstream = "https://github/hyperpolymath/game-server-admin"
+import_date = 2026-03-22T00:00:00Z
+
+[dependencies]
+runtime = ["ca-certificates", "curl"]
+build = []
+
+[build]
+system = "podman"
+
+[build.environment]
+APP_HOST = "[::]"
+APP_PORT = "8090"
+
+[outputs]
+primary = "gsa"
+split = []
+
+[attestations]
+require = ["source-signature", "sbom-complete"]
+recommend = ["security-audit", "reproducible-build"]
+
+# Runtime security profile
+[security]
+user = "appuser"
+group = "appuser"
+read_only_root = false
+no_new_privileges = true
+
+[security.capabilities]
+drop = ["ALL"]
+add = ["NET_BIND_SERVICE"]
+
+[security.network]
+listen_tcp = [8090]
+
+[security.filesystem]
+read = ["/app/", "/data/"]
+write = ["/data/", "/tmp/"]
+execute = ["/app/entrypoint.sh"]

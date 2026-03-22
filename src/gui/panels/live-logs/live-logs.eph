@@ -1,0 +1,19 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- live-logs.eph — Live Logs panel module for Game Server Admin
+--
+-- This module documents the Live Logs panel's IPC contract.
+-- The panel HTML (panel.html) provides a log viewer with severity filtering,
+-- search highlighting, ANSI color rendering, and auto-refresh polling.
+-- All handler logic lives in GSA.Core.Bridge.
+--
+-- IPC commands used by this panel:
+--   get_logs — Retrieve recent log lines for a server
+--              Payload: {server_id, lines}
+--              Returns: {server_id, lines: [...]}
+--              Polls every 2 seconds when not paused
+
+module GSA.GUI.Panels.LiveLogs
+
+import GSA.Core.Bridge

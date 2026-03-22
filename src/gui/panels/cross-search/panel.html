@@ -1,0 +1,398 @@
+<!--
+  SPDX-License-Identifier: PMPL-1.0-or-later
+  Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+  cross-search/panel.html — Cross-Server Search panel for Game Server Admin
+
+  Provides full-text, vector, and VQL search across all managed servers.
+  Includes faceted filters by game type, server status, and drift level.
+  VQL mode exposes a raw query editor for direct VeriSimDB queries.
+  Calls gossamer IPC: search.
+-->
+
+<!-- Header -->
+<div class="panel-header">
+  <h2>Cross-Server Search</h2>
+</div>
+
+<!-- Search bar -->
+<div class="toolbar" style="gap:8px;">
+  <input type="text" id="cs-search-input" placeholder="Search configs... e.g. MaxPlayers > 32"
+    style="flex:1; min-width:300px;" onkeydown="if(event.key==='Enter')executeSearch()" />
+  <select id="cs-mode-select" style="width:110px;" onchange="onModeChange()">
+    <option value="text">Text</option>
+    <option value="vector">Vector</option>
+    <option value="vql">VQL</option>
+  </select>
+  <button class="btn btn-primary" onclick="executeSearch()" id="cs-search-btn">
+    Search
+  </button>
+</div>
+
+<!-- VQL editor (shown when mode=VQL) -->
+<div id="cs-vql-section" style="display:none; margin-bottom:16px;">
+  <label style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:4px; display:block;">
+    VQL Query
+  </label>
+  <textarea id="cs-vql-editor" rows="4" style="
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 10px;
+    resize: vertical;
+  " placeholder="SELECT document, semantic FROM octads WHERE ..."></textarea>
+  <div style="display:flex; gap:8px; margin-top:8px;">
+    <button class="btn btn-sm btn-primary" onclick="executeVQL()">Execute VQL</button>
+    <span style="font-size:11px; color:var(--text-muted); line-height:28px;">
+      VQL queries execute directly against VeriSimDB. Use with care.
+    </span>
+  </div>
+</div>
+
+<!-- Main content: filters sidebar + results -->
+<div style="display:flex; gap:16px;">
+  <!-- Faceted filters sidebar -->
+  <div id="cs-filters-sidebar" style="width:200px; min-width:200px;">
+    <div class="collapsible-header" onclick="toggleCollapsible(this)" style="border-bottom:1px solid var(--border-color); padding-bottom:8px;">
+      <span class="collapse-arrow">&#x25BC;</span> Game Type
+    </div>
+    <div class="collapsible-body open" id="cs-filter-games" style="padding:8px 0;">
+      <!-- Populated dynamically with checkboxes -->
+      <span style="color:var(--text-muted); font-size:12px;">Loading...</span>
+    </div>
+
+    <div class="collapsible-header" onclick="toggleCollapsible(this)" style="border-bottom:1px solid var(--border-color); padding-bottom:8px; margin-top:12px;">
+      <span class="collapse-arrow">&#x25BC;</span> Status
+    </div>
+    <div class="collapsible-body open" style="padding:8px 0;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; padding:2px 0;">
+        <input type="checkbox" checked class="cs-status-filter" value="running" onchange="applyFilters()" style="width:auto;" /> Running
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; padding:2px 0;">
+        <input type="checkbox" checked class="cs-status-filter" value="stopped" onchange="applyFilters()" style="width:auto;" /> Stopped
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; padding:2px 0;">
+        <input type="checkbox" checked class="cs-status-filter" value="unknown" onchange="applyFilters()" style="width:auto;" /> Unknown
+      </label>
+    </div>
+
+    <div class="collapsible-header" onclick="toggleCollapsible(this)" style="border-bottom:1px solid var(--border-color); padding-bottom:8px; margin-top:12px;">
+      <span class="collapse-arrow">&#x25BC;</span> Drift Level
+    </div>
+    <div class="collapsible-body open" style="padding:8px 0;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; padding:2px 0;">
+        <input type="checkbox" checked class="cs-drift-filter" value="healthy" onchange="applyFilters()" style="width:auto;" />
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--success-fg);"></span> Healthy
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; padding:2px 0;">
+        <input type="checkbox" checked class="cs-drift-filter" value="warning" onchange="applyFilters()" style="width:auto;" />
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--warning-fg);"></span> Warning
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; padding:2px 0;">
+        <input type="checkbox" checked class="cs-drift-filter" value="critical" onchange="applyFilters()" style="width:auto;" />
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--danger-fg);"></span> Critical
+      </label>
+    </div>
+  </div>
+
+  <!-- Results area -->
+  <div style="flex:1; min-width:0;">
+    <!-- Results count -->
+    <div id="cs-results-info" style="font-size:12px; color:var(--text-secondary); margin-bottom:8px; display:none;">
+      <span id="cs-result-count">0</span> results
+      <span id="cs-result-time" style="color:var(--text-muted);"></span>
+    </div>
+
+    <!-- Results table -->
+    <div style="overflow-x:auto;">
+      <table id="cs-results-table" style="display:none;">
+        <thead>
+          <tr>
+            <th>Server</th>
+            <th>Game</th>
+            <th>Match Context</th>
+            <th style="width:80px;">Score</th>
+            <th style="width:80px;">Version</th>
+          </tr>
+        </thead>
+        <tbody id="cs-results-tbody">
+          <!-- Populated dynamically -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Empty / initial state -->
+    <div class="empty-state" id="cs-empty-state">
+      <div class="empty-icon">&#x1F50D;</div>
+      <p>Enter a search query to find configurations across all managed servers.</p>
+      <p style="font-size:12px; color:var(--text-muted); margin-top:8px;">
+        Supports text search, vector similarity, and raw VQL queries.
+      </p>
+    </div>
+
+    <!-- VQL result display (for VQL mode) -->
+    <div id="cs-vql-result" style="display:none;">
+      <div style="font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:8px;">VQL Result</div>
+      <pre id="cs-vql-result-text" class="code-block" style="max-height:500px;"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  /**
+   * Cross-Server Search panel state.
+   * allResults: the unfiltered results from the last search.
+   * filteredResults: the results after faceted filtering.
+   */
+  var csState = {
+    allResults: [],
+    filteredResults: [],
+    searchMode: 'text'
+  };
+
+  /**
+   * Execute a search query based on the current mode (text/vector/vql).
+   * Calls the gossamer search IPC and renders results.
+   */
+  async function executeSearch() {
+    var input = document.getElementById('cs-search-input');
+    var mode = document.getElementById('cs-mode-select').value;
+    var query = input.value.trim();
+
+    if (!query && mode !== 'vql') {
+      return;
+    }
+
+    var btn = document.getElementById('cs-search-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Searching...';
+
+    var startTime = performance.now();
+
+    var resp = await gossamerInvoke('search', { query: query, mode: mode });
+
+    var elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+    btn.disabled = false;
+    btn.innerHTML = 'Search';
+
+    if (!resp.ok) {
+      document.getElementById('cs-empty-state').innerHTML =
+        '<div class="empty-icon">&#x26A0;</div><p style="color:var(--danger-fg);">Search failed: ' + escapeHtml(resp.error) + '</p>';
+      document.getElementById('cs-empty-state').style.display = 'block';
+      document.getElementById('cs-results-table').style.display = 'none';
+      document.getElementById('cs-results-info').style.display = 'none';
+      return;
+    }
+
+    var results = resp.data ? (resp.data.results || []) : [];
+    csState.allResults = Array.isArray(results) ? results : [];
+    csState.searchMode = mode;
+
+    // Build game type filter checkboxes
+    buildGameFilters();
+
+    // Apply filters and render
+    applyFilters();
+
+    // Show timing
+    document.getElementById('cs-result-time').textContent = ' (' + elapsed + 's)';
+  }
+
+  /**
+   * Execute a raw VQL query from the VQL editor.
+   */
+  async function executeVQL() {
+    var vql = document.getElementById('cs-vql-editor').value.trim();
+    if (!vql) return;
+
+    var resp = await gossamerInvoke('search', { query: vql, mode: 'vql' });
+
+    var resultEl = document.getElementById('cs-vql-result');
+    var resultText = document.getElementById('cs-vql-result-text');
+
+    if (!resp.ok) {
+      resultEl.style.display = 'block';
+      resultText.textContent = 'Error: ' + (resp.error || 'Unknown');
+      resultText.style.color = 'var(--danger-fg)';
+      return;
+    }
+
+    resultEl.style.display = 'block';
+    resultText.style.color = 'var(--text-primary)';
+    resultText.textContent = JSON.stringify(resp.data, null, 2);
+
+    // Also try to show results in table if they have the right shape
+    var results = resp.data ? (resp.data.results || []) : [];
+    if (Array.isArray(results) && results.length > 0) {
+      csState.allResults = results;
+      csState.searchMode = 'vql';
+      applyFilters();
+    }
+  }
+
+  /**
+   * Build the game type filter checkboxes from the result set.
+   */
+  function buildGameFilters() {
+    var container = document.getElementById('cs-filter-games');
+    if (!container) return;
+
+    var games = {};
+    csState.allResults.forEach(function(r) {
+      if (r.game_type) games[r.game_type] = true;
+    });
+
+    var gameKeys = Object.keys(games).sort();
+    if (gameKeys.length === 0) {
+      container.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">No games in results</span>';
+      return;
+    }
+
+    var html = '';
+    gameKeys.forEach(function(g) {
+      html += '<label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer; padding:2px 0;">'
+        + '<input type="checkbox" checked class="cs-game-filter" value="' + escapeHtml(g) + '" onchange="applyFilters()" style="width:auto;" /> '
+        + escapeHtml(g)
+        + '</label>';
+    });
+    container.innerHTML = html;
+  }
+
+  /**
+   * Apply all faceted filters to the result set and re-render the results table.
+   */
+  function applyFilters() {
+    // Collect active game filters
+    var activeGames = [];
+    document.querySelectorAll('.cs-game-filter:checked').forEach(function(el) {
+      activeGames.push(el.value);
+    });
+
+    // Collect active status filters
+    var activeStatuses = [];
+    document.querySelectorAll('.cs-status-filter:checked').forEach(function(el) {
+      activeStatuses.push(el.value);
+    });
+
+    // Collect active drift filters
+    var activeDrifts = [];
+    document.querySelectorAll('.cs-drift-filter:checked').forEach(function(el) {
+      activeDrifts.push(el.value);
+    });
+
+    // Filter results
+    csState.filteredResults = csState.allResults.filter(function(r) {
+      // Game filter
+      if (activeGames.length > 0 && r.game_type && activeGames.indexOf(r.game_type) === -1) return false;
+
+      // Status filter
+      var status = r.status || 'unknown';
+      if (activeStatuses.indexOf(status) === -1) return false;
+
+      // Drift filter
+      var driftLevel = 'healthy';
+      if (r.drift_score >= 0.5) driftLevel = 'critical';
+      else if (r.drift_score >= 0.2) driftLevel = 'warning';
+      if (activeDrifts.indexOf(driftLevel) === -1) return false;
+
+      return true;
+    });
+
+    renderResults(csState.filteredResults);
+  }
+
+  /**
+   * Render the search results table.
+   *
+   * @param {Array} results - Array of result objects
+   */
+  function renderResults(results) {
+    var table = document.getElementById('cs-results-table');
+    var tbody = document.getElementById('cs-results-tbody');
+    var emptyState = document.getElementById('cs-empty-state');
+    var resultsInfo = document.getElementById('cs-results-info');
+    var resultCount = document.getElementById('cs-result-count');
+
+    if (results.length === 0 && csState.allResults.length === 0) {
+      table.style.display = 'none';
+      emptyState.style.display = 'block';
+      resultsInfo.style.display = 'none';
+      return;
+    }
+
+    if (results.length === 0) {
+      table.style.display = 'none';
+      emptyState.style.display = 'block';
+      emptyState.innerHTML = '<div class="empty-icon">&#x1F50D;</div><p>No results match the current filters.</p>';
+      resultsInfo.style.display = 'block';
+      resultCount.textContent = '0';
+      return;
+    }
+
+    emptyState.style.display = 'none';
+    table.style.display = 'table';
+    resultsInfo.style.display = 'block';
+    resultCount.textContent = results.length;
+
+    var html = '';
+    results.forEach(function(r) {
+      var context = r.match_context || r.context || '';
+      // Highlight matched text
+      var highlightedContext = escapeHtml(context);
+      if (r.match_start !== undefined && r.match_end !== undefined) {
+        var before = escapeHtml(context.substring(0, r.match_start));
+        var match = escapeHtml(context.substring(r.match_start, r.match_end));
+        var after = escapeHtml(context.substring(r.match_end));
+        highlightedContext = before + '<mark style="background:var(--warning-color);color:#000;border-radius:2px;padding:0 2px;">' + match + '</mark>' + after;
+      }
+
+      var scoreColor = (r.score || 0) > 0.8 ? 'var(--success-fg)' : (r.score || 0) > 0.5 ? 'var(--warning-fg)' : 'var(--text-secondary)';
+
+      html += '<tr style="cursor:pointer;" onclick="navigateToServerConfig(\'' + escapeHtml(r.server_id || '') + '\', \'' + escapeHtml(r.server_name || '') + '\', \'' + escapeHtml(r.game_type || '') + '\')">'
+        + '<td style="font-weight:500;">' + escapeHtml(r.server_name || r.server_id || '—') + '</td>'
+        + '<td><span class="badge badge-blue">' + escapeHtml(r.game_type || '?') + '</span></td>'
+        + '<td style="font-family:var(--font-mono);font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + highlightedContext + '</td>'
+        + '<td style="font-family:var(--font-mono);font-size:12px;color:' + scoreColor + ';">' + (r.score !== undefined ? r.score.toFixed(3) : '—') + '</td>'
+        + '<td style="font-family:var(--font-mono);font-size:12px;">' + escapeHtml(String(r.version || '—')) + '</td>'
+        + '</tr>';
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  /**
+   * Navigate to the Config Editor panel for a specific server.
+   *
+   * @param {string} serverId - The server ID
+   * @param {string} serverName - The server display name
+   * @param {string} gameType - The game type
+   */
+  function navigateToServerConfig(serverId, serverName, gameType) {
+    selectServerGlobal(serverId, serverName, gameType, 'unknown');
+    switchPanel('config-editor');
+  }
+
+  /**
+   * Handle search mode change. Shows/hides the VQL editor section.
+   */
+  function onModeChange() {
+    var mode = document.getElementById('cs-mode-select').value;
+    var vqlSection = document.getElementById('cs-vql-section');
+    var searchInput = document.getElementById('cs-search-input');
+
+    if (mode === 'vql') {
+      vqlSection.style.display = 'block';
+      searchInput.placeholder = 'Quick text search (or use VQL editor below)';
+    } else if (mode === 'vector') {
+      vqlSection.style.display = 'none';
+      searchInput.placeholder = 'Enter vector search query...';
+    } else {
+      vqlSection.style.display = 'none';
+      searchInput.placeholder = 'Search configs... e.g. MaxPlayers > 32';
+    }
+  }
+</script>

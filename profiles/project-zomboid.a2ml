@@ -1,0 +1,129 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Project Zomboid game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="project-zomboid", name="Project Zomboid", engine="Project Zomboid"):
+
+  @ports:
+    @port(name="game", range="16261-16262", protocol="UDP"):
+      Game traffic ports. The server uses two consecutive UDP ports.
+    @end
+    @port(name="steam", number=8766, protocol="UDP"):
+      Steam communication port for authentication and server browser
+    @end
+  @end
+
+  @protocol(type="steam-query", variant="A2S"):
+    Valve Steam Query protocol for server browser integration.
+    Project Zomboid responds to standard A2S queries on the Steam port.
+  @end
+
+  @fingerprint:
+    @steam-appid(server=380870, client=108600) @end
+    @executable(name="ProjectZomboid64") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="ini", path="/config/Server/servertest.ini"):
+    # INI-format server configuration for Project Zomboid.
+    # The file name corresponds to the server name passed at launch.
+
+    @field(key="PublicName", type="string", label="Public Name"):
+      Display name shown in the server browser.
+      @default("My PZ Server") @end
+    @end
+
+    @field(key="PublicDescription", type="string", label="Public Description"):
+      Description text shown alongside the server listing.
+      @default("") @end
+    @end
+
+    @field(key="Password", type="secret", label="Server Password"):
+      Password required to join. Leave empty for an open server.
+    @end
+
+    @field(key="MaxPlayers", type="int", label="Max Players"):
+      Maximum number of concurrent players.
+      @constraint(min=1, max=100) @end
+      @default(32) @end
+    @end
+
+    @field(key="PVP", type="bool", label="PvP"):
+      Whether players can damage each other.
+      @default(true) @end
+    @end
+
+    @field(key="Open", type="bool", label="Open to Public"):
+      Whether the server is listed in the public server browser.
+      @default(true) @end
+    @end
+
+    @field(key="PauseEmpty", type="bool", label="Pause When Empty"):
+      Pause the world simulation when no players are connected.
+      @default(true) @end
+    @end
+
+    @field(key="SleepAllowed", type="bool", label="Sleep Allowed"):
+      Allow players to sleep to fast-forward time.
+      @default(false) @end
+    @end
+
+    @field(key="Map", type="string", label="Map"):
+      Semicolon-separated list of map folders to load.
+      @default("Muldraugh, KY") @end
+    @end
+
+    @field(key="Mods", type="string", label="Mods"):
+      Semicolon-separated list of mod IDs to load.
+      @default("") @end
+    @end
+
+    @field(key="ResetID", type="int", label="Reset ID"):
+      Increment this value to force all players to create new characters.
+      @default(0) @end
+    @end
+
+    @field(key="SteamPort1", type="int", label="Steam Port"):
+      First Steam communication port.
+      @default(8766) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start project-zomboid
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 project-zomboid
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 project-zomboid
+    @end
+    @action(id="update", label="Update Server"):
+      podman exec project-zomboid steamcmd +force_install_dir /opt/pz +login anonymous +app_update 380870 validate +quit
+    @end
+    @action(id="backup", label="Backup World"):
+      podman exec project-zomboid /scripts/backup.sh
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 project-zomboid
+    @end
+  @end
+
+  @container(runtime="podman", name="project-zomboid"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/project-zomboid/save", container="/root/Zomboid/Saves") @end
+      @volume(host="/config/Server", container="/config/Server", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Project Zomboid dedicated server profile for Game Server Admin.
+    Supports Steam query, INI-based configuration, mod loading,
+    and Podman container lifecycle management.
+  @end
+
+@end

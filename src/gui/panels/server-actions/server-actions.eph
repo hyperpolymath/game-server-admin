@@ -1,0 +1,17 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- server-actions.eph — Server Actions panel module for Game Server Admin
+--
+-- This module documents the Server Actions panel's IPC contract.
+-- The panel HTML (panel.html) provides start/stop/restart/update/backup/validate
+-- buttons with confirmation dialogs; all handler logic lives in GSA.Core.Bridge.
+--
+-- IPC commands used by this panel:
+--   server_action — Execute a server action (start, stop, restart, update, backup, validate)
+--                   Payload: {server_id, action}
+--                   Provenance recorded for state-changing actions (start, stop, restart, update)
+
+module GSA.GUI.Panels.ServerActions
+
+import GSA.Core.Bridge

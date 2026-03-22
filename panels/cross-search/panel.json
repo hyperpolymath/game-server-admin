@@ -1,0 +1,31 @@
+{
+  "id": "gsa-cross-search",
+  "title": "Cross-Server Search",
+  "description": "VQL-powered search across all managed server configurations",
+  "version": "0.1.0",
+  "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
+  "license": "PMPL-1.0-or-later",
+  "runtime": "gossamer",
+  "dimensions": { "width": 1400, "height": 900, "resizable": true },
+  "entry": "../../src/gui/panels/cross-search/panel.html",
+  "data_sources": [
+    { "id": "search-results", "uri": "gossamer://gsa/search", "refresh_interval_ms": 0 }
+  ],
+  "widgets": [
+    { "type": "search-bar", "data_source": "search-results", "placeholder": "Search configs... e.g. MaxPlayers > 32",
+      "modes": ["text", "vector", "vql"] },
+    { "type": "data-table", "data_source": "search-results", "fields": [
+      { "field": "server_id", "label": "Server", "width": "150px" },
+      { "field": "game_name", "label": "Game", "width": "100px" },
+      { "field": "match_context", "label": "Match", "width": "300px", "render": "highlighted" },
+      { "field": "score", "label": "Score", "width": "80px" },
+      { "field": "version", "label": "Version", "width": "80px" }
+    ]},
+    { "type": "filter-sidebar", "filters": [
+      { "field": "game_id", "label": "Game Type", "type": "checkbox" },
+      { "field": "status", "label": "Status", "type": "checkbox" },
+      { "field": "drift_level", "label": "Drift Level", "type": "checkbox" }
+    ]}
+  ],
+  "tags": ["search", "vql", "full-text", "vector", "cross-server", "filter"]
+}

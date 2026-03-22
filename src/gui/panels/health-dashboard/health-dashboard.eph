@@ -1,0 +1,21 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- health-dashboard.eph — Health Dashboard panel module for Game Server Admin
+--
+-- This module documents the Health Dashboard panel's IPC contract.
+-- The panel HTML (panel.html) displays server health overview cards,
+-- a health table sorted by drift score, and per-server modality gauges
+-- for all 8 VeriSimDB octad modalities. Auto-refreshes every 15 seconds.
+-- All handler logic lives in GSA.Core.Bridge.
+--
+-- IPC commands used by this panel:
+--   get_health — Get overall health status of all managed servers
+--                Returns: {verisimdb_healthy, drift: [{server_id, overall_score, ...}]}
+--   get_drift  — Get per-modality drift report for a specific server
+--                Payload: {server_id}
+--                Returns: {document_drift, semantic_drift, ..., events: [...]}
+
+module GSA.GUI.Panels.HealthDashboard
+
+import GSA.Core.Bridge

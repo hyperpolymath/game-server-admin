@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Clade declaration — part of the gv-clade-index registry
+# See: https://github.com/hyperpolymath/gv-clade-index
+
+[identity]
+uuid = "b7e3f1a2-c4d5-5678-9abc-def012345678"
+primary-forge = "github"
+primary-owner = "hyperpolymath"
+canonical-name = "game-server-admin"
+prefixed-name = "ix-game-server-admin"
+
+[clade]
+primary = "ix"
+secondary = ["gm", "db"]
+assigned = "2026-03-22"
+rationale = "Infrastructure tool for universal game server management; secondary gm (game-specific profiles and fingerprinting) and db (VeriSimDB-backed config storage with drift detection)"
+
+[forges]
+github = "hyperpolymath/game-server-admin"
+gitlab = "hyperpolymath/game-server-admin"
+bitbucket = "hyperpolymath/game-server-admin"
+
+[lineage]
+type = "standalone"
+parent = ""
+born = "2026-03-22"
+evolved-from = "gossamer/examples/game-server-admin"

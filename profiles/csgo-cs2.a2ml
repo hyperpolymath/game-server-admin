@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Game Server Admin — Counter-Strike 2 game profile
+# Declares server identity, ports, protocol, config schema, and container actions.
+
+@game-profile(id="csgo-cs2", name="Counter-Strike 2", engine="Source 2"):
+
+  @ports:
+    @port(name="game", number=27015, protocol="UDP"):
+      Primary game traffic port
+    @end
+    @port(name="rcon", number=27015, protocol="TCP"):
+      RCON remote administration (shares game port number)
+    @end
+    @port(name="query", number=27015, protocol="UDP"):
+      Steam query port (shares game port number)
+    @end
+  @end
+
+  @protocol(type="steam-query", variant="A2S"):
+    Valve A2S (A2S_INFO, A2S_PLAYER, A2S_RULES) over UDP.
+    CS2 uses Source 2 networking with standard Steam query responses.
+  @end
+
+  @fingerprint:
+    @steam-appid(server=730, client=730) @end
+    @executable(name="cs2") @end
+    @platform(os="linux", arch="x86_64") @end
+  @end
+
+  @config(format="key-value", path="/config/server.cfg"):
+    # Source engine server.cfg file. Each line is a console variable
+    # assignment executed at server startup.
+
+    @field(key="hostname", type="string", label="Server Hostname"):
+      Display name shown in the server browser.
+      @default("Counter-Strike 2 Server") @end
+    @end
+
+    @field(key="sv_password", type="secret", label="Server Password"):
+      Password required to join. Leave empty for an open server.
+    @end
+
+    @field(key="sv_cheats", type="bool", label="Enable Cheats"):
+      Allow cheat console commands. Should be disabled for competitive play.
+      @default(false) @end
+    @end
+
+    @field(key="mp_autoteambalance", type="bool", label="Auto Team Balance"):
+      Automatically balance team sizes during the match.
+      @default(true) @end
+    @end
+
+    @field(key="mp_maxrounds", type="int", label="Max Rounds"):
+      Maximum number of rounds per map before a map change.
+      @constraint(min=1, max=999) @end
+      @default(30) @end
+    @end
+
+    @field(key="mp_roundtime", type="float", label="Round Time (minutes)"):
+      Time limit for each round in minutes.
+      @constraint(min=0.5, max=60.0) @end
+      @default(1.92) @end
+    @end
+
+    @field(key="sv_maxrate", type="int", label="Max Network Rate"):
+      Maximum network bandwidth rate per client in bytes per second.
+      Set to 0 for unlimited.
+      @default(0) @end
+    @end
+
+    @field(key="bot_quota", type="int", label="Bot Quota"):
+      Number of bots to fill the server with.
+      @constraint(min=0, max=32) @end
+      @default(0) @end
+    @end
+
+    @field(key="game_type", type="int", label="Game Type"):
+      Game type selector. 0 = Classic, 1 = Arms Race / Demolition.
+      @constraint(min=0, max=1) @end
+      @default(0) @end
+    @end
+
+    @field(key="game_mode", type="int", label="Game Mode"):
+      Game mode within the selected type. 0 = Casual, 1 = Competitive,
+      2 = Wingman.
+      @constraint(min=0, max=2) @end
+      @default(0) @end
+    @end
+  @end
+
+  @actions:
+    @action(id="start", label="Start Server"):
+      podman start cs2
+    @end
+    @action(id="stop", label="Stop Server"):
+      podman stop -t 30 cs2
+    @end
+    @action(id="restart", label="Restart Server"):
+      podman restart -t 30 cs2
+    @end
+    @action(id="update", label="Update Server"):
+      podman exec cs2 steamcmd +force_install_dir /opt/cs2 +login anonymous +app_update 730 validate +quit
+    @end
+    @action(id="logs", label="View Logs"):
+      podman logs --tail 100 cs2
+    @end
+  @end
+
+  @container(runtime="podman", name="cs2"):
+    @image(base="cgr.dev/chainguard/wolfi-base:latest") @end
+    @volumes:
+      @volume(host="/data/cs2", container="/opt/cs2/game/csgo") @end
+      @volume(host="/config", container="/config", readonly=true) @end
+    @end
+  @end
+
+  @clade(inherits="gsa-game", kind="game-profile"):
+    Counter-Strike 2 dedicated server profile for Game Server Admin.
+    Supports Steam query, Source engine key-value configuration,
+    RCON administration, and Podman container lifecycle management.
+  @end
+
+@end

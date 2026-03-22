@@ -1,0 +1,98 @@
+{
+  "$schema": "https://panll.dev/schemas/panel-manifest/v1.json",
+  "spdx": "PMPL-1.0-or-later",
+  "service_id": "game-server-admin",
+  "domain": "Game Server Management",
+  "version": "0.1.0",
+  "clade": "infrastructure/game-servers",
+  "description": "Universal game server probe, config management, and administration via Gossamer + VeriSimDB",
+  "default_endpoint": "gossamer://game-server-admin/bridge",
+  "health_check": {
+    "path": "/health",
+    "interval_ms": 15000,
+    "timeout_ms": 5000,
+    "unhealthy_threshold": 3
+  },
+  "data_sources": {
+    "gossamer://gsa/servers": {
+      "path": "/ipc/list_servers",
+      "method": "GET",
+      "returns": "ServerList"
+    },
+    "gossamer://gsa/probe": {
+      "path": "/ipc/probe_server",
+      "method": "POST",
+      "returns": "ProbeResult"
+    },
+    "gossamer://gsa/config": {
+      "path": "/ipc/get_config",
+      "method": "POST",
+      "returns": "A2MLConfig"
+    },
+    "gossamer://gsa/actions": {
+      "path": "/ipc/server_action",
+      "method": "POST",
+      "returns": "ActionResponse"
+    },
+    "gossamer://gsa/logs": {
+      "path": "/ipc/get_logs",
+      "method": "WS",
+      "returns": "LogStream"
+    },
+    "gossamer://gsa/health": {
+      "path": "/ipc/get_health",
+      "method": "GET",
+      "returns": "HealthStatus"
+    },
+    "gossamer://gsa/history": {
+      "path": "/ipc/get_history",
+      "method": "GET",
+      "returns": "TemporalVersions"
+    },
+    "gossamer://gsa/search": {
+      "path": "/ipc/search",
+      "method": "POST",
+      "returns": "SearchResults"
+    },
+    "gossamer://gsa/profiles": {
+      "path": "/ipc/list_profiles",
+      "method": "GET",
+      "returns": "ProfileList"
+    }
+  },
+  "panels": [
+    "panels/server-browser/panel.json",
+    "panels/config-editor/panel.json",
+    "panels/server-actions/panel.json",
+    "panels/live-logs/panel.json",
+    "panels/health-dashboard/panel.json",
+    "panels/config-history/panel.json",
+    "panels/cross-search/panel.json"
+  ],
+  "capabilities": [
+    "Network",
+    "Shell",
+    "ProcessSpawn",
+    "Containerised",
+    "Streaming",
+    "SecretManagement"
+  ],
+  "integrations": {
+    "idaptik": {
+      "role": "game-server",
+      "protocol": "websocket",
+      "description": "IDApTIK game server management"
+    },
+    "burble": {
+      "role": "voice-server",
+      "protocol": "webrtc",
+      "description": "Burble voice platform management"
+    },
+    "verisimdb": {
+      "role": "data-store",
+      "protocol": "REST",
+      "port": 8090,
+      "description": "Dedicated VeriSimDB instance for config persistence and drift detection"
+    }
+  }
+}

@@ -1,0 +1,330 @@
+<!--
+  SPDX-License-Identifier: PMPL-1.0-or-later
+  Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+  health-dashboard/panel.html — Health Dashboard panel for Game Server Admin
+
+  Displays server health overview cards, a health table sorted by overall
+  score, and a per-server drift detail view with 8 VeriSimDB modality gauges.
+  Auto-refreshes every 15 seconds.
+  Calls gossamer IPC: get_health, get_drift.
+-->
+
+<!-- Header -->
+<div class="panel-header">
+  <h2>Health Dashboard</h2>
+  <div style="flex:1;"></div>
+  <button class="btn btn-sm" onclick="refreshHealthDashboard()">&#x21BB; Refresh</button>
+</div>
+
+<!-- Overview cards -->
+<div class="card-grid" id="hd-overview-cards">
+  <div class="card card-stat">
+    <div class="stat-value" style="color:var(--text-primary);" id="hd-total-count">0</div>
+    <div class="stat-label">Total Servers</div>
+  </div>
+  <div class="card card-stat">
+    <div class="stat-value" style="color:var(--success-fg);" id="hd-healthy-count">0</div>
+    <div class="stat-label">Healthy</div>
+  </div>
+  <div class="card card-stat">
+    <div class="stat-value" style="color:var(--warning-fg);" id="hd-warning-count">0</div>
+    <div class="stat-label">Warning</div>
+  </div>
+  <div class="card card-stat">
+    <div class="stat-value" style="color:var(--danger-fg);" id="hd-critical-count">0</div>
+    <div class="stat-label">Critical</div>
+  </div>
+</div>
+
+<!-- Server health table -->
+<div style="overflow-x:auto; margin-bottom:16px;">
+  <table id="hd-health-table">
+    <thead>
+      <tr>
+        <th>Server</th>
+        <th>Game</th>
+        <th style="width:100px;">Status</th>
+        <th style="width:160px;">Config Drift</th>
+        <th style="width:120px;">Semantic Drift</th>
+        <th style="width:100px;">Overall Score</th>
+        <th style="width:120px;">Last Checked</th>
+      </tr>
+    </thead>
+    <tbody id="hd-health-tbody">
+      <!-- Populated dynamically -->
+    </tbody>
+  </table>
+</div>
+
+<div class="empty-state" id="hd-empty-state" style="display:none;">
+  <div class="empty-icon">&#x2665;</div>
+  <p>No health data available. Add servers to begin monitoring.</p>
+</div>
+
+<!-- Drift detail panel (below table, for selected server) -->
+<div id="hd-drift-detail" class="card" style="display:none;">
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+    <h3 style="font-size:15px; font-weight:600;" id="hd-drift-server-name">Server Drift Detail</h3>
+    <span class="badge" id="hd-drift-score-badge"></span>
+  </div>
+
+  <!-- 8 VeriSimDB modality gauges -->
+  <div id="hd-drift-gauges" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+    <!-- Populated dynamically: one gauge per modality -->
+  </div>
+
+  <!-- Alert timeline -->
+  <div style="margin-top:16px;">
+    <h4 style="font-size:13px; font-weight:600; color:var(--text-secondary); margin-bottom:8px;">Recent Drift Events</h4>
+    <div id="hd-drift-timeline" style="max-height:200px; overflow-y:auto;">
+      <span style="color:var(--text-muted); font-size:12px;">No recent events.</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  /**
+   * Health Dashboard state.
+   * healthData: the full health response from get_health.
+   * selectedHealthServer: which server's drift detail is shown.
+   * refreshTimer: auto-refresh interval reference.
+   */
+  var hdState = {
+    healthData: null,
+    selectedHealthServer: null,
+    refreshTimer: null
+  };
+
+  /**
+   * The 8 VeriSimDB modality names used in drift gauges.
+   * These correspond to the octad modalities in the VeriSimDB data model.
+   */
+  var MODALITY_NAMES = [
+    'document',
+    'semantic',
+    'temporal',
+    'spatial',
+    'graph',
+    'vector',
+    'provenance',
+    'binary'
+  ];
+
+  /**
+   * Refresh the health dashboard. Fetches overall health data and
+   * renders the overview cards and health table.
+   */
+  async function refreshHealthDashboard() {
+    var resp = await gossamerInvoke('get_health', {});
+
+    if (!resp.ok) {
+      document.getElementById('hd-empty-state').style.display = 'block';
+      return;
+    }
+
+    hdState.healthData = resp.data;
+
+    var drift = resp.data.drift || [];
+    var servers = Array.isArray(drift) ? drift : [];
+
+    // Calculate counts
+    var total = servers.length;
+    var healthy = 0, warning = 0, critical = 0;
+
+    servers.forEach(function(s) {
+      var score = s.overall_score !== undefined ? s.overall_score : 0;
+      if (score < 0.2) healthy++;
+      else if (score < 0.5) warning++;
+      else critical++;
+    });
+
+    // Update overview cards
+    document.getElementById('hd-total-count').textContent = total;
+    document.getElementById('hd-healthy-count').textContent = healthy;
+    document.getElementById('hd-warning-count').textContent = warning;
+    document.getElementById('hd-critical-count').textContent = critical;
+
+    // Show/hide empty state
+    document.getElementById('hd-empty-state').style.display = total === 0 ? 'block' : 'none';
+
+    // Render health table
+    renderHealthTable(servers);
+
+    // Start auto-refresh
+    startHealthPolling();
+  }
+
+  /**
+   * Render the server health table. Rows are sorted by overall score
+   * descending (worst first).
+   *
+   * @param {Array} servers - Array of server health objects
+   */
+  function renderHealthTable(servers) {
+    var tbody = document.getElementById('hd-health-tbody');
+    if (!tbody) return;
+
+    // Sort by overall score descending (worst first)
+    var sorted = servers.slice().sort(function(a, b) {
+      return (b.overall_score || 0) - (a.overall_score || 0);
+    });
+
+    var html = '';
+    sorted.forEach(function(srv) {
+      var score = srv.overall_score !== undefined ? srv.overall_score : 0;
+      var configDrift = srv.config_drift !== undefined ? srv.config_drift : 0;
+      var semanticDrift = srv.semantic_drift !== undefined ? srv.semantic_drift : 0;
+
+      // Status badge
+      var statusClass = 'badge-green';
+      var statusText = 'Healthy';
+      if (score >= 0.5) { statusClass = 'badge-red'; statusText = 'Critical'; }
+      else if (score >= 0.2) { statusClass = 'badge-yellow'; statusText = 'Warning'; }
+
+      // Config drift progress bar
+      var configColor = getDriftColor(configDrift);
+      var configPct = Math.min(configDrift * 100, 100);
+
+      // Selected row
+      var rowClass = hdState.selectedHealthServer === srv.server_id ? 'selected' : '';
+
+      html += '<tr class="' + rowClass + '" style="cursor:pointer;" onclick="renderDriftDetail(\'' + escapeHtml(srv.server_id) + '\')">'
+        + '<td style="font-weight:500;">' + escapeHtml(srv.server_name || srv.server_id) + '</td>'
+        + '<td><span class="badge badge-blue">' + escapeHtml(srv.game_type || '?') + '</span></td>'
+        + '<td><span class="badge ' + statusClass + '">' + statusText + '</span></td>'
+        + '<td>'
+        + '  <div style="display:flex;align-items:center;gap:8px;">'
+        + '    <div class="progress-bar" style="flex:1;">'
+        + '      <div class="progress-bar-fill" style="width:' + configPct + '%;background:' + configColor + ';"></div>'
+        + '    </div>'
+        + '    <span style="font-size:11px;color:var(--text-secondary);min-width:36px;">' + (configDrift * 100).toFixed(1) + '%</span>'
+        + '  </div>'
+        + '</td>'
+        + '<td style="font-family:var(--font-mono);font-size:12px;">' + semanticDrift.toFixed(3) + '</td>'
+        + '<td style="font-weight:600;color:' + configColor + ';">' + score.toFixed(2) + '</td>'
+        + '<td style="color:var(--text-secondary);">' + formatTime(srv.last_checked) + '</td>'
+        + '</tr>';
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  /**
+   * Get the color for a drift value: green (0-0.2), yellow (0.2-0.5), red (0.5+).
+   *
+   * @param {number} value - The drift value (0.0 to 1.0)
+   * @returns {string} CSS color string
+   */
+  function getDriftColor(value) {
+    if (value < 0.2) return 'var(--success-fg)';
+    if (value < 0.5) return 'var(--warning-fg)';
+    return 'var(--danger-fg)';
+  }
+
+  /**
+   * Render the drift detail panel for a specific server.
+   * Fetches per-modality drift data and displays 8 gauges + event timeline.
+   *
+   * @param {string} serverId - The server ID to show detail for
+   */
+  async function renderDriftDetail(serverId) {
+    hdState.selectedHealthServer = serverId;
+
+    var detail = document.getElementById('hd-drift-detail');
+    detail.style.display = 'block';
+
+    // Find server name
+    var srvData = null;
+    if (hdState.healthData && hdState.healthData.drift) {
+      srvData = hdState.healthData.drift.find(function(s) { return s.server_id === serverId; });
+    }
+
+    document.getElementById('hd-drift-server-name').textContent =
+      (srvData ? (srvData.server_name || srvData.server_id) : serverId) + ' — Drift Detail';
+
+    var scoreBadge = document.getElementById('hd-drift-score-badge');
+    var score = srvData ? (srvData.overall_score || 0) : 0;
+    var scoreClass = score < 0.2 ? 'badge-green' : (score < 0.5 ? 'badge-yellow' : 'badge-red');
+    scoreBadge.className = 'badge ' + scoreClass;
+    scoreBadge.textContent = 'Score: ' + score.toFixed(2);
+
+    // Fetch detailed drift data
+    var resp = await gossamerInvoke('get_drift', { server_id: serverId });
+
+    var gauges = document.getElementById('hd-drift-gauges');
+    var timeline = document.getElementById('hd-drift-timeline');
+
+    if (!resp.ok) {
+      gauges.innerHTML = '<div style="grid-column:1/-1;color:var(--danger-fg);">Failed to load drift data: ' + escapeHtml(resp.error) + '</div>';
+      return;
+    }
+
+    var driftData = resp.data || {};
+
+    // Render modality gauges
+    var gaugeHtml = '';
+    MODALITY_NAMES.forEach(function(mod) {
+      var value = driftData[mod + '_drift'] !== undefined ? driftData[mod + '_drift'] : 0;
+      var color = getDriftColor(value);
+      var pct = Math.min(value * 100, 100);
+
+      gaugeHtml += '<div style="display:flex;align-items:center;gap:8px;">'
+        + '<span style="min-width:90px;font-size:12px;color:var(--text-secondary);text-transform:capitalize;">' + mod + '</span>'
+        + '<div class="progress-bar" style="flex:1;">'
+        + '  <div class="progress-bar-fill" style="width:' + pct + '%;background:' + color + ';"></div>'
+        + '</div>'
+        + '<span style="font-size:11px;font-family:var(--font-mono);min-width:40px;color:' + color + ';">' + value.toFixed(3) + '</span>'
+        + '</div>';
+    });
+    gauges.innerHTML = gaugeHtml;
+
+    // Render alert timeline
+    var events = driftData.events || [];
+    if (events.length === 0) {
+      timeline.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">No recent drift events.</span>';
+    } else {
+      var timelineHtml = '';
+      events.forEach(function(evt) {
+        var evtColor = evt.severity === 'critical' ? 'var(--danger-fg)' :
+                       evt.severity === 'warning' ? 'var(--warning-fg)' : 'var(--text-secondary)';
+        timelineHtml += '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-color);">'
+          + '<span style="width:8px;height:8px;border-radius:50%;background:' + evtColor + ';margin-top:4px;flex-shrink:0;"></span>'
+          + '<div style="flex:1;">'
+          + '  <div style="font-size:12px;font-weight:500;">' + escapeHtml(evt.description || evt.type || 'Drift event') + '</div>'
+          + '  <div style="font-size:11px;color:var(--text-muted);">' + escapeHtml(evt.modality || '') + ' — ' + formatTime(evt.timestamp) + '</div>'
+          + '</div>'
+          + '</div>';
+      });
+      timeline.innerHTML = timelineHtml;
+    }
+
+    // Re-render table to highlight selected row
+    if (hdState.healthData && hdState.healthData.drift) {
+      renderHealthTable(hdState.healthData.drift);
+    }
+  }
+
+  /**
+   * Start the health dashboard auto-refresh (every 15 seconds).
+   */
+  function startHealthPolling() {
+    stopHealthPolling();
+    hdState.refreshTimer = setInterval(refreshHealthDashboard, 15000);
+    gsaState.panelTimers['health-dashboard'] = hdState.refreshTimer;
+  }
+
+  /**
+   * Stop the health dashboard auto-refresh.
+   */
+  function stopHealthPolling() {
+    if (hdState.refreshTimer) {
+      clearInterval(hdState.refreshTimer);
+      hdState.refreshTimer = null;
+    }
+    if (gsaState.panelTimers['health-dashboard']) {
+      clearInterval(gsaState.panelTimers['health-dashboard']);
+      delete gsaState.panelTimers['health-dashboard'];
+    }
+  }
+</script>
