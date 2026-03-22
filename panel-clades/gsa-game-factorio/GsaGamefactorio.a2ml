@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Auto-generated from profiles/factorio.a2ml
+
+[clade-metadata]
+id = "gsa-game-factorio"
+name = "GSA Factorio"
+short-name = "Factorio"
+version = "1.0.0"
+kind = "game-profile"
+icon = "gamepad"
+description = "Game profile clade for Factorio — inherits from gsa-game"
+
+[clade-traits]
+has-backend = true
+has-scanning = true
+has-persistence = true
+has-real-time = true
+
+[clade-taxonomy]
+inherits-from = "gsa-game"

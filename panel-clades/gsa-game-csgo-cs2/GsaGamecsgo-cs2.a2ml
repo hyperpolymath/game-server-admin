@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Auto-generated from profiles/csgo-cs2.a2ml
+
+[clade-metadata]
+id = "gsa-game-csgo-cs2"
+name = "GSA Counter-Strike 2"
+short-name = "Counter-Strike 2"
+version = "1.0.0"
+kind = "game-profile"
+icon = "gamepad"
+description = "Game profile clade for Counter-Strike 2 — inherits from gsa-game"
+
+[clade-traits]
+has-backend = true
+has-scanning = true
+has-persistence = true
+has-real-time = true
+
+[clade-taxonomy]
+inherits-from = "gsa-game"

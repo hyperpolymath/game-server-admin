@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Auto-generated from profiles/project-zomboid.a2ml
+
+[clade-metadata]
+id = "gsa-game-project-zomboid"
+name = "GSA Project Zomboid"
+short-name = "Project Zomboid"
+version = "1.0.0"
+kind = "game-profile"
+icon = "gamepad"
+description = "Game profile clade for Project Zomboid — inherits from gsa-game"
+
+[clade-traits]
+has-backend = true
+has-scanning = true
+has-persistence = true
+has-real-time = true
+
+[clade-taxonomy]
+inherits-from = "gsa-game"

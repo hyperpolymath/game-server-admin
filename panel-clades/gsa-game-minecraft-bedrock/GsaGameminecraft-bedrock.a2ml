@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Auto-generated from profiles/minecraft-bedrock.a2ml
+
+[clade-metadata]
+id = "gsa-game-minecraft-bedrock"
+name = "GSA Minecraft Bedrock Edition"
+short-name = "Minecraft Bedrock Edition"
+version = "1.0.0"
+kind = "game-profile"
+icon = "gamepad"
+description = "Game profile clade for Minecraft Bedrock Edition — inherits from gsa-game"
+
+[clade-traits]
+has-backend = true
+has-scanning = true
+has-persistence = true
+has-real-time = true
+
+[clade-taxonomy]
+inherits-from = "gsa-game"

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Auto-generated from profiles/minecraft-java.a2ml
+
+[clade-metadata]
+id = "gsa-game-minecraft-java"
+name = "GSA Minecraft Java Edition"
+short-name = "Minecraft Java Edition"
+version = "1.0.0"
+kind = "game-profile"
+icon = "gamepad"
+description = "Game profile clade for Minecraft Java Edition — inherits from gsa-game"
+
+[clade-traits]
+has-backend = true
+has-scanning = true
+has-persistence = true
+has-real-time = true
+
+[clade-taxonomy]
+inherits-from = "gsa-game"

@@ -324,34 +324,7 @@ add-profile name:
 # Regenerate panel clade definitions from game profiles
 generate-clades:
     @echo "Generating panel clades from profiles/*.a2ml..."
-    for profile in profiles/*.a2ml; do \
-        id=$(grep -oP 'id="\K[^"]+' "$profile" | head -1); \
-        name=$(grep -oP 'name="\K[^"]+' "$profile" | head -1); \
-        clade_dir="panel-clades/gsa-game-${id}"; \
-        mkdir -p "$clade_dir"; \
-        cat > "$clade_dir/GsaGame$(echo ${id} | sed 's/-//g; s/\b\(.\)/\u\1/g').a2ml" << CLADE_EOF
-# SPDX-License-Identifier: PMPL-1.0-or-later
-# Auto-generated from profiles/${id}.a2ml
-
-[clade-metadata]
-id = "gsa-game-${id}"
-name = "GSA ${name}"
-short-name = "${name}"
-version = "1.0.0"
-kind = "game-profile"
-icon = "gamepad"
-description = "Game profile clade for ${name} — inherits from gsa-game"
-
-[clade-traits]
-has-backend = true
-has-scanning = true
-has-persistence = true
-has-real-time = true
-
-[clade-taxonomy]
-inherits-from = "gsa-game"
-CLADE_EOF
-    done
+    @bash scripts/generate-clades.sh
     @echo "Generated $(ls -d panel-clades/gsa-game-*/ 2>/dev/null | wc -l) game profile clades"
 
 # Start the dedicated VeriSimDB instance

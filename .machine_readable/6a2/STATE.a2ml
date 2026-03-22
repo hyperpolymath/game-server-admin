@@ -1,64 +1,58 @@
 # SPDX-License-Identifier: PMPL-1.0-or-later
 # Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
-# STATE.a2ml — Project state checkpoint (META-TEMPLATE)
-#
-# This is the STATE file for rsr-template-repo itself.
-# When consumed by a new project, replace {{PLACEHOLDER}} tokens
-# and customize sections below for the target project.
+# STATE.a2ml — Project state checkpoint for Game Server Admin
 
 [metadata]
-project = "rsr-template-repo"
-version = "0.2.0"
-last-updated = "2026-02-28"
-status = "active"  # active | paused | archived
+project = "game-server-admin"
+version = "0.1.0"
+last-updated = "2026-03-22"
+status = "active"
 
 [project-context]
-name = "rsr-template-repo"
-purpose = "Canonical RSR-compliant repository template providing scaffolding for all hyperpolymath projects — including CI/CD, AI manifests, ABI/FFI standards, container ecosystem, and governance infrastructure."
-completion-percentage = 95
+name = "game-server-admin"
+purpose = "Universal game server probe, configuration management, and administration via Gossamer webview + VeriSimDB backing store. Extracts config into A2ML format with full provenance tracking."
+completion-percentage = 75
 
 [position]
-phase = "maintenance"      # design | implementation | testing | maintenance | archived
-maturity = "production"    # experimental | alpha | beta | production | lts
+phase = "implementation"
+maturity = "alpha"
 
 [route-to-mvp]
 milestones = [
-  { name = "Phase 0: Core scaffolding (justfile, CI/CD, .machine_readable)", completion = 100 },
-  { name = "Phase 1: ABI/FFI standard (Idris2/Zig templates)", completion = 100 },
-  { name = "Phase 1b: AI Gatekeeper Protocol (0-AI-MANIFEST.a2ml)", completion = 100 },
-  { name = "Phase 1c: TOPOLOGY.md standard and guide", completion = 100 },
-  { name = "Phase 1d: Maintenance gate (axes, checklist, approach)", completion = 100 },
-  { name = "Phase 1e: Trustfile / contractiles", completion = 100 },
-  { name = "Phase 2: Container ecosystem templates (stapeln)", completion = 100 },
-  { name = "Phase 3: Multi-forge sync hardening", completion = 0 },
-  { name = "Phase 4: Nix/Guix reproducible shells", completion = 50 },
+  { name = "Phase 1: Repo bootstrap from rsr-template-repo", completion = 100 },
+  { name = "Phase 2: Idris2 ABI layer (Types, Foreign, Layout)", completion = 100 },
+  { name = "Phase 3: Zig FFI layer (probe, extract, emit, VeriSimDB, actions, profiles)", completion = 100 },
+  { name = "Phase 4: Ephapax core (Shell, Bridge, Types, Capabilities)", completion = 100 },
+  { name = "Phase 5: 17 game profiles (A2ML definitions)", completion = 100 },
+  { name = "Phase 6: Gossamer GUI (host + 7 panels)", completion = 100 },
+  { name = "Phase 7: Panel clade definitions (9 clades + 17 game children)", completion = 100 },
+  { name = "Phase 8: PanLL integration (registry, engine, clade files)", completion = 100 },
+  { name = "Phase 9: VeriSimDB dedicated instance config", completion = 100 },
+  { name = "Phase 10: PanLL harness manifest + panel.json descriptors", completion = 100 },
+  { name = "Phase 11: Justfile GSA-specific recipes", completion = 100 },
+  { name = "Phase 12: Documentation (README, EXPLAINME)", completion = 100 },
+  { name = "Phase 13: Integration testing (Zig build + Gossamer link)", completion = 0 },
+  { name = "Phase 14: End-to-end test (probe real server → GUI)", completion = 0 },
+  { name = "Phase 15: Container deployment (selur-compose)", completion = 0 },
 ]
 
 [blockers-and-issues]
-# No active blockers
+blockers = [
+  { id = "B1", severity = "medium", description = "Zig FFI needs libgossamer.so linked — requires Gossamer build in PATH" },
+  { id = "B2", severity = "low", description = "Bitbucket mirror needs manual repo creation or API token refresh" },
+]
 
 [critical-next-actions]
 actions = [
-  "Container templates complete — test with `just container-init`",
-  "Validate container templates across wolfi-base and static Chainguard images",
-  "Harden multi-forge sync for GitLab/Bitbucket mirroring edge cases",
-  "Expand Nix/Guix development shell templates",
+  "Wire Zig build to link against libgossamer.so from gossamer repo",
+  "Run `zig build test` to validate FFI integration tests",
+  "Deploy gsa-verisimdb container and test REST API connectivity",
+  "End-to-end test: probe a Valheim/Minecraft server through the GUI",
+  "Generate game profile child clades: `just generate-clades`",
 ]
 
-[maintenance-status]
-last-run-utc = "never"
-last-report = "docs/reports/maintenance/latest.json"
-last-result = "unknown"  # unknown | pass | warn | fail
-open-warnings = 0
-open-failures = 0
-
-[ecosystem]
-part-of = ["RSR Framework", "stapeln ecosystem"]
-depends-on = ["stapeln", "selur-compose", "cerro-torre", "svalinn", "vordr", "k9-svc"]
-
-# ---------------------------------------------------------------------------
-# NOTE FOR CONSUMERS: When using this template to create a new repo, reset
-# the fields above to your project's values and replace all {{PLACEHOLDER}}
-# tokens. The milestones above describe the TEMPLATE's evolution, not yours.
-# ---------------------------------------------------------------------------
+[session-history]
+sessions = [
+  { date = "2026-03-22", summary = "Created repo — 412 files, 28901 lines. Full ABI/FFI/Core/GUI/Profiles/Clades/VeriSimDB. Pushed to GitHub + GitLab. PanLL integration committed." },
+]
