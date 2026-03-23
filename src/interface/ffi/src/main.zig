@@ -17,6 +17,7 @@ pub const a2ml_emit = @import("a2ml_emit.zig");
 pub const verisimdb_client = @import("verisimdb_client.zig");
 pub const server_actions = @import("server_actions.zig");
 pub const game_profiles = @import("game_profiles.zig");
+pub const groove_client = @import("groove_client.zig");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Constants

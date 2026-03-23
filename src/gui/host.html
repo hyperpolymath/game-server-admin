@@ -497,6 +497,737 @@
       opacity: 0.3;
     }
 
+    /* ====================================================================
+       Server Context Bar — persistent selected-server indicator
+       ==================================================================== */
+    .context-bar {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 24px;
+      background: linear-gradient(135deg, rgba(88,166,255,0.06) 0%, rgba(137,87,229,0.04) 100%);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 13px;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .context-bar.visible {
+      display: flex;
+    }
+
+    .context-bar .ctx-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .context-bar .ctx-server-name {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .context-bar .ctx-game {
+      color: var(--link-color);
+      font-weight: 500;
+    }
+
+    .context-bar .ctx-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+    }
+
+    /* ====================================================================
+       Game Cards — library / discovery view
+       ==================================================================== */
+    .game-card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .game-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .game-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--link-color), var(--purple-color));
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .game-card:hover {
+      border-color: var(--link-color);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+
+    .game-card:hover::before {
+      opacity: 1;
+    }
+
+    .game-card-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, var(--bg-elevated), var(--bg-primary));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 12px;
+      border: 1px solid var(--border-color);
+    }
+
+    .game-card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .game-card-meta {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+
+    .game-card-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+
+    .game-card-tag {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(88,166,255,0.1);
+      color: var(--link-color);
+      font-weight: 500;
+    }
+
+    .game-card-tag.steam {
+      background: rgba(57,210,192,0.1);
+      color: var(--cyan-color);
+    }
+
+    .game-card-tag.custom {
+      background: rgba(137,87,229,0.1);
+      color: var(--purple-color);
+    }
+
+    /* ====================================================================
+       Server Cards — managed server instances
+       ==================================================================== */
+    .server-card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    .server-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 16px 20px;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .server-card:hover {
+      border-color: rgba(88,166,255,0.3);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+
+    .server-card.selected {
+      border-color: var(--link-color);
+      background: rgba(88,166,255,0.04);
+    }
+
+    .server-card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .server-card-header .server-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .server-card-info {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .server-card-info .info-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .server-card-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    /* ====================================================================
+       Glowing Status Dots — animated status indicators
+       ==================================================================== */
+    .glow-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .glow-dot.running {
+      background: var(--success-fg);
+      box-shadow: 0 0 6px var(--success-fg);
+      animation: pulse-glow 2s ease-in-out infinite;
+    }
+
+    .glow-dot.stopped {
+      background: var(--danger-fg);
+    }
+
+    .glow-dot.warning {
+      background: var(--warning-fg);
+      animation: pulse-glow-warn 2s ease-in-out infinite;
+    }
+
+    .glow-dot.unknown {
+      background: var(--text-muted);
+    }
+
+    .glow-dot.installing {
+      background: var(--link-color);
+      animation: pulse-glow-blue 1s ease-in-out infinite;
+    }
+
+    /* ====================================================================
+       Category Tabs — config editor section navigation
+       ==================================================================== */
+    .category-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 20px;
+      overflow-x: auto;
+    }
+
+    .category-tab {
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    .category-tab:hover {
+      color: var(--text-primary);
+      background: rgba(88,166,255,0.04);
+    }
+
+    .category-tab.active {
+      color: var(--link-color);
+      border-bottom-color: var(--link-color);
+    }
+
+    .category-tab .tab-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 9px;
+      background: rgba(88,166,255,0.1);
+      color: var(--link-color);
+      font-size: 10px;
+      font-weight: 600;
+      margin-left: 6px;
+    }
+
+    .category-tab.cheat-tab {
+      color: var(--purple-color);
+    }
+
+    .category-tab.cheat-tab.active {
+      border-bottom-color: var(--purple-color);
+    }
+
+    .category-tab.cheat-tab .tab-count {
+      background: rgba(137,87,229,0.15);
+      color: var(--purple-color);
+    }
+
+    /* ====================================================================
+       Config Sections — grouped settings with headers
+       ==================================================================== */
+    .config-section {
+      margin-bottom: 24px;
+      animation: fadeIn 0.25s ease;
+    }
+
+    .config-section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .config-section-header h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .config-section-header .section-icon {
+      font-size: 16px;
+      opacity: 0.7;
+    }
+
+    .cheat-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(137,87,229,0.12);
+      color: var(--purple-color);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    /* ====================================================================
+       Enhanced Form Groups — better field layout for config editor
+       ==================================================================== */
+    .field-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      transition: border-color 0.15s ease;
+    }
+
+    .field-card:hover {
+      border-color: rgba(88,166,255,0.2);
+    }
+
+    .field-card.changed {
+      border-color: var(--link-color);
+      background: rgba(88,166,255,0.03);
+    }
+
+    .field-card.cheat-field {
+      border-left: 3px solid var(--purple-color);
+    }
+
+    .field-card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .field-card-header .field-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .field-card-header .field-key {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    .field-card-header .field-default {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .field-card-description {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .field-card-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .field-card-control input[type="text"],
+    .field-card-control input[type="number"],
+    .field-card-control input[type="password"],
+    .field-card-control select {
+      flex: 1;
+    }
+
+    /* ====================================================================
+       Range Slider — styled range input for numeric fields
+       ==================================================================== */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--link-color);
+      border: 2px solid var(--bg-surface);
+      box-shadow: 0 0 4px rgba(88,166,255,0.4);
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--link-color);
+      border: 2px solid var(--bg-surface);
+      box-shadow: 0 0 4px rgba(88,166,255,0.4);
+      cursor: pointer;
+    }
+
+    .range-display {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .range-display input[type="range"] {
+      flex: 1;
+    }
+
+    .range-display .range-value {
+      min-width: 60px;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--link-color);
+      background: rgba(88,166,255,0.08);
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+    }
+
+    .range-display .range-bounds {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    /* ====================================================================
+       Search Hero — prominent search section for game discovery
+       ==================================================================== */
+    .search-hero {
+      text-align: center;
+      padding: 32px 24px 24px;
+      margin-bottom: 24px;
+    }
+
+    .search-hero h2 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .search-hero p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+    }
+
+    .search-hero-bar {
+      display: flex;
+      gap: 8px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .search-hero-bar input {
+      flex: 1;
+      padding: 10px 16px;
+      font-size: 15px;
+      border-radius: var(--radius-lg);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+    }
+
+    .search-hero-bar input:focus {
+      border-color: var(--link-color);
+      box-shadow: 0 0 0 3px rgba(88,166,255,0.15);
+    }
+
+    .search-hero-bar button {
+      padding: 10px 20px;
+      font-size: 15px;
+    }
+
+    /* ====================================================================
+       Setup Wizard — step-based server installation flow
+       ==================================================================== */
+    .wizard-steps {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 24px;
+      padding: 16px 0;
+    }
+
+    .wizard-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .wizard-step .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      background: var(--bg-elevated);
+      border: 2px solid var(--border-color);
+      flex-shrink: 0;
+    }
+
+    .wizard-step.active {
+      color: var(--text-primary);
+    }
+
+    .wizard-step.active .step-num {
+      background: var(--link-color);
+      border-color: var(--link-color);
+      color: #fff;
+    }
+
+    .wizard-step.done {
+      color: var(--success-fg);
+    }
+
+    .wizard-step.done .step-num {
+      background: var(--success-color);
+      border-color: var(--success-color);
+      color: #fff;
+    }
+
+    .wizard-connector {
+      flex: 1;
+      height: 2px;
+      background: var(--border-color);
+      margin: 0 8px;
+      min-width: 20px;
+    }
+
+    .wizard-connector.done {
+      background: var(--success-color);
+    }
+
+    /* ====================================================================
+       Toast Notifications
+       ==================================================================== */
+    .toast-container {
+      position: fixed;
+      bottom: 48px;
+      right: 16px;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 10px 16px;
+      font-size: 13px;
+      color: var(--text-primary);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      animation: slideUp 0.25s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 360px;
+    }
+
+    .toast.toast-success { border-left: 3px solid var(--success-fg); }
+    .toast.toast-error   { border-left: 3px solid var(--danger-fg); }
+    .toast.toast-warning { border-left: 3px solid var(--warning-fg); }
+    .toast.toast-info    { border-left: 3px solid var(--link-color); }
+
+    /* ====================================================================
+       Section Dividers — labeled horizontal rules
+       ==================================================================== */
+    .section-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0 16px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .section-divider::before,
+    .section-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border-color);
+    }
+
+    /* ====================================================================
+       Config Path Prompt — when config file not found
+       ==================================================================== */
+    .path-prompt {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      text-align: center;
+      max-width: 560px;
+      margin: 32px auto;
+    }
+
+    .path-prompt h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .path-prompt p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
+
+    .path-prompt .expected-path {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      margin-bottom: 16px;
+      color: var(--text-secondary);
+      word-break: break-all;
+    }
+
+    .path-prompt .path-input-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .path-prompt .path-input-row input {
+      flex: 1;
+    }
+
+    /* ====================================================================
+       Animations
+       ==================================================================== */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 4px var(--success-fg); }
+      50% { box-shadow: 0 0 10px var(--success-fg); }
+    }
+
+    @keyframes pulse-glow-warn {
+      0%, 100% { box-shadow: 0 0 4px var(--warning-fg); }
+      50% { box-shadow: 0 0 10px var(--warning-fg); }
+    }
+
+    @keyframes pulse-glow-blue {
+      0%, 100% { box-shadow: 0 0 4px var(--link-color); }
+      50% { box-shadow: 0 0 12px var(--link-color); }
+    }
+
+    .fade-in {
+      animation: fadeIn 0.25s ease;
+    }
+
     .toolbar {
       display: flex;
       align-items: center;
@@ -684,6 +1415,20 @@
          Content Area — Panel Containers
          ==================================================================== -->
     <main class="content-area">
+      <!-- Server context bar — shows selected server across all panels -->
+      <div class="context-bar" id="server-context-bar">
+        <span class="ctx-label">Active Server</span>
+        <span class="glow-dot unknown" id="ctx-status-dot"></span>
+        <span class="ctx-server-name" id="ctx-server-name">—</span>
+        <span class="ctx-game" id="ctx-game-name"></span>
+        <div class="ctx-actions">
+          <button class="btn btn-sm" onclick="switchPanel('config-editor')" title="Edit Config">&#x2699; Config</button>
+          <button class="btn btn-sm" onclick="switchPanel('server-actions')" title="Server Actions">&#x25B6; Actions</button>
+          <button class="btn btn-sm" onclick="switchPanel('live-logs')" title="View Logs">&#x2630; Logs</button>
+          <button class="btn btn-sm" onclick="clearServerSelection()" title="Deselect">&#x2715;</button>
+        </div>
+      </div>
+
       <div id="panel-server-browser" class="panel-content active">
         <!-- Loaded from panels/server-browser/panel.html -->
       </div>
@@ -724,6 +1469,9 @@
       <span id="last-probe-time">—</span>
     </div>
   </footer>
+
+  <!-- Toast notification container -->
+  <div class="toast-container" id="toast-container"></div>
 
   <!-- ====================================================================
        Core JavaScript — Gossamer Bridge & Panel Management
@@ -806,6 +1554,9 @@
       }
 
       gsaState.activePanel = panelId;
+
+      // FLI provisioning: load required modules for this panel's clade traits
+      provisionFLI(panelId);
 
       // Trigger panel-specific refresh
       switch (panelId) {
@@ -1056,6 +1807,199 @@
         });
       }, 30000);
     }
+
+    // =========================================================================
+    // FLI Provisioner — load/unload FLI modules based on panel clade traits
+    // =========================================================================
+
+    /**
+     * FLI (Frontend-user Library Interface) module registry.
+     *
+     * Follows the Groove pattern: panels start bare — they work fine alone.
+     * When the FLI provisioner activates, it probes which modules are
+     * available (like Groove probing nearby ports), negotiates capabilities
+     * (which FLI traits does this panel's clade inherit?), and activates
+     * matching modules. If a module fails to load, the panel keeps working
+     * with its fallback rendering — just like Gossamer works without Burble.
+     *
+     * Groove analogy:
+     *   Panel = Guitar (works unplugged)
+     *   FLI module = Amplifier (enhances when connected)
+     *   Clade trait = The 1/4" jack (shared interface)
+     *   provisionFLI() = Plugging in (discover → negotiate → light up)
+     *
+     * Module lifecycle:
+     *   1. Panel activates → provisionFLI(panelId) called
+     *   2. Provisioner reads panel's clade traits (panelTraits map)
+     *   3. Required modules loaded on-demand (cached after first load)
+     *   4. Panel's fliInit_* hook called to wire up capabilities
+     *   5. Panel deactivates → modules stay cached, no teardown needed
+     */
+    var fliRegistry = {
+      /** Map of module name → {path, loaded, element} */
+      modules: {
+        'fli-gauge':    { path: 'src/gui/fli/fli-gauge.js',    loaded: false, element: null },
+        'fli-editable': { path: 'src/gui/fli/fli-editable.js', loaded: false, element: null },
+        'fli-terminal': { path: 'src/gui/fli/fli-terminal.js', loaded: false, element: null },
+        'fli-tooltip':  { path: 'src/gui/fli/fli-tooltip.js',  loaded: false, element: null },
+        'fli-undo':     { path: 'src/gui/fli/fli-undo.js',     loaded: false, element: null }
+      },
+
+      /** Map of panel ID → array of required FLI module names (clade inheritance) */
+      panelTraits: {
+        'server-browser':   ['fli-tooltip'],
+        'config-editor':    ['fli-editable', 'fli-tooltip', 'fli-undo'],
+        'server-actions':   ['fli-terminal'],
+        'live-logs':        ['fli-terminal'],
+        'health-dashboard': ['fli-gauge', 'fli-tooltip'],
+        'config-history':   ['fli-editable'],
+        'cross-search':     ['fli-tooltip']
+      }
+    };
+
+    /**
+     * Provision FLI modules for a panel. Loads any modules that haven't
+     * been loaded yet, then calls the panel's FLI init hook if it exists.
+     *
+     * @param {string} panelId - The panel being activated
+     * @returns {Promise} Resolves when all required modules are loaded
+     */
+    async function provisionFLI(panelId) {
+      var traits = fliRegistry.panelTraits[panelId] || [];
+      var loadPromises = [];
+
+      traits.forEach(function(moduleName) {
+        var mod = fliRegistry.modules[moduleName];
+        if (!mod) return;
+
+        if (!mod.loaded) {
+          loadPromises.push(loadFLIModule(moduleName, mod.path));
+        }
+      });
+
+      if (loadPromises.length > 0) {
+        await Promise.all(loadPromises);
+        console.log('[FLI] Provisioned ' + traits.join(', ') + ' for ' + panelId);
+      }
+
+      // Call panel-specific FLI init hook
+      var initHook = 'fliInit_' + panelId.replace(/-/g, '_');
+      if (typeof window[initHook] === 'function') {
+        window[initHook]();
+      }
+    }
+
+    /**
+     * Load a single FLI module by injecting a <script> tag.
+     *
+     * @param {string} name - Module name (e.g. 'fli-gauge')
+     * @param {string} path - Path to the JS file
+     * @returns {Promise} Resolves when the script is loaded
+     */
+    function loadFLIModule(name, path) {
+      return new Promise(function(resolve, reject) {
+        var mod = fliRegistry.modules[name];
+        if (mod.loaded) { resolve(); return; }
+
+        var script = document.createElement('script');
+        script.src = path;
+        script.async = true;
+        script.onload = function() {
+          mod.loaded = true;
+          mod.element = script;
+          console.log('[FLI] Loaded module: ' + name);
+          resolve();
+        };
+        script.onerror = function() {
+          console.warn('[FLI] Failed to load module: ' + name + ' from ' + path);
+          resolve(); // Don't block panel loading on FLI failure
+        };
+        document.head.appendChild(script);
+      });
+    }
+
+    /**
+     * Check if a specific FLI module is loaded and available.
+     *
+     * @param {string} moduleName - The FLI module name
+     * @returns {boolean} True if the module is loaded
+     */
+    function isFLIReady(moduleName) {
+      var mod = fliRegistry.modules[moduleName];
+      return mod ? mod.loaded : false;
+    }
+
+    // =========================================================================
+    // Toast notifications
+    // =========================================================================
+
+    /**
+     * Show a toast notification.
+     *
+     * @param {string} message - The message to display
+     * @param {string} type - Toast type: "success", "error", "warning", "info"
+     * @param {number} duration - Auto-dismiss time in ms (default 4000)
+     */
+    function showToast(message, type, duration) {
+      type = type || 'info';
+      duration = duration || 4000;
+
+      var container = document.getElementById('toast-container');
+      if (!container) return;
+
+      var toast = document.createElement('div');
+      toast.className = 'toast toast-' + type;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(function() {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(8px)';
+        toast.style.transition = 'all 0.2s ease';
+        setTimeout(function() { toast.remove(); }, 200);
+      }, duration);
+    }
+
+    // =========================================================================
+    // Server context bar management
+    // =========================================================================
+
+    /**
+     * Update the server context bar when a server is selected/deselected.
+     * Called automatically via the gsa-server-selected event.
+     */
+    function updateContextBar() {
+      var bar = document.getElementById('server-context-bar');
+      if (!bar) return;
+
+      if (gsaState.selectedServerId) {
+        bar.classList.add('visible');
+        document.getElementById('ctx-server-name').textContent =
+          gsaState.selectedServerName || gsaState.selectedServerId;
+        document.getElementById('ctx-game-name').textContent =
+          gsaState.selectedServerGame || '';
+
+        var dot = document.getElementById('ctx-status-dot');
+        dot.className = 'glow-dot ' + (gsaState.selectedServerStatus || 'unknown');
+      } else {
+        bar.classList.remove('visible');
+      }
+    }
+
+    /**
+     * Clear the current server selection and hide the context bar.
+     */
+    function clearServerSelection() {
+      gsaState.selectedServerId = null;
+      gsaState.selectedServerName = null;
+      gsaState.selectedServerGame = null;
+      gsaState.selectedServerStatus = 'unknown';
+      updateContextBar();
+      document.dispatchEvent(new CustomEvent('gsa-server-selected', { detail: null }));
+    }
+
+    // Listen for server selections to update the context bar
+    document.addEventListener('gsa-server-selected', updateContextBar);
 
     // Boot the application when the DOM is ready
     document.addEventListener('DOMContentLoaded', initGSA);

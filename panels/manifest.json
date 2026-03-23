@@ -58,6 +58,31 @@
       "path": "/ipc/list_profiles",
       "method": "GET",
       "returns": "ProfileList"
+    },
+    "gossamer://gsa/groove/discover": {
+      "path": "/ipc/groove_discover",
+      "method": "POST",
+      "returns": "GrooveDiscoveryResult"
+    },
+    "gossamer://gsa/groove/status": {
+      "path": "/ipc/groove_status",
+      "method": "POST",
+      "returns": "GrooveTargetStatus"
+    },
+    "gossamer://gsa/groove/alert": {
+      "path": "/ipc/groove_alert",
+      "method": "POST",
+      "returns": "AlertResult"
+    },
+    "gossamer://gsa/groove/tts": {
+      "path": "/ipc/groove_tts",
+      "method": "POST",
+      "returns": "TTSResult"
+    },
+    "gossamer://gsa/groove/drift-alert": {
+      "path": "/ipc/groove_drift_alert",
+      "method": "POST",
+      "returns": "DriftAlertResult"
     }
   },
   "panels": [
@@ -84,9 +109,19 @@
       "description": "IDApTIK game server management"
     },
     "burble": {
-      "role": "voice-server",
-      "protocol": "webrtc",
-      "description": "Burble voice platform management"
+      "role": "voice-alerting",
+      "protocol": "groove",
+      "discovery": "/.well-known/groove",
+      "port": 6473,
+      "capabilities": ["message", "tts"],
+      "description": "Burble voice alerting via Groove — drift alerts, server-down TTS"
+    },
+    "vext": {
+      "role": "voice-effects",
+      "protocol": "groove",
+      "discovery": "/.well-known/groove",
+      "port": 6480,
+      "description": "Vext voice effects via Groove (fallback alerting target)"
     },
     "verisimdb": {
       "role": "data-store",

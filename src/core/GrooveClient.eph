@@ -1,0 +1,151 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- GrooveClient.eph — Burble voice alerting via Groove protocol
+--
+-- Wraps the Zig FFI groove_client module to provide voice alerts when
+-- game server health thresholds are exceeded.  Groove is a .well-known
+-- service discovery protocol used by Burble (voice) and Vext (effects).
+--
+-- Burble endpoint: localhost:6473/.well-known/groove
+-- Vext endpoint:   localhost:6480/.well-known/groove
+--
+-- Alert flow:
+--   1. discover() probes local Groove endpoints
+--   2. Health dashboard detects drift > threshold
+--   3. alert(severity, serverId, message) fires via Groove
+--   4. Burble speaks the alert via TTS if available
+
+module GSA.Core.GrooveClient
+
+import GSA.Core.Types
+import GSA.Core.Capabilities
+
+-- =============================================================================
+-- Alert severity — mirrors Zig AlertSeverity enum
+-- =============================================================================
+
+type GrooveSeverity =
+  | SevInfo
+  | SevWarning
+  | SevCritical
+  | SevEmergency
+
+-- Map severity to integer for FFI
+fn severityToInt(sev: GrooveSeverity) -> I32 =
+  match sev {
+    SevInfo      -> 0,
+    SevWarning   -> 1,
+    SevCritical  -> 2,
+    SevEmergency -> 3
+  }
+
+-- =============================================================================
+-- Groove target status (returned from FFI as JSON, parsed here)
+-- =============================================================================
+
+affine type GrooveTargetStatus = GrooveTargetStatus {
+  name:             String,
+  host:             String,
+  port:             I32,
+  status:           String,    -- "unknown", "reachable", "unreachable", "error"
+  supports_tts:     Bool,
+  supports_message: Bool,
+  last_probe_ms:    I64
+}
+
+-- =============================================================================
+-- Core API — discover, status, alert, ttsAlert
+-- =============================================================================
+
+-- Discover all Groove targets on the local network.
+-- Probes Burble (port 6473) and Vext (port 6480) by default.
+-- Returns Ok if at least one target is reachable, Error otherwise.
+--
+-- Requires Network capability (borrows, does not consume).
+fn discover(caps: &GsaCapSet) -> GsaResult =
+  let result = __ffi("gossamer_gsa_groove_discover") in
+  if result == 0 then
+    Ok
+  else if result == 5 then
+    Error("GSA not initialized — call init first")
+  else
+    Error("No Groove targets reachable — is Burble running on port 6473?")
+
+-- Check the status of a specific Groove target.
+-- Returns the target's JSON status string from the Zig FFI.
+--
+-- target: "burble" or "vext"
+fn status(target: String) -> String =
+  __ffi("gossamer_gsa_groove_status", target)
+
+-- Send a structured alert message to the first reachable Groove target.
+-- Burble is preferred; falls back to Vext or any reachable target.
+--
+-- severity: alert level (info/warning/critical/emergency)
+-- serverId: the GSA server ID that triggered the alert
+-- message:  human-readable alert description
+--
+-- Requires Network capability (borrows, does not consume).
+fn alert(severity: GrooveSeverity, serverId: String, message: String, caps: &GsaCapSet) -> GsaResult =
+  let sev_int = severityToInt(severity) in
+  let result = __ffi("gossamer_gsa_groove_alert", sev_int, serverId, message) in
+  if result == 0 then
+    Ok
+  else if result == 5 then
+    Error("GSA not initialized")
+  else
+    Error("Groove alert failed — " ++ __ffi("gossamer_gsa_last_error"))
+
+-- Send a text-to-speech alert to Burble.
+-- The text is spoken aloud by Burble's TTS engine.
+-- Falls back to any Groove target with TTS capability.
+--
+-- text: the text to be spoken
+--
+-- Requires Network capability (borrows, does not consume).
+fn ttsAlert(text: String, caps: &GsaCapSet) -> GsaResult =
+  let result = __ffi("gossamer_gsa_groove_tts_alert", text) in
+  if result == 0 then
+    Ok
+  else if result == 5 then
+    Error("GSA not initialized")
+  else
+    Error("Groove TTS failed — " ++ __ffi("gossamer_gsa_last_error"))
+
+-- =============================================================================
+-- Health-threshold alerting — convenience wrappers
+-- =============================================================================
+
+-- Alert when config drift exceeds a threshold.
+-- Combines drift value with severity mapping:
+--   drift >= 0.8 -> emergency
+--   drift >= 0.5 -> critical
+--   drift >= 0.3 -> warning
+--   drift <  0.3 -> info (no alert sent)
+--
+-- Returns Ok if alert was sent (or drift below threshold), Error on failure.
+fn alertOnDrift(serverId: String, drift: F64, caps: &GsaCapSet) -> GsaResult =
+  if drift < 0.3 then
+    Ok  -- below threshold, no alert needed
+  else {
+    let severity = if drift >= 0.8 then SevEmergency
+                   else if drift >= 0.5 then SevCritical
+                   else SevWarning in
+    let drift_pct = __ffi("float_to_string", drift) in
+    let msg = "Config drift " ++ drift_pct ++ " on server " ++ serverId in
+    alert(severity, serverId, msg, caps)
+  }
+
+-- Alert when a server goes unreachable after a failed probe.
+-- Always sends a critical alert + TTS notification.
+fn alertServerDown(serverId: String, host: String, port: I32, caps: &GsaCapSet) -> GsaResult =
+  let msg = "Server " ++ serverId ++ " at " ++ host ++ " is unreachable" in
+  let _ = alert(SevCritical, serverId, msg, caps) in
+  ttsAlert("Warning. Game server " ++ serverId ++ " is down.", caps)
+
+-- Alert when a server comes back online after being down.
+fn alertServerRecovered(serverId: String, caps: &GsaCapSet) -> GsaResult =
+  let msg = "Server " ++ serverId ++ " has recovered and is responding normally" in
+  let _ = alert(SevInfo, serverId, msg, caps) in
+  ttsAlert("Server " ++ serverId ++ " has recovered.", caps)

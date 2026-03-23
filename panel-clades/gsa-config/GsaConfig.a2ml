@@ -31,6 +31,9 @@ inherits-from = "gsa"
 sibling-clades = ["gsa-browser", "gsa-history"]
 supersedes = ""
 
+[clade-fli]
+fli-inherits = ["fli-editable", "fli-tooltip", "fli-undo"]
+
 [clade-panel-integration]
 panel-id = "PanelGsaConfigEditor"
 model-module = "GsaConfigModel"

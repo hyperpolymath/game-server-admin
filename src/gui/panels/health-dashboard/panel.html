@@ -17,23 +17,35 @@
   <button class="btn btn-sm" onclick="refreshHealthDashboard()">&#x21BB; Refresh</button>
 </div>
 
-<!-- Overview cards -->
-<div class="card-grid" id="hd-overview-cards">
-  <div class="card card-stat">
-    <div class="stat-value" style="color:var(--text-primary);" id="hd-total-count">0</div>
-    <div class="stat-label">Total Servers</div>
+<!-- Overview cards with FLI arc gauges -->
+<div class="card-grid" id="hd-overview-cards" style="grid-template-columns:repeat(4, 1fr);">
+  <div class="card card-stat" style="display:flex; align-items:center; gap:12px; padding:12px 16px;">
+    <div id="hd-arc-total" style="flex-shrink:0;"></div>
+    <div>
+      <div class="stat-value" style="color:var(--text-primary); font-size:24px;" id="hd-total-count">0</div>
+      <div class="stat-label">Total Servers</div>
+    </div>
   </div>
-  <div class="card card-stat">
-    <div class="stat-value" style="color:var(--success-fg);" id="hd-healthy-count">0</div>
-    <div class="stat-label">Healthy</div>
+  <div class="card card-stat" style="display:flex; align-items:center; gap:12px; padding:12px 16px;">
+    <div id="hd-arc-healthy" style="flex-shrink:0;"></div>
+    <div>
+      <div class="stat-value" style="color:var(--success-fg); font-size:24px;" id="hd-healthy-count">0</div>
+      <div class="stat-label">Healthy</div>
+    </div>
   </div>
-  <div class="card card-stat">
-    <div class="stat-value" style="color:var(--warning-fg);" id="hd-warning-count">0</div>
-    <div class="stat-label">Warning</div>
+  <div class="card card-stat" style="display:flex; align-items:center; gap:12px; padding:12px 16px;">
+    <div id="hd-arc-warning" style="flex-shrink:0;"></div>
+    <div>
+      <div class="stat-value" style="color:var(--warning-fg); font-size:24px;" id="hd-warning-count">0</div>
+      <div class="stat-label">Warning</div>
+    </div>
   </div>
-  <div class="card card-stat">
-    <div class="stat-value" style="color:var(--danger-fg);" id="hd-critical-count">0</div>
-    <div class="stat-label">Critical</div>
+  <div class="card card-stat" style="display:flex; align-items:center; gap:12px; padding:12px 16px;">
+    <div id="hd-arc-critical" style="flex-shrink:0;"></div>
+    <div>
+      <div class="stat-value" style="color:var(--danger-fg); font-size:24px;" id="hd-critical-count">0</div>
+      <div class="stat-label">Critical</div>
+    </div>
   </div>
 </div>
 
@@ -69,9 +81,9 @@
     <span class="badge" id="hd-drift-score-badge"></span>
   </div>
 
-  <!-- 8 VeriSimDB modality gauges -->
-  <div id="hd-drift-gauges" style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-    <!-- Populated dynamically: one gauge per modality -->
+  <!-- 8 VeriSimDB modality gauges (FLI-provisioned SVG arcs) -->
+  <div id="hd-drift-gauges" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px;">
+    <!-- Populated dynamically: one SVG ring gauge per modality -->
   </div>
 
   <!-- Alert timeline -->
@@ -144,6 +156,14 @@
     document.getElementById('hd-healthy-count').textContent = healthy;
     document.getElementById('hd-warning-count').textContent = warning;
     document.getElementById('hd-critical-count').textContent = critical;
+
+    // Render FLI arc gauges on overview cards (if provisioned)
+    if (window.FLI && FLI.gauge && FLI.gauge._loaded && total > 0) {
+      FLI.gauge.ring('hd-arc-total', 1.0, { size: 56, strokeWidth: 5, innerLabel: total, label: '', invert: true });
+      FLI.gauge.ring('hd-arc-healthy', healthy / total, { size: 56, strokeWidth: 5, innerLabel: healthy, label: '', invert: true });
+      FLI.gauge.ring('hd-arc-warning', warning / total, { size: 56, strokeWidth: 5, innerLabel: warning, label: '' });
+      FLI.gauge.ring('hd-arc-critical', critical / total, { size: 56, strokeWidth: 5, innerLabel: critical, label: '' });
+    }
 
     // Show/hide empty state
     document.getElementById('hd-empty-state').style.display = total === 0 ? 'block' : 'none';
@@ -262,22 +282,48 @@
 
     var driftData = resp.data || {};
 
-    // Render modality gauges
-    var gaugeHtml = '';
-    MODALITY_NAMES.forEach(function(mod) {
-      var value = driftData[mod + '_drift'] !== undefined ? driftData[mod + '_drift'] : 0;
-      var color = getDriftColor(value);
-      var pct = Math.min(value * 100, 100);
+    // Render modality gauges — use FLI.gauge if provisioned, fallback to progress bars
+    if (window.FLI && FLI.gauge && FLI.gauge._loaded) {
+      // FLI-provisioned: render SVG ring gauges
+      var gaugeHtml = '';
+      MODALITY_NAMES.forEach(function(mod) {
+        var value = driftData[mod + '_drift'] !== undefined ? driftData[mod + '_drift'] : 0;
+        var gaugeId = 'hd-gauge-' + mod;
+        gaugeHtml += '<div style="text-align:center;" data-tip="' + mod + ' drift: '
+          + (value * 100).toFixed(1) + '% — measures divergence in the '
+          + mod + ' modality of the VeriSimDB octad.">'
+          + '<div id="' + gaugeId + '"></div>'
+          + '</div>';
+      });
+      gauges.innerHTML = gaugeHtml;
 
-      gaugeHtml += '<div style="display:flex;align-items:center;gap:8px;">'
-        + '<span style="min-width:90px;font-size:12px;color:var(--text-secondary);text-transform:capitalize;">' + mod + '</span>'
-        + '<div class="progress-bar" style="flex:1;">'
-        + '  <div class="progress-bar-fill" style="width:' + pct + '%;background:' + color + ';"></div>'
-        + '</div>'
-        + '<span style="font-size:11px;font-family:var(--font-mono);min-width:40px;color:' + color + ';">' + value.toFixed(3) + '</span>'
-        + '</div>';
-    });
-    gauges.innerHTML = gaugeHtml;
+      // Render each ring gauge after the DOM is populated
+      MODALITY_NAMES.forEach(function(mod) {
+        var value = driftData[mod + '_drift'] !== undefined ? driftData[mod + '_drift'] : 0;
+        FLI.gauge.ring('hd-gauge-' + mod, value, {
+          size: 90,
+          strokeWidth: 7,
+          label: mod.charAt(0).toUpperCase() + mod.slice(1)
+        });
+      });
+    } else {
+      // Fallback: plain progress bars
+      var gaugeHtml = '';
+      MODALITY_NAMES.forEach(function(mod) {
+        var value = driftData[mod + '_drift'] !== undefined ? driftData[mod + '_drift'] : 0;
+        var color = getDriftColor(value);
+        var pct = Math.min(value * 100, 100);
+
+        gaugeHtml += '<div style="display:flex;align-items:center;gap:8px;">'
+          + '<span style="min-width:90px;font-size:12px;color:var(--text-secondary);text-transform:capitalize;">' + mod + '</span>'
+          + '<div class="progress-bar" style="flex:1;">'
+          + '  <div class="progress-bar-fill" style="width:' + pct + '%;background:' + color + ';"></div>'
+          + '</div>'
+          + '<span style="font-size:11px;font-family:var(--font-mono);min-width:40px;color:' + color + ';">' + value.toFixed(3) + '</span>'
+          + '</div>';
+      });
+      gauges.innerHTML = gaugeHtml;
+    }
 
     // Render alert timeline
     var events = driftData.events || [];

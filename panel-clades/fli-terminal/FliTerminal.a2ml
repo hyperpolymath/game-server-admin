@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+[clade-metadata]
+id = "fli-terminal"
+name = "FLI Terminal"
+short-name = "Terminal"
+version = "1.0.0"
+kind = "fli-module"
+icon = "terminal"
+description = "ANSI escape sequence parsing and VTE-style rendering for terminal output display. Handles SGR colour codes, cursor movement, line clearing, and clickable URL detection with configurable link handlers."
+
+[clade-traits]
+has-backend = false
+has-scanning = false
+has-persistence = false
+has-work-items = false
+has-real-time = false
+has-ansi-parse = true
+has-link-detect = true
+is-directive = false
+is-readonly = true
+is-ambient = false
+
+[clade-capabilities]
+capabilities = []
+
+[clade-protocols]
+protocols = []
+
+[clade-taxonomy]
+inherits-from = "fli"
+sibling-clades = ["fli-gauge", "fli-editable", "fli-tooltip", "fli-undo"]
+supersedes = ""
+
+[fli-module]
+js-path = "src/gui/fli/fli-terminal.js"

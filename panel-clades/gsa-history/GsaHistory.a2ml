@@ -31,6 +31,9 @@ inherits-from = "gsa"
 sibling-clades = ["gsa-config", "gsa-health"]
 supersedes = ""
 
+[clade-fli]
+fli-inherits = ["fli-editable"]
+
 [clade-panel-integration]
 panel-id = "PanelGsaConfigHistory"
 model-module = "GsaHistoryModel"

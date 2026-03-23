@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+[clade-metadata]
+id = "fli-editable"
+name = "FLI Editable"
+short-name = "Editable"
+version = "1.0.0"
+kind = "fli-module"
+icon = "edit-3"
+description = "Inline editing capabilities with double-click-to-edit activation, keyboard navigation (Tab to next field, Enter to confirm, Escape to cancel), and dirty-state tracking. Emits change events for persistence layers."
+
+[clade-traits]
+has-backend = false
+has-scanning = false
+has-persistence = false
+has-work-items = false
+has-real-time = false
+has-keyboard-nav = true
+has-inline-edit = true
+is-directive = false
+is-readonly = false
+is-ambient = false
+
+[clade-capabilities]
+capabilities = []
+
+[clade-protocols]
+protocols = []
+
+[clade-taxonomy]
+inherits-from = "fli"
+sibling-clades = ["fli-gauge", "fli-terminal", "fli-tooltip", "fli-undo"]
+supersedes = ""
+
+[fli-module]
+js-path = "src/gui/fli/fli-editable.js"

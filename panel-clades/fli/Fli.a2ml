@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+[clade-metadata]
+id = "fli"
+name = "FLI Root"
+short-name = "FLI"
+version = "1.0.0"
+kind = "fli-root"
+icon = "layers"
+description = "Frontend-user Library Interface (FLI) root clade. FLI is the capability inheritance system for GSA panels — each FLI module declares a reusable frontend feature (gauges, editing, terminal rendering, tooltips, undo) that panels can inherit to gain standardised UI behaviours without reimplementation."
+
+[clade-traits]
+has-backend = false
+has-scanning = false
+has-persistence = false
+has-work-items = false
+has-real-time = false
+is-directive = false
+is-readonly = true
+is-ambient = true
+
+[clade-capabilities]
+capabilities = []
+
+[clade-protocols]
+protocols = []
+
+[clade-taxonomy]
+inherits-from = ""
+sibling-clades = []
+supersedes = ""
+child-clades = ["fli-gauge", "fli-editable", "fli-terminal", "fli-tooltip", "fli-undo"]
+
+[fli-module]
+js-path = "src/gui/fli/fli.js"

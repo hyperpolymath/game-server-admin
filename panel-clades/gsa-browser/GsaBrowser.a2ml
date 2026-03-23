@@ -31,6 +31,9 @@ inherits-from = "gsa"
 sibling-clades = ["gsa-config", "gsa-actions"]
 supersedes = ""
 
+[clade-fli]
+fli-inherits = ["fli-tooltip"]
+
 [clade-panel-integration]
 panel-id = "PanelGsaServerBrowser"
 model-module = "GsaBrowserModel"

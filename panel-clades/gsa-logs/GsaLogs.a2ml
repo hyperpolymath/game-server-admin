@@ -31,6 +31,9 @@ inherits-from = "gsa"
 sibling-clades = ["gsa-actions"]
 supersedes = ""
 
+[clade-fli]
+fli-inherits = ["fli-terminal"]
+
 [clade-panel-integration]
 panel-id = "PanelGsaLiveLogs"
 model-module = "GsaLogsModel"

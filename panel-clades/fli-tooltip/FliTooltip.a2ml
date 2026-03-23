@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+[clade-metadata]
+id = "fli-tooltip"
+name = "FLI Tooltip"
+short-name = "Tooltip"
+version = "1.0.0"
+kind = "fli-module"
+icon = "message-square"
+description = "Rich contextual tooltips with automatic positioning (top/bottom/left/right), configurable show/hide delays, HTML content support, and viewport boundary detection. Supports both hover and focus triggers for accessibility."
+
+[clade-traits]
+has-backend = false
+has-scanning = false
+has-persistence = false
+has-work-items = false
+has-real-time = false
+has-tooltip = true
+is-directive = false
+is-readonly = true
+is-ambient = false
+
+[clade-capabilities]
+capabilities = []
+
+[clade-protocols]
+protocols = []
+
+[clade-taxonomy]
+inherits-from = "fli"
+sibling-clades = ["fli-gauge", "fli-editable", "fli-terminal", "fli-undo"]
+supersedes = ""
+
+[fli-module]
+js-path = "src/gui/fli/fli-tooltip.js"

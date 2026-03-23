@@ -196,13 +196,15 @@
   }
 
   /**
-   * Render the log buffer into the viewer element. Applies severity
-   * filtering, search highlighting, and ANSI color mapping.
+   * Render the log buffer into the viewer element. Uses FLI.terminal for
+   * real ANSI escape parsing when provisioned, with fallback to keyword-
+   * based severity colouring. Supports search highlighting and URL detection.
    */
   function renderLogs() {
     var viewer = document.getElementById('ll-log-viewer');
     if (!viewer) return;
 
+    var useFLI = window.FLI && FLI.terminal && FLI.terminal._loaded;
     var filter = document.getElementById('ll-severity-filter').value;
     var query = llState.searchQuery.toLowerCase();
 
@@ -223,38 +225,79 @@
     document.getElementById('ll-error-count').textContent = errorCount + ' error' + (errorCount !== 1 ? 's' : '');
     document.getElementById('ll-warn-count').textContent = warnCount + ' warning' + (warnCount !== 1 ? 's' : '');
 
-    // Build rendered output
-    var html = '';
-    filtered.forEach(function(line) {
-      var numStr = String(line.num).padStart(4, ' ');
-      var color = 'var(--text-primary)';
-      switch (line.severity) {
-        case 'error':   color = 'var(--danger-fg)'; break;
-        case 'warning': color = 'var(--warning-fg)'; break;
-        case 'info':    color = 'var(--success-fg)'; break;
-        case 'debug':   color = 'var(--cyan-color)'; break;
-      }
+    if (useFLI) {
+      // FLI-provisioned: real ANSI escape parsing with URL detection
+      var lines = filtered.map(function(line) { return line.text; });
+      FLI.terminal.renderLines(viewer, lines, {
+        lineNumbers: true,
+        detectLinks: true,
+        startLine: filtered.length > 0 ? filtered[0].num : 1
+      });
 
-      var text = escapeHtml(line.text);
-
-      // Apply search highlighting
+      // Apply search highlighting on top of ANSI-parsed output
       if (query) {
-        var escapedQuery = escapeHtml(query);
-        var re = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-        text = text.replace(re, '<mark style="background:var(--warning-color);color:#000;border-radius:2px;padding:0 2px;">$1</mark>');
+        var escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var re = new RegExp('(' + escapedQuery + ')', 'gi');
+        // Walk text nodes and highlight matches
+        highlightTextNodes(viewer, re);
       }
+    } else {
+      // Fallback: keyword-based severity colouring
+      var html = '';
+      filtered.forEach(function(line) {
+        var numStr = String(line.num).padStart(4, ' ');
+        var color = 'var(--text-primary)';
+        switch (line.severity) {
+          case 'error':   color = 'var(--danger-fg)'; break;
+          case 'warning': color = 'var(--warning-fg)'; break;
+          case 'info':    color = 'var(--success-fg)'; break;
+          case 'debug':   color = 'var(--cyan-color)'; break;
+        }
 
-      html += '<span style="color:var(--text-muted);user-select:none;">' + numStr + '  </span>'
-        + '<span style="color:' + color + ';">' + text + '</span>\n';
-    });
+        var text = escapeHtml(line.text);
 
-    viewer.innerHTML = html || '<span style="color:var(--text-secondary);">No matching log lines.</span>';
+        // Apply search highlighting
+        if (query) {
+          var escapedQuery = escapeHtml(query);
+          var re = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+          text = text.replace(re, '<mark style="background:var(--warning-color);color:#000;border-radius:2px;padding:0 2px;">$1</mark>');
+        }
+
+        html += '<span style="color:var(--text-muted);user-select:none;">' + numStr + '  </span>'
+          + '<span style="color:' + color + ';">' + text + '</span>\n';
+      });
+
+      viewer.innerHTML = html || '<span style="color:var(--text-secondary);">No matching log lines.</span>';
+    }
 
     // Auto-scroll to bottom
     var autoscroll = document.getElementById('ll-autoscroll');
     if (autoscroll && autoscroll.checked) {
       viewer.scrollTop = viewer.scrollHeight;
     }
+  }
+
+  /**
+   * Walk DOM text nodes and highlight regex matches with <mark> tags.
+   * Used for search highlighting on top of FLI-parsed ANSI output.
+   *
+   * @param {HTMLElement} root - The root element to walk
+   * @param {RegExp} regex - Pattern to highlight
+   */
+  function highlightTextNodes(root, regex) {
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+
+    nodes.forEach(function(node) {
+      if (!regex.test(node.textContent)) return;
+      regex.lastIndex = 0; // Reset for global regex
+
+      var span = document.createElement('span');
+      span.innerHTML = node.textContent.replace(regex,
+        '<mark style="background:var(--warning-color);color:#000;border-radius:2px;padding:0 2px;">$1</mark>');
+      node.parentNode.replaceChild(span, node);
+    });
   }
 
   /**

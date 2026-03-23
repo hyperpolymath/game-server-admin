@@ -31,6 +31,9 @@ inherits-from = "gsa"
 sibling-clades = ["gsa-browser", "gsa-logs"]
 supersedes = ""
 
+[clade-fli]
+fli-inherits = ["fli-terminal"]
+
 [clade-panel-integration]
 panel-id = "PanelGsaServerActions"
 model-module = "GsaActionsModel"

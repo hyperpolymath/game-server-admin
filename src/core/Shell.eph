@@ -166,6 +166,18 @@ fn bindAllHandlers(channel: I64, caps: &GsaCapSet) -> I64 =
   let! channel = __ffi("gossamer_channel_bind", channel, "add_profile",
     fn(payload: String) -> String { Bridge.handleAddProfile(payload) }) in
 
+  -- Game Hub: Steam search
+  let! channel = __ffi("gossamer_channel_bind", channel, "search_steam",
+    fn(payload: String) -> String { Bridge.handleSearchSteam(payload, caps) }) in
+
+  -- Game Hub: Load config from user-specified path
+  let! channel = __ffi("gossamer_channel_bind", channel, "load_config_from_path",
+    fn(payload: String) -> String { Bridge.handleLoadConfigFromPath(payload, caps) }) in
+
+  -- Game Hub: File browser dialog
+  let! channel = __ffi("gossamer_channel_bind", channel, "browse_file",
+    fn(payload: String) -> String { Bridge.handleBrowseFile(payload) }) in
+
   channel
 
 -- =============================================================================

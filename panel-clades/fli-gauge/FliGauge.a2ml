@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+[clade-metadata]
+id = "fli-gauge"
+name = "FLI Gauge"
+short-name = "Gauge"
+version = "1.0.0"
+kind = "fli-module"
+icon = "gauge"
+description = "SVG arc gauges, ring meters, and sparkline charts for real-time numeric visualisation. Provides configurable min/max ranges, colour thresholds, animation easing, and responsive scaling for dashboard panels."
+
+[clade-traits]
+has-backend = false
+has-scanning = false
+has-persistence = false
+has-work-items = false
+has-real-time = true
+has-svg = true
+is-directive = false
+is-readonly = true
+is-ambient = false
+
+[clade-capabilities]
+capabilities = []
+
+[clade-protocols]
+protocols = []
+
+[clade-taxonomy]
+inherits-from = "fli"
+sibling-clades = ["fli-editable", "fli-terminal", "fli-tooltip", "fli-undo"]
+supersedes = ""
+
+[fli-module]
+js-path = "src/gui/fli/fli-gauge.js"

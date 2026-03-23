@@ -31,6 +31,9 @@ inherits-from = "gsa"
 sibling-clades = ["gsa-history"]
 supersedes = ""
 
+[clade-fli]
+fli-inherits = ["fli-gauge", "fli-tooltip"]
+
 [clade-panel-integration]
 panel-id = "PanelGsaHealthDashboard"
 model-module = "GsaHealthModel"

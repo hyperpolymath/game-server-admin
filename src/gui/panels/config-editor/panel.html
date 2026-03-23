@@ -2,12 +2,19 @@
   SPDX-License-Identifier: PMPL-1.0-or-later
   Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
 
-  config-editor/panel.html — Config Editor panel for Game Server Admin
+  config-editor/panel.html — Enhanced Config Editor for Game Server Admin
 
-  Dynamic form-based config editor that renders fields from A2ML metadata.
-  Supports string, int, float, bool, secret, and enum field types.
-  Includes a diff viewer and raw config preview.
-  Calls gossamer IPC: get_config, set_config, revert_config.
+  Interactive config editor with:
+  - Category tabs: General, Network, Gameplay, Admin/Cheats, Advanced
+  - Auto-detection of god mode / cheat / admin settings
+  - Config path prompt when no config file is found
+  - Range sliders for numeric fields with min/max constraints
+  - Field cards with descriptions, defaults, and validation
+  - Diff viewer and raw preview (collapsible)
+  - Apply + optional restart workflow
+
+  IPC commands: get_config, set_config, revert_config, load_config_from_path,
+  server_action (for restart after apply).
 -->
 
 <!-- Header -->
@@ -18,13 +25,41 @@
   <div style="flex:1;"></div>
   <button class="btn btn-sm" onclick="refreshConfigEditor()" id="ce-refresh-btn">&#x21BB; Refresh</button>
   <button class="btn btn-sm btn-primary" onclick="saveConfig()" id="ce-save-btn" disabled>Save Changes</button>
+  <button class="btn btn-sm btn-success" onclick="saveAndRestart()" id="ce-save-restart-btn" disabled style="display:none;">
+    Save &amp; Restart
+  </button>
   <button class="btn btn-sm" onclick="revertConfig()" id="ce-revert-btn" disabled>Revert</button>
 </div>
 
 <!-- No server selected state -->
 <div class="empty-state" id="ce-empty-state">
   <div class="empty-icon">&#x2699;</div>
-  <p>Select a server from the Server Browser to edit its configuration.</p>
+  <p style="font-size:15px; margin-bottom:8px;">No server selected</p>
+  <p style="font-size:13px;">Select a server from the Game Hub to edit its configuration.</p>
+</div>
+
+<!-- Config not found — path prompt -->
+<div id="ce-path-prompt" style="display:none;">
+  <div class="path-prompt">
+    <h3>Configuration Not Found</h3>
+    <p>
+      No configuration file was found for this server.
+      Enter the path to the config file, or browse for it.
+    </p>
+    <div id="ce-expected-path-section" style="display:none;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">Expected location:</div>
+      <div class="expected-path" id="ce-expected-path">—</div>
+    </div>
+    <div class="path-input-row">
+      <input type="text" id="ce-custom-path" placeholder="/path/to/server/config.ini" />
+      <button class="btn" onclick="browseForConfig()" title="Browse">&#x1F4C2;</button>
+      <button class="btn btn-primary" onclick="loadConfigFromPath()">Load</button>
+    </div>
+    <div style="margin-top:16px;">
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">Or enter settings manually:</div>
+      <button class="btn btn-sm btn-purple" onclick="enterManualConfig()">Create Empty Config</button>
+    </div>
+  </div>
 </div>
 
 <!-- Config form container -->
@@ -35,21 +70,32 @@
     <p style="color:var(--text-secondary); margin-top:8px;">Loading configuration...</p>
   </div>
 
-  <!-- Dynamic config form -->
-  <div id="ce-form" style="display:grid; grid-template-columns:1fr 1fr; gap:12px 24px;">
+  <!-- Category tabs -->
+  <div class="category-tabs" id="ce-category-tabs">
+    <!-- Populated dynamically by buildCategoryTabs() -->
+  </div>
+
+  <!-- Changed fields counter + apply bar -->
+  <div id="ce-change-bar" style="display:none; margin-bottom:16px; padding:10px 16px; border-radius:var(--radius-md); background:rgba(88,166,255,0.06); border:1px solid rgba(88,166,255,0.15); display:flex; align-items:center; gap:12px;">
+    <span style="color:var(--link-color); font-weight:600;" id="ce-change-count">0</span>
+    <span style="color:var(--text-secondary); font-size:13px;"> field(s) changed</span>
+    <div style="flex:1;"></div>
+    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); cursor:pointer;">
+      <input type="checkbox" id="ce-restart-after" style="width:auto;" />
+      Restart server after applying
+    </label>
+  </div>
+
+  <!-- Dynamic config form (field cards, categorised) -->
+  <div id="ce-form">
     <!-- Fields rendered dynamically by renderConfigForm() -->
   </div>
 
-  <!-- Changed fields counter -->
-  <div id="ce-change-info" style="margin-top:16px; padding:8px 12px; border-radius:var(--radius-md); background:rgba(88,166,255,0.08); border:1px solid rgba(88,166,255,0.2); display:none;">
-    <span style="color:var(--link-color); font-weight:600;" id="ce-change-count">0</span>
-    <span style="color:var(--text-secondary);"> field(s) changed</span>
-  </div>
-
   <!-- Diff panel (collapsible) -->
-  <div style="margin-top:20px;">
+  <div style="margin-top:24px;">
     <div class="collapsible-header" onclick="toggleCollapsible(this)">
       <span class="collapse-arrow">&#x25B6;</span> Changes Diff
+      <span class="badge badge-blue" id="ce-diff-count" style="font-size:10px; display:none;">0</span>
     </div>
     <div class="collapsible-body">
       <div id="ce-diff-container" class="code-block" style="max-height:300px; font-size:12px;">
@@ -72,41 +118,216 @@
 </div>
 
 <script>
+  // =========================================================================
+  // Config Editor state
+  // =========================================================================
+
   /**
    * Config Editor state.
+   *
    * originalConfig: the config as loaded from the server (for diff comparison).
    * currentConfig: the current form values (mutated by user edits).
    * fieldMeta: A2ML field metadata array describing each config field.
+   * categories: map of category name → array of field keys.
+   * activeCategory: the currently visible category tab.
+   * rawFormat: the config file format (json, ini, xml, etc.).
+   * rawText: the raw config file text.
    */
   var ceState = {
     originalConfig: {},
     currentConfig: {},
     fieldMeta: [],
+    categories: {},
+    activeCategory: 'all',
     rawFormat: 'json',
-    rawText: ''
+    rawText: '',
+    configPath: ''
   };
 
   /**
+   * Keywords that indicate a config field is a cheat / god mode / admin setting.
+   * Used for auto-categorisation into the "Admin & Cheats" tab.
+   */
+  var CHEAT_KEYWORDS = [
+    'cheat', 'godmode', 'god_mode', 'god-mode', 'admin', 'creative',
+    'noclip', 'no_clip', 'infinite', 'unlimited', 'invincible',
+    'immortal', 'flymode', 'fly_mode', 'debug', 'devmode', 'dev_mode',
+    'allowcheats', 'allow_cheats', 'enablecheats', 'enable_cheats',
+    'cheats_enabled', 'tgm', 'adminpassword', 'admin_password',
+    'rconpassword', 'rcon_password', 'serveradmin', 'server_admin',
+    'console_enabled', 'sv_cheats', 'cheats', 'operator', 'op_level',
+    'godmode_enabled', 'invulnerable', 'spectator', 'forceload'
+  ];
+
+  /**
+   * Keywords that indicate a network-related setting.
+   */
+  var NETWORK_KEYWORDS = [
+    'port', 'host', 'bind', 'ip', 'address', 'maxplayers', 'max_players',
+    'maxconnections', 'max_connections', 'timeout', 'bandwidth', 'tick',
+    'tickrate', 'tick_rate', 'region', 'public', 'password', 'server_password',
+    'upnp', 'crossplay', 'cross_play', 'query_port', 'rcon_port',
+    'steam_port', 'nat', 'lan', 'internet', 'lobby'
+  ];
+
+  /**
+   * Keywords that indicate a gameplay-related setting.
+   */
+  var GAMEPLAY_KEYWORDS = [
+    'difficulty', 'gamemode', 'game_mode', 'world', 'seed', 'map',
+    'day', 'night', 'time', 'weather', 'pvp', 'pve', 'damage',
+    'respawn', 'spawn', 'loot', 'resource', 'xp', 'experience',
+    'level', 'craft', 'build', 'harvest', 'tame', 'breeding',
+    'hunger', 'stamina', 'health_regen', 'fall_damage', 'friendly_fire',
+    'max_level', 'player_damage', 'structure_damage', 'dino_damage',
+    'save_interval', 'autosave', 'world_size', 'biome'
+  ];
+
+  // =========================================================================
+  // Category management
+  // =========================================================================
+
+  /**
+   * Categorise a field based on its key and metadata.
+   * Returns one of: "general", "network", "gameplay", "cheats", "advanced".
+   *
+   * @param {object} field - The field metadata object
+   * @returns {string} Category name
+   */
+  function categoriseField(field) {
+    var key = (field.key || '').toLowerCase();
+    var label = (field.label || '').toLowerCase();
+    var desc = (field.description || '').toLowerCase();
+    var combined = key + ' ' + label + ' ' + desc;
+
+    // Check for explicit category in field metadata
+    if (field.category) return field.category;
+
+    // Auto-detect cheats/admin
+    for (var i = 0; i < CHEAT_KEYWORDS.length; i++) {
+      if (combined.indexOf(CHEAT_KEYWORDS[i]) !== -1) return 'cheats';
+    }
+
+    // Auto-detect network
+    for (var j = 0; j < NETWORK_KEYWORDS.length; j++) {
+      if (combined.indexOf(NETWORK_KEYWORDS[j]) !== -1) return 'network';
+    }
+
+    // Auto-detect gameplay
+    for (var k = 0; k < GAMEPLAY_KEYWORDS.length; k++) {
+      if (combined.indexOf(GAMEPLAY_KEYWORDS[k]) !== -1) return 'gameplay';
+    }
+
+    // Check field type heuristics
+    if (field.type === 'secret') return 'cheats';
+    if (key.indexOf('name') !== -1 || key.indexOf('motd') !== -1 || key.indexOf('description') !== -1) return 'general';
+
+    return 'general';
+  }
+
+  /**
+   * Build category tabs from the current field metadata.
+   * Counts fields per category and renders the tab bar.
+   */
+  function buildCategoryTabs() {
+    var tabs = document.getElementById('ce-category-tabs');
+    if (!tabs) return;
+
+    // Count fields per category
+    ceState.categories = { all: [], general: [], network: [], gameplay: [], cheats: [], advanced: [] };
+
+    ceState.fieldMeta.forEach(function(field) {
+      var cat = categoriseField(field);
+      ceState.categories.all.push(field.key);
+      if (ceState.categories[cat]) {
+        ceState.categories[cat].push(field.key);
+      } else {
+        ceState.categories.advanced.push(field.key);
+      }
+    });
+
+    // Build tab HTML
+    var tabDefs = [
+      { id: 'all',      label: 'All',            icon: '' },
+      { id: 'general',  label: 'General',         icon: '' },
+      { id: 'network',  label: 'Network',         icon: '' },
+      { id: 'gameplay', label: 'Gameplay',         icon: '' },
+      { id: 'cheats',   label: 'Admin & Cheats',   icon: '', isCheat: true },
+      { id: 'advanced', label: 'Advanced',         icon: '' }
+    ];
+
+    var html = '';
+    tabDefs.forEach(function(tab) {
+      var count = ceState.categories[tab.id] ? ceState.categories[tab.id].length : 0;
+      if (tab.id !== 'all' && count === 0) return; // Hide empty categories
+
+      var activeClass = ceState.activeCategory === tab.id ? ' active' : '';
+      var cheatClass = tab.isCheat ? ' cheat-tab' : '';
+
+      html += '<div class="category-tab' + activeClass + cheatClass + '" '
+        + 'data-category="' + tab.id + '" '
+        + 'onclick="switchCategory(\'' + tab.id + '\')">'
+        + tab.label
+        + (count > 0 ? '<span class="tab-count">' + count + '</span>' : '')
+        + '</div>';
+    });
+
+    tabs.innerHTML = html;
+  }
+
+  /**
+   * Switch to a different category tab and re-render the visible fields.
+   *
+   * @param {string} category - The category ID to show
+   */
+  function switchCategory(category) {
+    ceState.activeCategory = category;
+
+    // Update tab active states
+    document.querySelectorAll('#ce-category-tabs .category-tab').forEach(function(tab) {
+      if (tab.dataset.category === category) {
+        tab.classList.add('active');
+      } else {
+        tab.classList.remove('active');
+      }
+    });
+
+    // Re-render form with filtered fields
+    var visibleKeys = ceState.categories[category] || ceState.categories.all;
+    var visibleFields = ceState.fieldMeta.filter(function(f) {
+      return visibleKeys.indexOf(f.key) !== -1;
+    });
+
+    renderConfigFields(visibleFields);
+  }
+
+  // =========================================================================
+  // Config loading and rendering
+  // =========================================================================
+
+  /**
    * Refresh the config editor. If a server is selected, loads its config
-   * and renders the dynamic form. Otherwise shows the empty state.
+   * and renders the categorised form. Otherwise shows the empty state.
    */
   async function refreshConfigEditor() {
     var emptyState = document.getElementById('ce-empty-state');
     var formContainer = document.getElementById('ce-form-container');
+    var pathPrompt = document.getElementById('ce-path-prompt');
     var serverBadge = document.getElementById('ce-server-badge');
     var gameBadge = document.getElementById('ce-game-badge');
 
     if (!gsaState.selectedServerId) {
       emptyState.style.display = 'block';
       formContainer.style.display = 'none';
+      pathPrompt.style.display = 'none';
       serverBadge.textContent = 'No server selected';
       serverBadge.className = 'badge badge-gray';
       gameBadge.style.display = 'none';
+      document.getElementById('ce-save-restart-btn').style.display = 'none';
       return;
     }
 
     emptyState.style.display = 'none';
-    formContainer.style.display = 'block';
     serverBadge.textContent = gsaState.selectedServerName || gsaState.selectedServerId;
     serverBadge.className = 'badge badge-blue';
 
@@ -115,20 +336,41 @@
       gameBadge.style.display = 'inline-flex';
     }
 
+    // Show restart button when server is running
+    var restartBtn = document.getElementById('ce-save-restart-btn');
+    restartBtn.style.display = gsaState.selectedServerStatus === 'running' ? 'inline-flex' : 'none';
+
     // Show loading
+    formContainer.style.display = 'block';
+    pathPrompt.style.display = 'none';
     document.getElementById('ce-loading').style.display = 'block';
     document.getElementById('ce-form').style.display = 'none';
+    document.getElementById('ce-category-tabs').style.display = 'none';
 
     var resp = await gossamerInvoke('get_config', { server_id: gsaState.selectedServerId });
 
     document.getElementById('ce-loading').style.display = 'none';
-    document.getElementById('ce-form').style.display = 'grid';
 
     if (!resp.ok) {
-      document.getElementById('ce-form').innerHTML =
-        '<div style="grid-column:1/-1;color:var(--danger-fg);">Failed to load config: ' + escapeHtml(resp.error) + '</div>';
+      // Config not found — show path prompt
+      formContainer.style.display = 'none';
+      pathPrompt.style.display = 'block';
+
+      // If we know the expected path, show it
+      var expectedPath = resp.expected_path || resp.config_path || '';
+      if (expectedPath) {
+        document.getElementById('ce-expected-path-section').style.display = 'block';
+        document.getElementById('ce-expected-path').textContent = expectedPath;
+        document.getElementById('ce-custom-path').value = expectedPath;
+      } else {
+        document.getElementById('ce-expected-path-section').style.display = 'none';
+      }
       return;
     }
+
+    // Config loaded successfully
+    document.getElementById('ce-form').style.display = 'block';
+    document.getElementById('ce-category-tabs').style.display = 'flex';
 
     var live = resp.data.live || {};
     ceState.fieldMeta = live.fields || [];
@@ -136,6 +378,7 @@
     ceState.currentConfig = {};
     ceState.rawFormat = live.format || 'json';
     ceState.rawText = live.raw || '';
+    ceState.configPath = live.config_path || '';
 
     // Build original config map from fields
     ceState.fieldMeta.forEach(function(f) {
@@ -143,72 +386,141 @@
       ceState.currentConfig[f.key] = f.value;
     });
 
-    renderConfigForm(ceState.fieldMeta);
+    // Build category tabs and render
+    ceState.activeCategory = 'all';
+    buildCategoryTabs();
+    renderConfigFields(ceState.fieldMeta);
     renderRawPreview(ceState.rawFormat, ceState.rawText);
     updateChangeState();
   }
 
   /**
-   * Render the dynamic config form from A2ML field metadata.
-   * Each field is rendered as the appropriate input type based on its
-   * metadata: string, int, float, bool, secret, enum.
+   * Render config field cards for the given fields.
+   * Each field is rendered as a card with label, description, key, default,
+   * and the appropriate input control.
    *
-   * @param {Array} fields - Array of field metadata objects
+   * @param {Array} fields - Array of field metadata objects to render
    */
-  function renderConfigForm(fields) {
+  function renderConfigFields(fields) {
     var form = document.getElementById('ce-form');
-    if (!form || !fields || fields.length === 0) {
-      if (form) form.innerHTML = '<div style="grid-column:1/-1;" class="empty-state"><p>No configuration fields found.</p></div>';
+    if (!form) return;
+
+    if (!fields || fields.length === 0) {
+      form.innerHTML = '<div class="empty-state" style="padding:24px;"><p>No settings in this category.</p></div>';
       return;
     }
 
     var html = '';
+
+    // Group fields by their category for section headers
+    var currentSection = null;
+
     fields.forEach(function(field) {
       var key = escapeHtml(field.key || '');
       var label = escapeHtml(field.label || field.key || '');
       var type = field.type || 'string';
       var value = field.value !== undefined ? field.value : '';
       var defaultVal = field.default !== undefined ? field.default : '';
-      var description = escapeHtml(field.description || '');
+      var description = field.description || '';
+      var isCheat = categoriseField(field) === 'cheats';
+      var isChanged = String(ceState.currentConfig[field.key]) !== String(ceState.originalConfig[field.key]);
 
-      html += '<div class="form-group" id="ce-group-' + key + '" data-field-key="' + key + '">';
-      html += '<label title="' + description + '">' + label + '</label>';
+      // Section header (only in 'all' view)
+      if (ceState.activeCategory === 'all') {
+        var cat = categoriseField(field);
+        if (cat !== currentSection) {
+          currentSection = cat;
+          var sectionNames = {
+            general: 'General', network: 'Network', gameplay: 'Gameplay',
+            cheats: 'Admin & Cheats', advanced: 'Advanced'
+          };
+          html += '<div class="config-section-header" style="margin-top:' + (currentSection === categoriseField(fields[0]) ? '0' : '20px') + ';">'
+            + '<h3>' + (sectionNames[cat] || 'Other') + '</h3>'
+            + (cat === 'cheats' ? '<span class="cheat-indicator">CHEATS</span>' : '')
+            + '</div>';
+        }
+      }
+
+      // Field card
+      html += '<div class="field-card' + (isChanged ? ' changed' : '') + (isCheat ? ' cheat-field' : '') + '" '
+        + 'id="ce-field-' + key + '" data-field-key="' + key + '">';
+
+      // Header: label + key + default
+      html += '<div class="field-card-header">'
+        + '<span class="field-label">' + label + '</span>'
+        + '<span class="field-key">' + key + '</span>';
+
+      if (isCheat) {
+        html += '<span class="cheat-indicator" style="margin-left:4px;">ADMIN</span>';
+      }
+
+      if (defaultVal !== '' && defaultVal !== undefined) {
+        html += '<span class="field-default">Default: ' + escapeHtml(String(defaultVal)) + '</span>';
+      }
+
+      html += '</div>';
+
+      // Description
+      if (description) {
+        html += '<div class="field-card-description">' + escapeHtml(description) + '</div>';
+      }
+
+      // Control
+      html += '<div class="field-card-control">';
 
       switch (type) {
         case 'bool':
-          html += '<label class="toggle">';
-          html += '<input type="checkbox" data-key="' + key + '" onchange="onFieldChange(\'' + key + '\', this.checked)" ' + (value ? 'checked' : '') + ' />';
-          html += '<span class="toggle-slider"></span>';
-          html += '</label>';
+          html += '<label class="toggle">'
+            + '<input type="checkbox" data-key="' + key + '" '
+            + 'onchange="onFieldChange(\'' + key + '\', this.checked)" '
+            + (value ? 'checked' : '') + ' />'
+            + '<span class="toggle-slider"></span>'
+            + '</label>'
+            + '<span style="font-size:13px; font-weight:500; color:' + (value ? 'var(--success-fg)' : 'var(--text-muted)') + ';" id="ce-bool-label-' + key + '">'
+            + (value ? 'ON' : 'OFF')
+            + '</span>';
           break;
 
         case 'int':
+        case 'float':
+          var hasRange = field.range && field.range.min !== undefined && field.range.max !== undefined;
+          var step = type === 'float' ? '0.1' : '1';
           var min = field.range ? field.range.min : '';
           var max = field.range ? field.range.max : '';
-          html += '<input type="number" data-key="' + key + '" value="' + escapeHtml(String(value)) + '" '
-            + 'placeholder="' + escapeHtml(String(defaultVal)) + '" '
-            + (min !== '' ? 'min="' + min + '" ' : '')
-            + (max !== '' ? 'max="' + max + '" ' : '')
-            + 'step="1" onchange="onFieldChange(\'' + key + '\', parseInt(this.value))" />';
-          break;
 
-        case 'float':
-          var fmin = field.range ? field.range.min : '';
-          var fmax = field.range ? field.range.max : '';
-          html += '<input type="number" data-key="' + key + '" value="' + escapeHtml(String(value)) + '" '
-            + 'placeholder="' + escapeHtml(String(defaultVal)) + '" '
-            + (fmin !== '' ? 'min="' + fmin + '" ' : '')
-            + (fmax !== '' ? 'max="' + fmax + '" ' : '')
-            + 'step="0.1" onchange="onFieldChange(\'' + key + '\', parseFloat(this.value))" />';
+          if (hasRange) {
+            // Render as slider + number input
+            html += '<div class="range-display" style="flex:1;">'
+              + '<span class="range-bounds">' + min + '</span>'
+              + '<input type="range" data-key="' + key + '" '
+              + 'min="' + min + '" max="' + max + '" step="' + step + '" '
+              + 'value="' + escapeHtml(String(value)) + '" '
+              + 'oninput="onRangeChange(\'' + key + '\', this.value, \'' + type + '\')" />'
+              + '<span class="range-bounds">' + max + '</span>'
+              + '<input type="number" data-key="' + key + '-num" '
+              + 'value="' + escapeHtml(String(value)) + '" '
+              + 'min="' + min + '" max="' + max + '" step="' + step + '" '
+              + 'style="width:80px;" '
+              + 'onchange="onNumericInputChange(\'' + key + '\', this.value, \'' + type + '\')" />'
+              + '</div>';
+          } else {
+            // No range — just a number input
+            html += '<input type="number" data-key="' + key + '" '
+              + 'value="' + escapeHtml(String(value)) + '" '
+              + 'placeholder="' + escapeHtml(String(defaultVal)) + '" '
+              + (min !== '' ? 'min="' + min + '" ' : '')
+              + (max !== '' ? 'max="' + max + '" ' : '')
+              + 'step="' + step + '" '
+              + 'onchange="onFieldChange(\'' + key + '\', ' + (type === 'float' ? 'parseFloat(this.value)' : 'parseInt(this.value)') + ')" />';
+          }
           break;
 
         case 'secret':
-          html += '<div style="display:flex;gap:4px;">';
-          html += '<input type="password" data-key="' + key + '" value="' + escapeHtml(String(value)) + '" '
+          html += '<input type="password" data-key="' + key + '" '
+            + 'value="' + escapeHtml(String(value)) + '" '
             + 'placeholder="' + escapeHtml(String(defaultVal)) + '" '
-            + 'onchange="onFieldChange(\'' + key + '\', this.value)" style="flex:1;" />';
-          html += '<button class="btn btn-sm btn-icon" onclick="toggleSecretVisibility(this)" title="Show/Hide">&#x1F441;</button>';
-          html += '</div>';
+            + 'onchange="onFieldChange(\'' + key + '\', this.value)" />'
+            + '<button class="btn btn-sm btn-icon" onclick="toggleSecretField(this)" title="Show/Hide">&#x1F441;</button>';
           break;
 
         case 'enum':
@@ -218,30 +530,32 @@
             var optVal = typeof opt === 'object' ? opt.value : opt;
             var optLabel = typeof opt === 'object' ? (opt.label || opt.value) : opt;
             var selected = String(optVal) === String(value) ? ' selected' : '';
-            html += '<option value="' + escapeHtml(String(optVal)) + '"' + selected + '>' + escapeHtml(String(optLabel)) + '</option>';
+            html += '<option value="' + escapeHtml(String(optVal)) + '"' + selected + '>'
+              + escapeHtml(String(optLabel)) + '</option>';
           });
           html += '</select>';
           break;
 
         default: // string
-          html += '<input type="text" data-key="' + key + '" value="' + escapeHtml(String(value)) + '" '
+          html += '<input type="text" data-key="' + key + '" '
+            + 'value="' + escapeHtml(String(value)) + '" '
             + 'placeholder="' + escapeHtml(String(defaultVal)) + '" '
             + 'onchange="onFieldChange(\'' + key + '\', this.value)" />';
       }
 
-      if (description) {
-        html += '<small style="color:var(--text-muted);font-size:11px;">' + description + '</small>';
-      }
-
-      html += '</div>';
+      html += '</div></div>';
     });
 
     form.innerHTML = html;
   }
 
+  // =========================================================================
+  // Field change handlers
+  // =========================================================================
+
   /**
    * Handle a field value change. Updates the current config, marks
-   * the form group as changed/unchanged, and updates the change counter.
+   * the field card as changed/unchanged, and updates the change counter.
    *
    * @param {string} key - The config field key
    * @param {*} value - The new value
@@ -249,15 +563,78 @@
   function onFieldChange(key, value) {
     ceState.currentConfig[key] = value;
 
-    var group = document.getElementById('ce-group-' + key);
-    if (group) {
+    var card = document.getElementById('ce-field-' + key);
+    if (card) {
       var original = ceState.originalConfig[key];
       var changed = String(value) !== String(original);
-      group.className = 'form-group' + (changed ? ' changed' : '');
+      if (changed) {
+        card.classList.add('changed');
+      } else {
+        card.classList.remove('changed');
+      }
+    }
+
+    // Update bool label if applicable
+    var boolLabel = document.getElementById('ce-bool-label-' + key);
+    if (boolLabel) {
+      boolLabel.textContent = value ? 'ON' : 'OFF';
+      boolLabel.style.color = value ? 'var(--success-fg)' : 'var(--text-muted)';
     }
 
     updateChangeState();
   }
+
+  /**
+   * Handle a range slider input event. Syncs the numeric input and
+   * triggers the field change.
+   *
+   * @param {string} key - The config field key
+   * @param {string} value - The new slider value
+   * @param {string} type - "int" or "float"
+   */
+  function onRangeChange(key, value, type) {
+    var parsed = type === 'float' ? parseFloat(value) : parseInt(value);
+
+    // Sync the numeric input
+    var numInput = document.querySelector('[data-key="' + key + '-num"]');
+    if (numInput) numInput.value = value;
+
+    onFieldChange(key, parsed);
+  }
+
+  /**
+   * Handle a numeric input change from the number field next to a slider.
+   * Syncs the range slider and triggers the field change.
+   *
+   * @param {string} key - The config field key
+   * @param {string} value - The new input value
+   * @param {string} type - "int" or "float"
+   */
+  function onNumericInputChange(key, value, type) {
+    var parsed = type === 'float' ? parseFloat(value) : parseInt(value);
+
+    // Sync the range slider
+    var rangeInput = document.querySelector('input[type="range"][data-key="' + key + '"]');
+    if (rangeInput) rangeInput.value = value;
+
+    onFieldChange(key, parsed);
+  }
+
+  /**
+   * Toggle visibility of a secret (password) field.
+   *
+   * @param {HTMLElement} btn - The toggle button element
+   */
+  function toggleSecretField(btn) {
+    var input = btn.parentElement.querySelector('input[type="password"], input[type="text"]');
+    if (input) {
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+  }
+
+  // =========================================================================
+  // Change tracking
+  // =========================================================================
 
   /**
    * Update the change counter, save/revert button states, and diff view
@@ -275,16 +652,28 @@
     document.getElementById('ce-save-btn').disabled = !hasChanges;
     document.getElementById('ce-revert-btn').disabled = !hasChanges;
 
-    var changeInfo = document.getElementById('ce-change-info');
+    var restartBtn = document.getElementById('ce-save-restart-btn');
+    if (restartBtn.style.display !== 'none') {
+      restartBtn.disabled = !hasChanges;
+    }
+
+    var changeBar = document.getElementById('ce-change-bar');
     if (hasChanges) {
-      changeInfo.style.display = 'block';
+      changeBar.style.display = 'flex';
       document.getElementById('ce-change-count').textContent = changes.length;
     } else {
-      changeInfo.style.display = 'none';
+      changeBar.style.display = 'none';
     }
 
     // Update diff
     showDiff(changes);
+
+    // Update diff count badge
+    var diffCount = document.getElementById('ce-diff-count');
+    if (diffCount) {
+      diffCount.textContent = changes.length;
+      diffCount.style.display = changes.length > 0 ? 'inline-flex' : 'none';
+    }
   }
 
   /**
@@ -310,24 +699,12 @@
     container.innerHTML = html;
   }
 
-  /**
-   * Render the raw config preview in its original format.
-   *
-   * @param {string} format - The config format (json, ini, xml, etc.)
-   * @param {string} text - The raw config text
-   */
-  function renderRawPreview(format, text) {
-    var container = document.getElementById('ce-raw-preview');
-    if (!container) return;
-    if (!text) {
-      container.innerHTML = '<span style="color:var(--text-secondary);">No raw config available.</span>';
-      return;
-    }
-    container.textContent = text;
-  }
+  // =========================================================================
+  // Save, revert, and restart
+  // =========================================================================
 
   /**
-   * Save the current config changes to the server via Bridge.eph.
+   * Save the current config changes to the server via IPC.
    * Sends only the changed fields as a list of key/value pairs.
    */
   async function saveConfig() {
@@ -352,13 +729,35 @@
     btn.innerHTML = 'Save Changes';
 
     if (!resp.ok) {
-      alert('Failed to save config: ' + (resp.error || 'Unknown error'));
+      if (typeof showToast === 'function') showToast('Failed to save: ' + (resp.error || 'Unknown'), 'error');
       btn.disabled = false;
       return;
     }
 
+    if (typeof showToast === 'function') showToast(changes.length + ' setting(s) saved successfully.', 'success');
+
     // Refresh to get the new baseline
     await refreshConfigEditor();
+  }
+
+  /**
+   * Save changes and then restart the server.
+   */
+  async function saveAndRestart() {
+    await saveConfig();
+
+    if (typeof showToast === 'function') showToast('Restarting server...', 'info');
+
+    var resp = await gossamerInvoke('server_action', {
+      server_id: gsaState.selectedServerId,
+      action: 'restart'
+    });
+
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('Server restarted with new config.', 'success');
+    } else {
+      if (typeof showToast === 'function') showToast('Restart failed: ' + (resp.error || ''), 'error');
+    }
   }
 
   /**
@@ -379,29 +778,197 @@
     btn.innerHTML = 'Revert';
 
     if (!resp.ok) {
-      alert('Failed to revert: ' + (resp.error || 'Unknown error'));
+      if (typeof showToast === 'function') showToast('Revert failed: ' + (resp.error || ''), 'error');
       btn.disabled = false;
       return;
     }
 
+    if (typeof showToast === 'function') showToast('Config reverted to stored version.', 'success');
     await refreshConfigEditor();
   }
 
+  // =========================================================================
+  // Config path prompt handlers
+  // =========================================================================
+
   /**
-   * Toggle visibility of a secret (password) input field.
-   *
-   * @param {HTMLElement} btn - The toggle button element
+   * Browse for a config file using the Gossamer file dialog.
    */
-  function toggleSecretVisibility(btn) {
-    var input = btn.parentElement.querySelector('input');
-    if (input) {
-      input.type = input.type === 'password' ? 'text' : 'password';
+  async function browseForConfig() {
+    var resp = await gossamerInvoke('browse_file', { title: 'Select Config File' });
+    if (resp.ok && resp.data) {
+      document.getElementById('ce-custom-path').value = resp.data;
     }
   }
+
+  /**
+   * Load a config from a user-specified file path.
+   * Called when the user enters a path in the "config not found" prompt.
+   */
+  async function loadConfigFromPath() {
+    var path = document.getElementById('ce-custom-path').value.trim();
+    if (!path) {
+      if (typeof showToast === 'function') showToast('Please enter a config file path.', 'warning');
+      return;
+    }
+
+    var resp = await gossamerInvoke('load_config_from_path', {
+      server_id: gsaState.selectedServerId,
+      config_path: path
+    });
+
+    if (resp.ok) {
+      if (typeof showToast === 'function') showToast('Config loaded from ' + path, 'success');
+      await refreshConfigEditor();
+    } else {
+      if (typeof showToast === 'function') showToast('Failed to load: ' + (resp.error || 'File not found or unreadable'), 'error');
+    }
+  }
+
+  /**
+   * Create an empty config for manual entry.
+   * Shows the form container with no fields, allowing the user to
+   * add settings manually or wait for the server to generate a config.
+   */
+  function enterManualConfig() {
+    document.getElementById('ce-path-prompt').style.display = 'none';
+    document.getElementById('ce-form-container').style.display = 'block';
+    document.getElementById('ce-form').style.display = 'block';
+    document.getElementById('ce-category-tabs').style.display = 'none';
+    document.getElementById('ce-loading').style.display = 'none';
+
+    ceState.fieldMeta = [];
+    ceState.originalConfig = {};
+    ceState.currentConfig = {};
+
+    document.getElementById('ce-form').innerHTML =
+      '<div class="empty-state" style="padding:24px;">'
+      + '<p style="font-size:14px; margin-bottom:8px;">No configuration loaded</p>'
+      + '<p style="font-size:13px; color:var(--text-secondary);">'
+      + 'Start the server once to generate a default config file, then refresh.</p>'
+      + '<button class="btn btn-primary" onclick="refreshConfigEditor()" style="margin-top:12px;">&#x21BB; Refresh</button>'
+      + '</div>';
+  }
+
+  // =========================================================================
+  // Raw preview
+  // =========================================================================
+
+  /**
+   * Render the raw config preview in its original format.
+   *
+   * @param {string} format - The config format (json, ini, xml, etc.)
+   * @param {string} text - The raw config text
+   */
+  function renderRawPreview(format, text) {
+    var container = document.getElementById('ce-raw-preview');
+    if (!container) return;
+    if (!text) {
+      container.innerHTML = '<span style="color:var(--text-secondary);">No raw config available.</span>';
+      return;
+    }
+    container.textContent = text;
+  }
+
+  // =========================================================================
+  // Event listeners
+  // =========================================================================
+
+  // =========================================================================
+  // FLI integration — provisioned capabilities
+  // =========================================================================
+
+  /**
+   * FLI init hook for the config editor panel.
+   * Called by the FLI provisioner after fli-editable, fli-tooltip,
+   * and fli-undo modules are loaded. Wires up inline editing, undo
+   * tracking, and rich tooltips on config field cards.
+   *
+   * Panels start bare. This function layers FLI capabilities on top,
+   * following the Groove pattern (Burble/Vext on base panels).
+   */
+  window.fliInit_config_editor = function() {
+    // Wire up FLI.undo to config field changes
+    if (window.FLI && FLI.undo && FLI.undo._loaded) {
+      // Clear undo stack when switching servers
+      FLI.undo.clear();
+
+      // Override onFieldChange to push undo actions
+      var originalOnFieldChange = onFieldChange;
+      onFieldChange = function(key, value) {
+        var oldValue = ceState.currentConfig[key];
+        originalOnFieldChange(key, value);
+
+        // Push undo action (only if value actually changed)
+        if (String(value) !== String(oldValue)) {
+          FLI.undo.push(FLI.undo.fieldChange(key, oldValue, value, function(k, v) {
+            // Apply function: update config and UI
+            ceState.currentConfig[k] = v;
+
+            // Update the field's input control
+            var card = document.getElementById('ce-field-' + k);
+            if (card) {
+              var input = card.querySelector('input, select');
+              if (input) {
+                if (input.type === 'checkbox') {
+                  input.checked = !!v;
+                } else {
+                  input.value = v;
+                }
+              }
+              // Update range slider if present
+              var range = card.querySelector('input[type="range"]');
+              if (range) range.value = v;
+              var numInput = card.querySelector('[data-key$="-num"]');
+              if (numInput) numInput.value = v;
+
+              // Update bool label
+              var boolLabel = document.getElementById('ce-bool-label-' + k);
+              if (boolLabel) {
+                boolLabel.textContent = v ? 'ON' : 'OFF';
+                boolLabel.style.color = v ? 'var(--success-fg)' : 'var(--text-muted)';
+              }
+
+              // Update changed state
+              var isChanged = String(v) !== String(ceState.originalConfig[k]);
+              if (isChanged) card.classList.add('changed');
+              else card.classList.remove('changed');
+            }
+
+            updateChangeState();
+          }));
+        }
+      };
+    }
+
+    // Wire up FLI.tooltip on field cards
+    if (window.FLI && FLI.tooltip && FLI.tooltip._loaded) {
+      FLI.tooltip.init(document.getElementById('panel-config-editor'));
+    }
+
+    // Wire up FLI.editable for inline value editing (double-click on value displays)
+    if (window.FLI && FLI.editable && FLI.editable._loaded) {
+      FLI.editable.onSave(function(key, newValue, oldValue, element) {
+        // Route inline edits through the standard field change handler
+        var field = ceState.fieldMeta.find(function(f) { return f.key === key; });
+        if (!field) return;
+
+        // Type coerce
+        var typed = newValue;
+        if (field.type === 'int') typed = parseInt(newValue, 10);
+        else if (field.type === 'float') typed = parseFloat(newValue);
+        else if (field.type === 'bool') typed = newValue === 'true';
+
+        onFieldChange(key, typed);
+      });
+    }
+  };
 
   // Listen for server selection changes
   document.addEventListener('gsa-server-selected', function() {
     if (gsaState.activePanel === 'config-editor') {
+      // Clear undo stack on server change
+      if (window.FLI && FLI.undo && FLI.undo._loaded) FLI.undo.clear();
       refreshConfigEditor();
     }
   });

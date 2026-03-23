@@ -11,6 +11,7 @@ module GSA.Core.Bridge
 
 import GSA.Core.Types
 import GSA.Core.Capabilities
+import GSA.Core.GrooveClient
 
 -- =============================================================================
 -- JSON helpers — thin wrappers around Zig FFI JSON operations
@@ -311,6 +312,186 @@ fn handleSearch(payload: String, caps: &GsaCapSet) -> String =
       jsonError("Search failed: " ++ __ffi("gossamer_gsa_last_error"))
     else
       jsonOk("{\"query\":\"" ++ query ++ "\",\"mode\":\"" ++ mode ++ "\",\"results\":" ++ result ++ "}")
+  }
+
+-- =============================================================================
+-- Steam search handler
+-- =============================================================================
+
+-- Search Steam for game server tools by name.
+-- Uses the Steam Web API to find dedicated server AppIDs.
+-- Payload: {"query": "valheim"}
+fn handleSearchSteam(payload: String, caps: &GsaCapSet) -> String =
+  let query = jsonField(payload, "query") in
+  if query == "" then
+    jsonError("Missing 'query'")
+  else {
+    let result = __ffi("gossamer_gsa_steam_search", query) in
+    if result == "" then
+      jsonOk("[]")
+    else
+      jsonOk(result)
+  }
+
+-- =============================================================================
+-- Config path loading handler
+-- =============================================================================
+
+-- Load a config from a user-specified file path.
+-- Used when the auto-detected config path fails and the user provides one.
+-- Payload: {"server_id": "...", "config_path": "/path/to/config"}
+fn handleLoadConfigFromPath(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  let config_path = jsonField(payload, "config_path") in
+  if server_id == "" then
+    jsonError("Missing 'server_id'")
+  else if config_path == "" then
+    jsonError("Missing 'config_path'")
+  else {
+    let result = __ffi("gossamer_gsa_load_config_path", server_id, config_path) in
+    if result == "" then
+      jsonError("Failed to load config from " ++ config_path ++ ": " ++ __ffi("gossamer_gsa_last_error"))
+    else {
+      -- Update VeriSimDB with the new config path
+      let update = "{\"config_path\":\"" ++ config_path ++ "\"}" in
+      __ffi("gossamer_gsa_verisimdb_update", server_id, "semantic", update);
+      jsonOk(result)
+    }
+  }
+
+-- =============================================================================
+-- File browser handler (Gossamer native dialog)
+-- =============================================================================
+
+-- Open a native file dialog and return the selected path.
+-- Payload: {"title": "Select Config File"}
+fn handleBrowseFile(payload: String) -> String =
+  let title = jsonField(payload, "title") in
+  let result = __ffi("gossamer_file_dialog", title) in
+  if result == "" then
+    jsonError("No file selected")
+  else
+    jsonOk("\"" ++ result ++ "\"")
+
+-- =============================================================================
+-- Server uninstall handler
+-- =============================================================================
+
+-- Uninstall a server: stop it, optionally remove files, delete from VeriSimDB.
+-- Payload: {"server_id": "...", "keep_history": true, "uninstall": true}
+fn handleUninstallServer(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  let keep_history = jsonField(payload, "keep_history") in
+  if server_id == "" then
+    jsonError("Missing 'server_id'")
+  else {
+    -- Stop the server first
+    __ffi("gossamer_gsa_server_action", server_id, "stop");
+    -- Remove server files if uninstall flag is set
+    let uninstall = jsonField(payload, "uninstall") in
+    if uninstall == "true" then
+      __ffi("gossamer_gsa_remove_server_files", server_id)
+    else ();
+    -- Remove from VeriSimDB (keep history if requested)
+    if keep_history == "true" then {
+      let prov = "{\"event_type\":\"uninstalled\",\"actor\":\"gsa-gui\",\"description\":\"Server uninstalled, history preserved\"}" in
+      __ffi("gossamer_gsa_verisimdb_provenance", server_id, prov);
+      __ffi("gossamer_gsa_verisimdb_archive", server_id)
+    }
+    else
+      __ffi("gossamer_gsa_verisimdb_delete", server_id);
+    jsonOk("{\"server_id\":\"" ++ server_id ++ "\",\"uninstalled\":true}")
+  }
+
+-- =============================================================================
+-- Groove voice alerting handlers (Burble integration)
+-- =============================================================================
+
+-- Discover available Groove targets (Burble, Vext).
+-- Call at startup or when the user clicks "Reconnect Voice".
+-- Payload: {} (no parameters needed)
+fn handleGrooveDiscover(payload: String, caps: &GsaCapSet) -> String =
+  let result = discover(caps) in
+  match result {
+    Ok -> {
+      -- Return status of all known targets
+      let burble_status = status("burble") in
+      let vext_status = status("vext") in
+      jsonOk("{\"burble\":" ++ burble_status ++ ",\"vext\":" ++ vext_status ++ "}")
+    },
+    Error(msg) ->
+      jsonError("Groove discovery failed: " ++ msg)
+  }
+
+-- Send an alert through Groove to Burble.
+-- Payload: {"severity": "warning", "server_id": "valheim-1", "message": "..."}
+fn handleGrooveAlert(payload: String, caps: &GsaCapSet) -> String =
+  let severity_str = jsonField(payload, "severity") in
+  let server_id = jsonField(payload, "server_id") in
+  let message = jsonField(payload, "message") in
+  if server_id == "" || message == "" then
+    jsonError("Missing 'server_id' or 'message'")
+  else {
+    let severity = match severity_str {
+      "info"      -> SevInfo,
+      "warning"   -> SevWarning,
+      "critical"  -> SevCritical,
+      "emergency" -> SevEmergency,
+      _           -> SevWarning
+    } in
+    let result = alert(severity, server_id, message, caps) in
+    match result {
+      Ok -> jsonOk("{\"sent\":true,\"target\":\"groove\"}"),
+      Error(msg) -> jsonError("Groove alert failed: " ++ msg)
+    }
+  }
+
+-- Check Groove connection status for a specific target.
+-- Payload: {"target": "burble"} or {"target": "vext"}
+fn handleGrooveStatus(payload: String) -> String =
+  let target_name = jsonField(payload, "target") in
+  if target_name == "" then
+    jsonError("Missing 'target' (expected 'burble' or 'vext')")
+  else {
+    let target_status = status(target_name) in
+    jsonOk(target_status)
+  }
+
+-- Send a TTS alert through Groove to Burble.
+-- Payload: {"text": "Server valheim-1 is down"}
+fn handleGrooveTTS(payload: String, caps: &GsaCapSet) -> String =
+  let text = jsonField(payload, "text") in
+  if text == "" then
+    jsonError("Missing 'text' for TTS alert")
+  else {
+    let result = ttsAlert(text, caps) in
+    match result {
+      Ok -> jsonOk("{\"spoken\":true}"),
+      Error(msg) -> jsonError("Groove TTS failed: " ++ msg)
+    }
+  }
+
+-- Trigger a drift-based voice alert for a server.
+-- Queries VeriSimDB for drift, then alerts via Groove if threshold exceeded.
+-- Payload: {"server_id": "valheim-1"}
+fn handleGrooveDriftAlert(payload: String, caps: &GsaCapSet) -> String =
+  let server_id = jsonField(payload, "server_id") in
+  if server_id == "" then
+    jsonError("Missing 'server_id'")
+  else {
+    -- Get drift from VeriSimDB
+    let drift_json = __ffi("gossamer_gsa_verisimdb_drift", server_id) in
+    if drift_json == "" then
+      jsonError("Could not retrieve drift for: " ++ server_id)
+    else {
+      let drift_val = jsonField(drift_json, "config_drift") in
+      let drift = __ffi("parse_float", drift_val) in
+      let result = alertOnDrift(server_id, drift, caps) in
+      match result {
+        Ok -> jsonOk("{\"server_id\":\"" ++ server_id ++ "\",\"drift\":" ++ drift_val ++ ",\"alerted\":true}"),
+        Error(msg) -> jsonError("Drift alert failed: " ++ msg)
+      }
+    }
   }
 
 -- =============================================================================

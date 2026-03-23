@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+[clade-metadata]
+id = "fli-undo"
+name = "FLI Undo"
+short-name = "Undo"
+version = "1.0.0"
+kind = "fli-module"
+icon = "rotate-ccw"
+description = "Undo/redo command stack with Ctrl+Z (undo) and Ctrl+Shift+Z (redo) keyboard bindings. Implements the command pattern with configurable stack depth, command coalescing for rapid edits, and serialisable history for persistence."
+
+[clade-traits]
+has-backend = false
+has-scanning = false
+has-persistence = false
+has-work-items = false
+has-real-time = false
+has-undo = true
+has-keyboard-shortcut = true
+is-directive = false
+is-readonly = false
+is-ambient = false
+
+[clade-capabilities]
+capabilities = []
+
+[clade-protocols]
+protocols = []
+
+[clade-taxonomy]
+inherits-from = "fli"
+sibling-clades = ["fli-gauge", "fli-editable", "fli-terminal", "fli-tooltip"]
+supersedes = ""
+
+[fli-module]
+js-path = "src/gui/fli/fli-undo.js"
