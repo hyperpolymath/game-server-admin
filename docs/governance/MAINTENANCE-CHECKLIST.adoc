@@ -558,7 +558,7 @@ Optional directive write-back to repos that already have `.machine_readable/`:
 
 ```bash
 cd ${REPOS_ROOT:-~/Documents/hyperpolymath-repos}/gitbot-fleet
-just enroll-repos /var/mnt/eclipse/repos true
+just enroll-repos /var$REPOS_DIR true
 ```
 
 Release hard gate from fleet:
