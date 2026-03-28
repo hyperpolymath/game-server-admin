@@ -1,0 +1,22 @@
+{
+  "groove_version": "1",
+  "service_id": "game-server-admin",
+  "service_version": "0.1.0",
+  "capabilities": {
+    "workflow": {
+      "type": "workflow",
+      "description": "Game server lifecycle management and monitoring",
+      "protocol": "http",
+      "endpoint": "/api/servers",
+      "requires_auth": true,
+      "panel_compatible": true
+    }
+  },
+  "consumes": ["octad-storage", "voice", "text"],
+  "endpoints": {
+    "health": "/health",
+    "groove": "/.well-known/groove"
+  },
+  "health": "/health",
+  "applicability": ["individual", "team"]
+}
