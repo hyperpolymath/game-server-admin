@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Name=Game Server Admin
+GenericName=Game Server Administration
+Comment=Manage game servers with health monitoring and live configuration
+Exec=gsa-launcher %u
+Icon=game-server-admin
+Categories=Game;Utility;Network;
+Terminal=false
+StartupWMClass=game-server-admin
+Keywords=gameserver;admin;monitoring;dedicated;multiplayer;
+MimeType=x-scheme-handler/gsa;
+Actions=gossamer;web;
+
+[Desktop Action gossamer]
+Name=Launch Desktop App (Gossamer)
+Exec=gsa-launcher --gossamer
+
+[Desktop Action web]
+Name=Launch in Browser
+Exec=gsa-launcher --web
