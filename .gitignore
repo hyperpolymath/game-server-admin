@@ -108,3 +108,6 @@ sync_report*.txt
 
 # Hypatia scan cache (local-only)
 .hypatia/
+
+# asdf version manager
+.tool-versions
