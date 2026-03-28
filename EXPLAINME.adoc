@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: PMPL-1.0-or-later
 = EXPLAINME — Game Server Admin
 
-== "Universal game server probe, configuration management, and administration"
+== Universal game server probe, configuration management, and administration
 
 [quote, README]
 ____
