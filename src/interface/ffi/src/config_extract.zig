@@ -46,7 +46,7 @@ pub const ConfigField = struct {
 pub const ParsedConfig = struct {
     format: ConfigFormat,
     path: []const u8,
-    fields: std.ArrayList(ConfigField),
+    fields: std.array_list.AlignedManaged(ConfigField, null),
     raw_text: []const u8,
     allocator: Allocator,
 
@@ -54,7 +54,7 @@ pub const ParsedConfig = struct {
         return .{
             .format = format,
             .path = path,
-            .fields = std.ArrayList(ConfigField).init(allocator),
+            .fields = std.array_list.AlignedManaged(ConfigField, null).init(allocator),
             .raw_text = "",
             .allocator = allocator,
         };
@@ -860,7 +860,7 @@ threadlocal var extract_result_buf: [16384]u8 = undefined;
 export fn gossamer_gsa_extract_config(
     handle: c_int,
     profile_id: [*:0]const u8,
-) callconv(.C) [*:0]const u8 {
+) callconv(.c) [*:0]const u8 {
     _ = handle;
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");

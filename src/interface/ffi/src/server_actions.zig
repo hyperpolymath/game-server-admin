@@ -450,7 +450,7 @@ threadlocal var action_result_buf: [65536]u8 = undefined;
 export fn gossamer_gsa_server_action(
     handle: c_int,
     action_json: [*:0]const u8,
-) callconv(.C) [*:0]const u8 {
+) callconv(.c) [*:0]const u8 {
     _ = handle;
     _ = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
@@ -508,7 +508,7 @@ threadlocal var logs_result_buf: [65536]u8 = undefined;
 export fn gossamer_gsa_get_logs(
     handle: c_int,
     lines: c_int,
-) callconv(.C) [*:0]const u8 {
+) callconv(.c) [*:0]const u8 {
     _ = handle;
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");

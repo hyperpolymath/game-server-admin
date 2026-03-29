@@ -59,8 +59,8 @@ pub const AlertSeverity = enum(u8) {
 pub const TargetStatus = enum(u8) {
     unknown = 0,
     reachable = 1,
-    unreachable = 2,
-    error = 3,
+    not_reachable = 2,
+    @"error" = 3,
 };
 
 /// A known Groove target (Burble, Vext, etc.).
@@ -249,7 +249,7 @@ fn probeTarget(target: *GrooveTarget) void {
     const host = target.hostSlice();
 
     const response = grooveGet(allocator, host, target.port, GROOVE_DISCOVERY_PATH) catch {
-        target.status = .unreachable;
+        target.status = .not_reachable;
         target.last_probe_ms = std.time.milliTimestamp();
         return;
     };
@@ -354,7 +354,7 @@ fn sendTTSAlert(
 ///
 /// Returns 0 on success (at least one target reachable), or a GsaResult
 /// error code if no targets are reachable.
-export fn gossamer_gsa_groove_discover() callconv(.C) c_int {
+export fn gossamer_gsa_groove_discover() callconv(.c) c_int {
     _ = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);
@@ -395,7 +395,7 @@ threadlocal var groove_status_buf: [1024]u8 = undefined;
 
 export fn gossamer_gsa_groove_status(
     target_name: [*:0]const u8,
-) callconv(.C) [*:0]const u8 {
+) callconv(.c) [*:0]const u8 {
     const name = std.mem.span(target_name);
 
     const target = findTarget(name) orelse {
@@ -412,8 +412,8 @@ export fn gossamer_gsa_groove_status(
     const status_str: []const u8 = switch (target.status) {
         .unknown => "unknown",
         .reachable => "reachable",
-        .unreachable => "unreachable",
-        .error => "error",
+        .not_reachable => "unreachable",
+        .@"error" => "error",
     };
 
     var stream = std.io.fixedBufferStream(&groove_status_buf);
@@ -445,7 +445,7 @@ export fn gossamer_gsa_groove_alert(
     severity: c_int,
     server_id: [*:0]const u8,
     message: [*:0]const u8,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     _ = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);
@@ -496,7 +496,7 @@ export fn gossamer_gsa_groove_alert(
 /// Returns 0 on success, negative GsaResult on failure.
 export fn gossamer_gsa_groove_tts_alert(
     text: [*:0]const u8,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     _ = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);

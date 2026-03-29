@@ -41,12 +41,12 @@ pub const GameProfile = struct {
     id: []const u8,
     name: []const u8,
     engine: []const u8,
-    ports: std.ArrayList(Port),
+    ports: std.array_list.AlignedManaged(Port, null),
     protocol: []const u8,
     fingerprint_pattern: []const u8,
     config_format: []const u8,
     config_path: []const u8,
-    field_defs: std.ArrayList(FieldDef),
+    field_defs: std.array_list.AlignedManaged(FieldDef, null),
     actions: std.StringHashMap([]const u8),
     allocator: Allocator,
 
@@ -56,12 +56,12 @@ pub const GameProfile = struct {
             .id = "",
             .name = "",
             .engine = "",
-            .ports = std.ArrayList(Port).init(std.heap.c_allocator),
+            .ports = std.array_list.AlignedManaged(Port, null).init(std.heap.c_allocator),
             .protocol = "",
             .fingerprint_pattern = "",
             .config_format = "",
             .config_path = "",
-            .field_defs = std.ArrayList(FieldDef).init(std.heap.c_allocator),
+            .field_defs = std.array_list.AlignedManaged(FieldDef, null).init(std.heap.c_allocator),
             .actions = std.StringHashMap([]const u8).init(std.heap.c_allocator),
             .allocator = std.heap.c_allocator,
         };
@@ -213,7 +213,7 @@ pub const ProfileRegistry = struct {
 
     /// Return a JSON array summarising all loaded profiles.
     pub fn listProfiles(self: *ProfileRegistry, allocator: Allocator) ![]const u8 {
-        var buf = std.ArrayList(u8).init(allocator);
+        var buf = std.array_list.AlignedManaged(u8, null).init(allocator);
         errdefer buf.deinit();
         const writer = buf.writer();
 
@@ -252,12 +252,12 @@ pub fn parseA2MLProfile(data: []const u8, allocator: Allocator) !GameProfile {
         .id = try allocator.dupe(u8, ""),
         .name = try allocator.dupe(u8, ""),
         .engine = try allocator.dupe(u8, ""),
-        .ports = std.ArrayList(Port).init(allocator),
+        .ports = std.array_list.AlignedManaged(Port, null).init(allocator),
         .protocol = try allocator.dupe(u8, ""),
         .fingerprint_pattern = try allocator.dupe(u8, ""),
         .config_format = try allocator.dupe(u8, ""),
         .config_path = try allocator.dupe(u8, ""),
-        .field_defs = std.ArrayList(FieldDef).init(allocator),
+        .field_defs = std.array_list.AlignedManaged(FieldDef, null).init(allocator),
         .actions = std.StringHashMap([]const u8).init(allocator),
         .allocator = allocator,
     };
@@ -367,7 +367,7 @@ pub fn parseA2MLProfile(data: []const u8, allocator: Allocator) !GameProfile {
             if (std.mem.indexOfPos(u8, field_body, opt_start, ")")) |opt_end| {
                 const opt_content = field_body[opt_start + 9 .. opt_end];
                 // Count quoted strings
-                var enum_list = std.ArrayList([]const u8).init(allocator);
+                var enum_list = std.array_list.AlignedManaged([]const u8, null).init(allocator);
                 var opt_pos: usize = 0;
                 while (opt_pos < opt_content.len) {
                     if (opt_content[opt_pos] == '"') {
@@ -459,7 +459,7 @@ fn extractAttrFrom(attrs: []const u8, name: []const u8) ?[]const u8 {
 /// Returns the number of profiles loaded, or a negative error code.
 export fn gossamer_gsa_load_profiles(
     dir: [*:0]const u8,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);
@@ -480,7 +480,7 @@ export fn gossamer_gsa_load_profiles(
 /// Returns a NUL-terminated JSON string.
 threadlocal var list_profiles_buf: [16384]u8 = undefined;
 
-export fn gossamer_gsa_list_profiles() callconv(.C) [*:0]const u8 {
+export fn gossamer_gsa_list_profiles() callconv(.c) [*:0]const u8 {
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @as([*:0]const u8, @ptrCast(&[_:0]u8{ '[', ']' }));
@@ -504,7 +504,7 @@ export fn gossamer_gsa_list_profiles() callconv(.C) [*:0]const u8 {
 /// Returns 0 on success, negative error code on failure.
 export fn gossamer_gsa_add_profile(
     a2ml: [*:0]const u8,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);
@@ -557,7 +557,7 @@ test "parse minimal A2ML profile" {
         \\    @end
         \\  @end
         \\  @ports:
-        \\    @port(name="game", number=27015, protocol="UDP"):@end
+        \\    @port(name="game", number="27015", protocol="UDP"):@end
         \\  @end
         \\@end
     ;
@@ -589,11 +589,9 @@ test "ProfileRegistry init and deinit" {
 }
 
 test "GameProfile.empty" {
-    var p = GameProfile.empty();
+    const p = GameProfile.empty();
     try std.testing.expectEqualStrings("", p.id);
     try std.testing.expectEqual(@as(usize, 0), p.ports.items.len);
-    // empty() uses c_allocator so no deinit needed for test
-    _ = p;
 }
 
 test "extractAttrFrom" {

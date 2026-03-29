@@ -169,8 +169,11 @@ fn tcpConnect(host: []const u8, port: u16, timeout_ms: u32) !net.Stream {
     if (pfd[0].revents & posix.POLL.ERR != 0) return error.ConnectionRefused;
 
     // switch back to blocking for reads
-    const flags = try posix.fcntl(sock, .GETFL);
-    _ = try posix.fcntl(sock, .SETFL, @as(u32, @bitCast(@as(i32, @intCast(flags)))) & ~@as(u32, @bitCast(@as(i32, posix.O.NONBLOCK))));
+    const flags = try posix.fcntl(sock, std.posix.F.GETFL, 0);
+    // Clear NONBLOCK flag — in Zig 0.15 O is a packed struct, manipulate via @bitCast
+    var oflags: std.posix.O = @bitCast(@as(u32, @truncate(flags)));
+    oflags.NONBLOCK = false;
+    _ = try posix.fcntl(sock, std.posix.F.SETFL, @as(usize, @as(u32, @bitCast(oflags))));
 
     return net.Stream{ .handle = sock };
 }
@@ -585,7 +588,7 @@ pub fn probeRange(
     ports: []const u16,
     timeout_ms: u32,
 ) ![]ProbeResult {
-    var results = std.ArrayList(ProbeResult).init(allocator);
+    var results = std.array_list.AlignedManaged(ProbeResult, null).init(allocator);
     errdefer results.deinit();
 
     for (ports) |port| {
@@ -660,7 +663,7 @@ pub fn matchToProfile(
 export fn gossamer_gsa_probe(
     host_ptr: [*:0]const u8,
     port_c: c_int,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     const handle = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);
@@ -701,7 +704,7 @@ threadlocal var fingerprint_result_buf: [8192]u8 = undefined;
 export fn gossamer_gsa_fingerprint(
     host_ptr: [*:0]const u8,
     ports_json: [*:0]const u8,
-) callconv(.C) [*:0]const u8 {
+) callconv(.c) [*:0]const u8 {
     const host = std.mem.span(host_ptr);
     const json_str = std.mem.span(ports_json);
 

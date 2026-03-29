@@ -241,7 +241,7 @@ pub fn serverToOctadJson(
     probe_result: *const probe.ProbeResult,
     spatial: ?[3]f64,
 ) ![]const u8 {
-    var buf = std.ArrayList(u8).init(allocator);
+    var buf = std.array_list.AlignedManaged(u8, null).init(allocator);
     errdefer buf.deinit();
     const writer = buf.writer();
 
@@ -310,7 +310,7 @@ pub fn serverToOctadJson(
 /// Returns 0 on success, negative GsaResult on failure.
 export fn gossamer_gsa_verisimdb_store(
     octad_json: [*:0]const u8,
-) callconv(.C) c_int {
+) callconv(.c) c_int {
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);
@@ -337,7 +337,7 @@ threadlocal var vql_result_buf: [16384]u8 = undefined;
 
 export fn gossamer_gsa_verisimdb_query(
     vql: [*:0]const u8,
-) callconv(.C) [*:0]const u8 {
+) callconv(.c) [*:0]const u8 {
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
@@ -364,7 +364,7 @@ export fn gossamer_gsa_verisimdb_query(
 /// Check VeriSimDB health.
 ///
 /// Returns 0 if healthy, non-zero otherwise.
-export fn gossamer_gsa_verisimdb_health() callconv(.C) c_int {
+export fn gossamer_gsa_verisimdb_health() callconv(.c) c_int {
     const gsa = main.getGlobalHandle() orelse {
         return @intFromEnum(main.GsaResult.not_initialized);
     };
@@ -381,7 +381,7 @@ threadlocal var drift_result_buf: [8192]u8 = undefined;
 
 export fn gossamer_gsa_verisimdb_drift(
     server_id: [*:0]const u8,
-) callconv(.C) [*:0]const u8 {
+) callconv(.c) [*:0]const u8 {
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));

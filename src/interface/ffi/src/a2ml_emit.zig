@@ -58,7 +58,7 @@ pub fn emitA2ML(
     config: *const config_extract.ParsedConfig,
     profile: *const game_profiles.GameProfile,
 ) ![]const u8 {
-    var buf = std.ArrayList(u8).init(allocator);
+    var buf = std.array_list.AlignedManaged(u8, null).init(allocator);
     errdefer buf.deinit();
     const writer = buf.writer();
 
@@ -254,7 +254,7 @@ pub fn diffConfigs(
     old: *const config_extract.ParsedConfig,
     new: *const config_extract.ParsedConfig,
 ) ![]ConfigDiff {
-    var diffs = std.ArrayList(ConfigDiff).init(allocator);
+    var diffs = std.array_list.AlignedManaged(ConfigDiff, null).init(allocator);
     errdefer diffs.deinit();
 
     // Find modified and removed fields
@@ -314,7 +314,7 @@ pub fn applyDiff(
     format: config_extract.ConfigFormat,
     diffs: []const ConfigDiff,
 ) ![]const u8 {
-    var result = std.ArrayList(u8).init(allocator);
+    var result = std.array_list.AlignedManaged(u8, null).init(allocator);
     errdefer result.deinit();
     const writer = result.writer();
 
@@ -460,7 +460,7 @@ threadlocal var emit_result_buf: [16384]u8 = undefined;
 /// Convert a JSON config representation to A2ML.
 export fn gossamer_gsa_a2ml_emit(
     config_json: [*:0]const u8,
-) callconv(.C) [*:0]const u8 {
+) callconv(.c) [*:0]const u8 {
     const allocator = std.heap.c_allocator;
     const json_str = std.mem.span(config_json);
 
@@ -491,7 +491,7 @@ threadlocal var parse_result_buf: [16384]u8 = undefined;
 /// Parse A2ML back to a JSON representation.
 export fn gossamer_gsa_a2ml_parse(
     a2ml_ptr: [*:0]const u8,
-) callconv(.C) [*:0]const u8 {
+) callconv(.c) [*:0]const u8 {
     const allocator = std.heap.c_allocator;
     const a2ml_str = std.mem.span(a2ml_ptr);
 
@@ -502,7 +502,7 @@ export fn gossamer_gsa_a2ml_parse(
     defer config.deinit();
 
     // Convert to JSON
-    var json_buf = std.ArrayList(u8).init(allocator);
+    var json_buf = std.array_list.AlignedManaged(u8, null).init(allocator);
     defer json_buf.deinit();
     const writer = json_buf.writer();
 
