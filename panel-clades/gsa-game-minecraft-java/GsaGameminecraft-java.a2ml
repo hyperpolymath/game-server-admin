@@ -3,12 +3,12 @@
 
 [clade-metadata]
 id = "gsa-game-minecraft-java"
-name = "GSA Minecraft Java Edition"
-short-name = "Minecraft Java Edition"
+name = "GSA minecraft-java"
+short-name = "minecraft-java"
 version = "1.0.0"
 kind = "game-profile"
 icon = "gamepad"
-description = "Game profile clade for Minecraft Java Edition — inherits from gsa-game"
+description = "Game profile clade for minecraft-java — inherits from gsa-game"
 
 [clade-traits]
 has-backend = true
@@ -18,3 +18,15 @@ has-real-time = true
 
 [clade-taxonomy]
 inherits-from = "gsa-game"
+
+[clade-game-specific]
+primary-port = "25565/TCP"
+probe-protocol = "minecraft-query"
+config-format = "key-value"
+
+[clade-panel-customisation]
+# Panels inherited from gsa-game parent, with game-specific overrides:
+server-browser-columns = ["name", "players", "map", "version", "latency"]
+config-editor-format = "key-value"
+health-dashboard-metrics = ["players", "tps", "memory", "cpu"]
+log-viewer-filter-presets = ["error", "warning", "chat", "join/leave"]

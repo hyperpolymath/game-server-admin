@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- SPDX-License-Identifier: PMPL-1.0-or-later -->
+  <!-- Game Server Admin icon — server rack with gamepad overlay -->
+
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="120" fill="#1a1a2e" stroke="#16213e" stroke-width="4"/>
+
+  <!-- Server rack body -->
+  <rect x="60" y="50" width="136" height="120" rx="8" ry="8" fill="#0f3460" stroke="#533483" stroke-width="2"/>
+
+  <!-- Server unit 1 (top) -->
+  <rect x="70" y="58" width="116" height="28" rx="4" ry="4" fill="#16213e" stroke="#533483" stroke-width="1"/>
+  <circle cx="82" cy="72" r="4" fill="#00ff88"/>
+  <circle cx="94" cy="72" r="4" fill="#00ff88"/>
+  <rect x="108" y="66" width="68" height="12" rx="2" ry="2" fill="#0a0a1a"/>
+
+  <!-- Server unit 2 (middle) -->
+  <rect x="70" y="92" width="116" height="28" rx="4" ry="4" fill="#16213e" stroke="#533483" stroke-width="1"/>
+  <circle cx="82" cy="106" r="4" fill="#00ff88"/>
+  <circle cx="94" cy="106" r="4" fill="#ffaa00"/>
+  <rect x="108" y="100" width="68" height="12" rx="2" ry="2" fill="#0a0a1a"/>
+
+  <!-- Server unit 3 (bottom) -->
+  <rect x="70" y="126" width="116" height="28" rx="4" ry="4" fill="#16213e" stroke="#533483" stroke-width="1"/>
+  <circle cx="82" cy="140" r="4" fill="#00ff88"/>
+  <circle cx="94" cy="140" r="4" fill="#00ff88"/>
+  <rect x="108" y="134" width="68" height="12" rx="2" ry="2" fill="#0a0a1a"/>
+
+  <!-- Gamepad overlay (bottom-right) -->
+  <g transform="translate(148, 158) scale(0.9)">
+    <!-- Pad body -->
+    <path d="M10,30 Q10,10 30,10 L70,10 Q90,10 90,30 L90,40 Q90,55 75,60 L65,60 Q55,55 50,50 Q45,55 35,60 L25,60 Q10,55 10,40 Z"
+          fill="#e94560" stroke="#fff" stroke-width="2"/>
+    <!-- D-pad -->
+    <rect x="22" y="27" width="16" height="6" rx="1" fill="#fff"/>
+    <rect x="27" y="22" width="6" height="16" rx="1" fill="#fff"/>
+    <!-- Buttons -->
+    <circle cx="68" cy="25" r="4" fill="#fff"/>
+    <circle cx="76" cy="33" r="4" fill="#fff"/>
+  </g>
+
+  <!-- GSA text -->
+  <text x="128" y="218" font-family="monospace" font-size="28" font-weight="bold" fill="#e94560" text-anchor="middle" letter-spacing="4">GSA</text>
+</svg>

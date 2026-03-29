@@ -3,12 +3,12 @@
 
 [clade-metadata]
 id = "gsa-game-valheim"
-name = "GSA Valheim"
-short-name = "Valheim"
+name = "GSA valheim"
+short-name = "valheim"
 version = "1.0.0"
 kind = "game-profile"
 icon = "gamepad"
-description = "Game profile clade for Valheim — inherits from gsa-game"
+description = "Game profile clade for valheim — inherits from gsa-game"
 
 [clade-traits]
 has-backend = true
@@ -18,3 +18,15 @@ has-real-time = true
 
 [clade-taxonomy]
 inherits-from = "gsa-game"
+
+[clade-game-specific]
+primary-port = "2456/UDP"
+probe-protocol = "steam-query"
+config-format = "env"
+
+[clade-panel-customisation]
+# Panels inherited from gsa-game parent, with game-specific overrides:
+server-browser-columns = ["name", "players", "map", "version", "latency"]
+config-editor-format = "env"
+health-dashboard-metrics = ["players", "tps", "memory", "cpu"]
+log-viewer-filter-presets = ["error", "warning", "chat", "join/leave"]

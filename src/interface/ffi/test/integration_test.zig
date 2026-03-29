@@ -138,6 +138,92 @@ test "format detection: Lua table" {
     ));
 }
 
+test "Lua parser: deeply nested tables" {
+    const allocator = testing.allocator;
+
+    // Simulate a Don't Starve Together cluster config
+    const lua_config =
+        \\-- DST Cluster configuration
+        \\local cluster = {
+        \\  gameplay = {
+        \\    max_players = 6,
+        \\    pvp = false,
+        \\    game_mode = "survival",
+        \\    pause_when_empty = true,
+        \\  },
+        \\  network = {
+        \\    cluster_name = "My DST Server",
+        \\    cluster_password = "secret123",
+        \\    lan_only = false,
+        \\  },
+        \\  misc = {
+        \\    console_enabled = true,
+        \\  },
+        \\}
+    ;
+
+    var config = try config_extract.parseLua(allocator, lua_config);
+    defer config.deinit();
+
+    // Should have dotted paths: cluster.gameplay.max_players, etc.
+    try testing.expect(config.fields.items.len >= 7);
+
+    // Check a deeply nested value
+    const max_players = config.getField("cluster.gameplay.max_players");
+    try testing.expect(max_players != null);
+    try testing.expectEqualStrings("6", max_players.?.value);
+
+    const cluster_name = config.getField("cluster.network.cluster_name");
+    try testing.expect(cluster_name != null);
+    try testing.expectEqualStrings("My DST Server", cluster_name.?.value);
+
+    const pvp = config.getField("cluster.gameplay.pvp");
+    try testing.expect(pvp != null);
+    try testing.expectEqualStrings("false", pvp.?.value);
+}
+
+test "Lua parser: bracket-quoted keys" {
+    const allocator = testing.allocator;
+
+    const lua_config =
+        \\ServerData = {
+        \\  ["server-name"] = "Test",
+        \\  ["max-players"] = 32,
+        \\  [1] = "first",
+        \\}
+    ;
+
+    var config = try config_extract.parseLua(allocator, lua_config);
+    defer config.deinit();
+
+    const name = config.getField("ServerData.server-name");
+    try testing.expect(name != null);
+    try testing.expectEqualStrings("Test", name.?.value);
+
+    const idx = config.getField("ServerData.1");
+    try testing.expect(idx != null);
+    try testing.expectEqualStrings("first", idx.?.value);
+}
+
+test "Lua parser: block comments skipped" {
+    const allocator = testing.allocator;
+
+    const lua_config =
+        \\--[[ This is a
+        \\multi-line block comment
+        \\that should be skipped ]]
+        \\name = "actual_value"
+        \\-- line comment
+        \\port = 27015
+    ;
+
+    var config = try config_extract.parseLua(allocator, lua_config);
+    defer config.deinit();
+
+    try testing.expectEqual(@as(usize, 2), config.fields.items.len);
+    try testing.expectEqualStrings("actual_value", config.fields.items[0].value);
+}
+
 test "format detection: key-value fallback (Minecraft properties)" {
     try testing.expectEqual(config_extract.ConfigFormat.KeyValue, config_extract.detectFormat(
         \\# Minecraft server properties
