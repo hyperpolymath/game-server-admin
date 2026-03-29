@@ -1,135 +1,106 @@
 # SPDX-License-Identifier: PMPL-1.0-or-later
 # game-server-admin Container Image
 #
-# Multi-stage build template for Chainguard Wolfi base images.
-# Customise the builder stage for your language and copy the
-# resulting binary/release into the minimal runtime stage.
+# Builds libgsa.so (Zig FFI) and packages it with game profiles,
+# GUI panels, and the Gossamer entry point.
 #
 # Build with Podman:
 #   podman build -t gsa:latest -f container/Containerfile .
 #
-# Run:
-#   podman run -p 8090:8090 gsa:latest
+# Run (requires gsa-verisimdb on port 8090):
+#   podman run -p 8080:8080 --network=host gsa:latest
 #
-# Run with persistent volume:
-#   podman run -p 8090:8090 -v gsa-data:/data gsa:latest
+# Run with custom VeriSimDB URL:
+#   podman run -e GSA_VERISIMDB_URL=http://[::1]:8090 gsa:latest
 
 # ============================================================================
-# Stage 1: Builder
+# Stage 1: Zig Builder
 # ============================================================================
-#
-# Install build tools and compile the application.
-# This stage is discarded after the build — only the compiled output
-# is copied into the runtime stage.
-#
-# Language-specific examples (uncomment the one you need):
-#
-# --- Rust ---
-#   RUN apk add --no-cache rust pkgconf build-base
-#   COPY Cargo.toml Cargo.lock ./
-#   COPY src/ ./src/
-#   RUN cargo build --release
-#   # Output: /build/target/release/gsa
-#
-# --- Elixir ---
-#   RUN apk add --no-cache erl27-elixir-1.18 erlang-27 erlang-27-dev git build-base
-#   COPY mix.exs mix.lock ./
-#   COPY lib/ ./lib/
-#   COPY config/ ./config/
-#   ENV MIX_ENV=prod
-#   RUN mix local.hex --force && mix local.rebar --force && \
-#       mix deps.get --only prod && mix compile && mix release
-#   # Output: /build/_build/prod/rel/gsa/
-#
-# --- Zig ---
-#   RUN apk add --no-cache zig build-base
-#   COPY build.zig build.zig.zon ./
-#   COPY src/ ./src/
-#   RUN zig build -Doptimize=ReleaseFast
-#   # Output: /build/zig-out/bin/gsa
-#
+
 FROM cgr.dev/chainguard/wolfi-base:latest AS builder
 
-# TODO: Install your language toolchain
-RUN apk add --no-cache build-base
+RUN apk add --no-cache zig build-base curl
 
 WORKDIR /build
 
-# TODO: Copy source files and build
-COPY . .
-# RUN <your-build-command>
+# Copy Zig FFI source
+COPY src/interface/ffi/build.zig src/interface/ffi/build.zig
+COPY src/interface/ffi/src/ src/interface/ffi/src/
+
+# Build libgsa shared library (release optimised)
+RUN cd src/interface/ffi && zig build -Doptimize=ReleaseFast
 
 # ============================================================================
 # Stage 2: Runtime
 # ============================================================================
-#
-# Minimal production image. Only the compiled binary/release and runtime
-# dependencies are included. No compilers, no source code, no build tools.
-#
+
 FROM cgr.dev/chainguard/wolfi-base:latest
 
-# OCI image labels (compatible with cerro-torre .ctp bundle metadata)
+# OCI image labels
 LABEL org.opencontainers.image.title="game-server-admin" \
       org.opencontainers.image.description="Universal game server probe, config management, and administration via Gossamer + VeriSimDB" \
-      org.opencontainers.image.url="https://github/hyperpolymath/game-server-admin" \
-      org.opencontainers.image.source="https://github/hyperpolymath/game-server-admin" \
+      org.opencontainers.image.url="https://github.com/hyperpolymath/game-server-admin" \
+      org.opencontainers.image.source="https://github.com/hyperpolymath/game-server-admin" \
       org.opencontainers.image.vendor="hyperpolymath" \
       org.opencontainers.image.licenses="PMPL-1.0-or-later" \
       org.opencontainers.image.authors="Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>" \
       dev.cerrotorre.manifest="container/manifest.toml" \
-      dev.cerrotorre.gatekeeper="container/.gatekeeper.yaml" \
       dev.stapeln.compose="container/compose.toml"
 
-# Install minimal runtime dependencies.
-# Adjust this list for your application:
-#   - ca-certificates: TLS root certificates
-#   - curl: health check probe
-#   - libstdc++: C++ standard library (if needed by native deps)
-#   - ncurses: terminal UI (if needed, e.g. Elixir IEx)
+# Minimal runtime dependencies
 RUN apk add --no-cache ca-certificates curl
 
-# Create non-root user for the application.
-# Running as root inside containers is a security anti-pattern.
+# Create non-root user
 RUN addgroup -S appuser && adduser -S appuser -G appuser
 
 WORKDIR /app
 
-# TODO: Copy compiled binary/release from builder stage.
-# Examples:
-#   COPY --from=builder /build/target/release/gsa /app/gsa
-#   COPY --from=builder /build/_build/prod/rel/gsa /app/release/
-#   COPY --from=builder /build/zig-out/bin/gsa /app/gsa
+# Copy libgsa from builder
+COPY --from=builder /build/src/interface/ffi/zig-out/lib/libgsa.so /app/lib/libgsa.so
+COPY --from=builder /build/src/interface/ffi/zig-out/lib/libgsa.a /app/lib/libgsa.a
 
-# Copy entrypoint script
+# Copy game profiles
+COPY profiles/ /app/profiles/
+
+# Copy GUI panels and host HTML
+COPY src/gui/ /app/gui/
+
+# Copy Ephapax core (for Gossamer integration)
+COPY src/core/ /app/core/
+
+# Copy entrypoint
 COPY container/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-# Copy stapeln integration files (svalinn gatekeeper policy, cerro-torre manifest)
-COPY container/.gatekeeper.yaml /etc/svalinn/gatekeeper.yaml
+# Copy stapeln integration files
 COPY container/manifest.toml /app/manifest.toml
 
-# Create data directory for persistent storage (mountable volume)
+# Copy icon
+COPY assets/icon-256.png /app/icon.png
+
+# Create data directory
 RUN mkdir -p /data && chown appuser:appuser /data
 
-# Set ownership of the application directory
+# Set ownership
 RUN chown -R appuser:appuser /app
 
-# Environment variables — customise for your application
+# Environment
 ENV APP_HOST=[::]
-ENV APP_PORT=8090
-ENV APP_LOG_FORMAT=json
-ENV APP_DATA_DIR=/data
+ENV APP_PORT=8080
+ENV GSA_VERISIMDB_URL=http://[::1]:8090
+ENV GSA_BACKUP_VERISIMDB_URL=http://[::1]:8091
+ENV GSA_PROFILES_DIR=/app/profiles
+ENV LD_LIBRARY_PATH=/app/lib
 
-# Declare /data as a volume for persistent storage
+# Volume for persistent data
 VOLUME ["/data"]
 
 # Run as non-root
 USER appuser
 
-# Expose the application port
-EXPOSE 8090
+EXPOSE 8080
 
-# Health check — the application must respond 2xx at /health
+# Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:${APP_PORT}/health || exit 1
 
