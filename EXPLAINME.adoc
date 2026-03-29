@@ -14,16 +14,23 @@ See `src/interface/ffi/src/probe.zig` for the probe implementation and `profiles
 
 **Caveat:** "Any" means any game with a known `.a2ml` profile -- unknown games get best-effort fingerprinting but no structured config extraction. Lua table parsing handles nested tables up to 8 levels deep (bracket-quoted keys, block comments, `local` prefixes) -- covers DST, Garry's Mod, and Factorio configs. VeriSimDB normaliser now uses a real `StorageRegenerator` with OctadStore-backed cross-modal regeneration (Document/Semantic/Graph/Vector transformations, cosine drift measurement).
 
+The FFI layer exports 22 C ABI functions via comptime linker hints, verified against both libgossamer.so (Gossamer webview) and the Ephapax compiler.
+A dedicated VeriSimDB instance (port 8090) stores server octads; a second instance (port 8091) holds game save backup metadata.
+Integration is validated by an 8-test e2e suite against live VeriSimDB and a 25-check Gossamer chain test (23 pass, 2 expected Ephapax parser gaps).
+
 [cols="1,2"]
 |===
 | Path | Proves
 
 | `src/interface/ffi/src/probe.zig` | Protocol fingerprinting and game detection
-| `src/interface/ffi/src/config_extract.zig` | Config fetching via SSH, container exec, or RCON
+| `src/interface/ffi/src/config_extract.zig` | Config fetching (8 formats inc. nested Lua tables)
 | `src/interface/ffi/src/a2ml_emit.zig` | A2ML serialisation from parsed configs
 | `src/interface/abi/` | Idris2 formal type specs for ABI
 | `src/gui/` | 7 Gossamer panels (HTML/JS) with IPC bridge
-| `src/interface/ffi/src/verisimdb_client.zig` | VeriSimDB client for octad storage and drift detection
-| `panel-clades/` | 9 clade directories with A2ML inheritance
-| `profiles/*.a2ml` | Game profile definitions (17 initial games)
+| `src/interface/ffi/src/verisimdb_client.zig` | VeriSimDB client (Zig 0.15 fetch API)
+| `panel-clades/` | 17 game clades with ports, protocols, panel config
+| `profiles/*.a2ml` | Game profile definitions (17 games)
+| `scripts/e2e-test.sh` | 8/8 e2e tests against live VeriSimDB
+| `scripts/gossamer-integration-test.sh` | 23/25 Gossamer chain validation
+| `assets/icon.svg` | Application icon (SVG + 256px PNG)
 |===

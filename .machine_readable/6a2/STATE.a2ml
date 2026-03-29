@@ -12,7 +12,7 @@ status = "active"
 [project-context]
 name = "game-server-admin"
 purpose = "Universal game server probe, configuration management, and administration via Gossamer webview + VeriSimDB backing store. Extracts config into A2ML format with full provenance tracking."
-completion-percentage = 82
+completion-percentage = 93
 
 [position]
 phase = "implementation"
@@ -32,9 +32,9 @@ milestones = [
   { name = "Phase 10: PanLL harness manifest + panel.json descriptors", completion = 100 },
   { name = "Phase 11: Justfile GSA-specific recipes", completion = 100 },
   { name = "Phase 12: Documentation (README, EXPLAINME)", completion = 100 },
-  { name = "Phase 13: Integration testing (Zig build + Gossamer link)", completion = 60 },
-  { name = "Phase 14: End-to-end test (probe real server → GUI)", completion = 40 },
-  { name = "Phase 15: Container deployment (selur-compose)", completion = 50 },
+  { name = "Phase 13: Integration testing (Zig build + Gossamer link)", completion = 85 },
+  { name = "Phase 14: End-to-end test (probe real server → GUI)", completion = 80 },
+  { name = "Phase 15: Container deployment (selur-compose)", completion = 70 },
 ]
 
 [blockers-and-issues]
@@ -57,5 +57,5 @@ actions = [
 [session-history]
 sessions = [
   { date = "2026-03-22", summary = "Created repo — 412 files, 28901 lines. Full ABI/FFI/Core/GUI/Profiles/Clades/VeriSimDB. Pushed to GitHub + GitLab. PanLL integration committed." },
-  { date = "2026-03-29", summary = "Review + hardening: callconv(.c) compat fix, build.zig gossamer-lib-path option, e2e smoke tests, VeriSimDB quadlet, asdf .tool-versions activated, STATE/EXPLAINME updated, normalizer status clarified." },
+  { date = "2026-03-29", summary = "Marathon session: Zig 0.15.2 full compat (all 8 FFI modules + groove_client), 22 exported symbols via comptime hints, VeriSimDB container built/running (8090), backup instance (8091), e2e test 8/8 against live VeriSimDB, StorageRegenerator in verisimdb repo (real OctadStore, 68 tests), Lua nested table parser (8 levels), 17 enriched game clades, icon SVG+PNG, Gossamer integration test 23/25, Ephapax parser extended (module/--comments/qualified imports/linear types/const bindings), GSA Containerfile wired with Zig build, .claude/CLAUDE.md + desktop reconciled, backup VeriSimDB for game saves." },
 ]

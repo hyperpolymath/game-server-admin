@@ -4,6 +4,7 @@
 # selur-compose orchestration for Game Server Admin
 # Runs the dedicated VeriSimDB instance alongside the GSA application
 
+# Main VeriSimDB instance — stores server config octads, probe data, drift detection
 [services.gsa-verisimdb]
 image = "ghcr.io/hyperpolymath/gsa-verisimdb:latest"
 build = { context = "verisimdb", containerfile = "Containerfile" }
@@ -13,6 +14,7 @@ environment = { VERISIM_HTTP_HOST = "[::1]", VERISIM_HTTP_PORT = "8090" }
 restart = "unless-stopped"
 healthcheck = { test = "wget --spider http://[::1]:8090/health", interval = "15s", timeout = "5s", retries = 3 }
 
+# Backup VeriSimDB instance — stores game save metadata, snapshots, restore points
 [services.gsa-verisimdb-backup]
 image = "ghcr.io/hyperpolymath/gsa-verisimdb:latest"
 build = { context = "verisimdb", containerfile = "Containerfile" }
@@ -23,12 +25,14 @@ restart = "unless-stopped"
 healthcheck = { test = "wget --spider http://[::1]:8080/health", interval = "30s", timeout = "5s", retries = 3 }
 depends_on = ["gsa-verisimdb"]
 
+# GSA application — Zig FFI (libgsa.so) + Gossamer webview + game profiles
 [services.gsa-app]
 build = { context = "..", containerfile = "Containerfile" }
 depends_on = ["gsa-verisimdb", "gsa-verisimdb-backup"]
 environment = { GSA_VERISIMDB_URL = "http://gsa-verisimdb:8090", GSA_BACKUP_VERISIMDB_URL = "http://gsa-verisimdb-backup:8091", GSA_PROFILES_DIR = "/app/profiles" }
 volumes = ["../profiles:/app/profiles:ro"]
 network_mode = "host"
+healthcheck = { test = "curl -sf http://localhost:8080/health || exit 1", interval = "30s", timeout = "5s", retries = 3 }
 
 [volumes]
 gsa-verisimdb-data = {}

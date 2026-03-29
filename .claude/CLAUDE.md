@@ -69,10 +69,13 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 
 ## Current State (2026-03-29)
 
-- **Completion**: 82% (Phases 1-12 complete, 13-15 in progress)
+- **Completion**: 93% (Phases 1-12 complete, 13-15 nearly done)
 - **Zig version**: 0.15.2 (see `.tool-versions`)
-- **Tests**: All 3 suites pass (unit, integration, smoke)
-- **Remaining**: Live e2e test with real game server, container deployment, Bitbucket mirror
+- **Exported FFI symbols**: 22 (comptime linker hints in main.zig, was 9)
+- **Tests**: All 3 Zig suites pass. E2E: 8/8 against live VeriSimDB. Gossamer chain: 23/25 (2 Ephapax parser gaps).
+- **VeriSimDB**: Main on 8090 (built, running), backup on 8091 (game saves)
+- **Icon**: SVG + 256px PNG in assets/
+- **Remaining**: Ephapax parser completion (`;`, zero-arg calls, lambda blocks), Bitbucket mirror
 
 ## Lint / Quality
 
@@ -95,4 +98,7 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 | VeriSimDB (backup saves, port 8091) | `container/verisimdb-backup/` |
 | Main quadlet | `container/verisimdb/gsa-verisimdb.container` |
 | Backup quadlet | `container/verisimdb-backup/gsa-verisimdb-backup.container` |
+| Icon assets | `assets/icon.svg`, `assets/icon-256.png` |
+| E2E test | `scripts/e2e-test.sh` |
+| Gossamer chain test | `scripts/gossamer-integration-test.sh` |
 | Desktop entry | `game-server-admin.desktop` |
