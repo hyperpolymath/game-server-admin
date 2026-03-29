@@ -11,6 +11,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 // ── sibling modules ──────────────────────────────────────────────────────────
+// These are `pub const` so their `pub export fn` declarations are included
+// in the shared library's symbol table.
 pub const probe = @import("probe.zig");
 pub const config_extract = @import("config_extract.zig");
 pub const a2ml_emit = @import("a2ml_emit.zig");
@@ -18,6 +20,30 @@ pub const verisimdb_client = @import("verisimdb_client.zig");
 pub const server_actions = @import("server_actions.zig");
 pub const game_profiles = @import("game_profiles.zig");
 pub const groove_client = @import("groove_client.zig");
+
+// Force the linker to include all exported functions from submodules.
+// Without these references, Zig's linker may dead-strip the `pub export fn`
+// declarations since nothing in main.zig calls them directly.
+comptime {
+    _ = &probe.gossamer_gsa_probe;
+    _ = &probe.gossamer_gsa_fingerprint;
+    _ = &config_extract.gossamer_gsa_extract_config;
+    _ = &a2ml_emit.gossamer_gsa_a2ml_emit;
+    _ = &a2ml_emit.gossamer_gsa_a2ml_parse;
+    _ = &verisimdb_client.gossamer_gsa_verisimdb_store;
+    _ = &verisimdb_client.gossamer_gsa_verisimdb_query;
+    _ = &verisimdb_client.gossamer_gsa_verisimdb_health;
+    _ = &verisimdb_client.gossamer_gsa_verisimdb_drift;
+    _ = &server_actions.gossamer_gsa_server_action;
+    _ = &server_actions.gossamer_gsa_get_logs;
+    _ = &game_profiles.gossamer_gsa_load_profiles;
+    _ = &game_profiles.gossamer_gsa_list_profiles;
+    _ = &game_profiles.gossamer_gsa_add_profile;
+    _ = &groove_client.gossamer_gsa_groove_discover;
+    _ = &groove_client.gossamer_gsa_groove_status;
+    _ = &groove_client.gossamer_gsa_groove_alert;
+    _ = &groove_client.gossamer_gsa_groove_tts_alert;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Constants

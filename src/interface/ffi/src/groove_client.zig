@@ -175,28 +175,29 @@ fn grooveGet(
     var url_buf: [512]u8 = undefined;
     const url_str = std.fmt.bufPrint(&url_buf, "http://{s}:{d}{s}", .{ host, port, path }) catch return error.URLTooLong;
 
-    const uri = std.Uri.parse(url_str) catch return error.InvalidURL;
-
     var client = http.Client{ .allocator = allocator };
     defer client.deinit();
 
-    var header_buf: [4096]u8 = undefined;
-    var req = try client.open(.GET, uri, .{
-        .server_header_buffer = &header_buf,
+    var alloc_writer = std.Io.Writer.Allocating.init(allocator);
+    errdefer alloc_writer.deinit();
+
+    const result = try client.fetch(.{
+        .location = .{ .url = url_str },
+        .method = .GET,
         .extra_headers = &.{
             .{ .name = "Accept", .value = "application/json" },
             .{ .name = "User-Agent", .value = "GSA-Groove/0.1.0" },
         },
+        .response_writer = &alloc_writer.writer,
     });
-    defer req.deinit();
 
-    try req.send();
-    try req.finish();
-    try req.wait();
+    if (result.status != .ok) {
+        alloc_writer.deinit();
+        return error.HTTPError;
+    }
 
-    if (req.status != .ok) return error.HTTPError;
-
-    return try req.reader().readAllAlloc(allocator, 64 * 1024);
+    var list = alloc_writer.toArrayList();
+    return list.toOwnedSlice(allocator);
 }
 
 /// Perform an HTTP POST against a Groove endpoint with a JSON body.
@@ -211,31 +212,31 @@ fn groovePost(
     var url_buf: [512]u8 = undefined;
     const url_str = std.fmt.bufPrint(&url_buf, "http://{s}:{d}{s}", .{ host, port, path }) catch return error.URLTooLong;
 
-    const uri = std.Uri.parse(url_str) catch return error.InvalidURL;
-
     var client = http.Client{ .allocator = allocator };
     defer client.deinit();
 
-    var header_buf: [4096]u8 = undefined;
-    var req = try client.open(.POST, uri, .{
-        .server_header_buffer = &header_buf,
+    var alloc_writer = std.Io.Writer.Allocating.init(allocator);
+    errdefer alloc_writer.deinit();
+
+    const result = try client.fetch(.{
+        .location = .{ .url = url_str },
+        .method = .POST,
+        .payload = body,
         .extra_headers = &.{
             .{ .name = "Content-Type", .value = "application/json" },
             .{ .name = "Accept", .value = "application/json" },
             .{ .name = "User-Agent", .value = "GSA-Groove/0.1.0" },
         },
+        .response_writer = &alloc_writer.writer,
     });
-    defer req.deinit();
 
-    req.transfer_encoding = .{ .content_length = body.len };
-    try req.send();
-    try req.writeAll(body);
-    try req.finish();
-    try req.wait();
+    if (result.status != .ok and result.status != .created and result.status != .accepted) {
+        alloc_writer.deinit();
+        return error.HTTPError;
+    }
 
-    if (req.status != .ok and req.status != .created and req.status != .accepted) return error.HTTPError;
-
-    return try req.reader().readAllAlloc(allocator, 64 * 1024);
+    var list = alloc_writer.toArrayList();
+    return list.toOwnedSlice(allocator);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
