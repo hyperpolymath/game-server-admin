@@ -112,3 +112,4 @@ sync_report*.txt
 
 # asdf version manager (tracked — needed for reproducible builds)
 # .tool-versions
+test_managed
