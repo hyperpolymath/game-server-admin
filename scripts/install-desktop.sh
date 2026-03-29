@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: PMPL-1.0-or-later
 #
-# install-desktop.sh — Install Stapeln desktop entry, icon, and launcher on Linux.
+# install-desktop.sh — Install GSA desktop entry, icon, and launcher on Linux.
 #
 # Usage:
 #   ./scripts/install-desktop.sh          # Install
@@ -11,10 +11,10 @@
 
 set -euo pipefail
 
-APP_NAME="gsa"
+APP_NAME="game-server-admin"
 APP_DISPLAY="Game Server Admin"
-APP_PORT="8080"
-APP_DESC="Game Server Administration"
+APP_PORT="8090"
+APP_DESC="Universal game server probe, config management, and administration"
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DESKTOP_FILE="$REPO_DIR/${APP_NAME}.desktop"
@@ -43,8 +43,13 @@ echo "Installing ${APP_DISPLAY}..."
 mkdir -p "$APPS_DIR" "$ICON_DIR" "$BIN_DIR"
 
 # Copy desktop file
-cp "$DESKTOP_FILE" "$APPS_DIR/${APP_NAME}.desktop"
-echo "  + Desktop entry -> $APPS_DIR/${APP_NAME}.desktop"
+if [[ -f "$DESKTOP_FILE" ]]; then
+    cp "$DESKTOP_FILE" "$APPS_DIR/${APP_NAME}.desktop"
+    echo "  + Desktop entry -> $APPS_DIR/${APP_NAME}.desktop"
+else
+    echo "  ! Desktop file not found at $DESKTOP_FILE"
+    exit 1
+fi
 
 # Copy icon if available
 if [[ -f "$REPO_DIR/assets/icon-256.png" ]]; then
@@ -61,61 +66,94 @@ fi
 cat > "$LAUNCHER" << LAUNCHER_EOF
 #!/usr/bin/env bash
 # SPDX-License-Identifier: PMPL-1.0-or-later
-# ${APP_DISPLAY} Launcher
+# ${APP_DISPLAY} Launcher — Gossamer GUI for game server administration
 set -euo pipefail
 
 REPO_DIR="$REPO_DIR"
+FFI_DIR="\$REPO_DIR/src/interface/ffi"
+VERISIMDB_URL="\${GSA_VERISIMDB_URL:-http://[::1]:${APP_PORT}}"
+PROFILES_DIR="\${GSA_PROFILES_DIR:-\$REPO_DIR/profiles}"
 MODE="\${1:---auto}"
 
-start_server() {
-    if ! curl -s http://localhost:${APP_PORT} >/dev/null 2>&1; then
-        echo "Starting ${APP_DISPLAY} server..."
-        cd "\$REPO_DIR"
-        nohup deno task dev > /tmp/${APP_NAME}-server.log 2>&1 &
-        echo \$! > /tmp/${APP_NAME}-server.pid
-        for i in {1..30}; do
-            curl -s http://localhost:${APP_PORT} >/dev/null 2>&1 && break
-            sleep 0.5
-        done
+# Check VeriSimDB is running
+check_verisimdb() {
+    if curl -sf "\$VERISIMDB_URL/health" >/dev/null 2>&1; then
+        return 0
+    else
+        echo "VeriSimDB not reachable at \$VERISIMDB_URL"
+        echo "Start it with: systemctl --user start gsa-verisimdb"
+        echo "Or:            podman start gsa-verisimdb"
+        return 1
     fi
 }
 
-open_client() {
-    xdg-open "http://localhost:${APP_PORT}" 2>/dev/null || \
-        echo "Open http://localhost:${APP_PORT} in your browser"
+# Build libgsa.so if not already built
+build_ffi() {
+    if [[ ! -f "\$FFI_DIR/zig-out/lib/libgsa.so" ]]; then
+        echo "Building libgsa.so..."
+        cd "\$FFI_DIR"
+        zig build
+        echo "Built: \$FFI_DIR/zig-out/lib/libgsa.so"
+    fi
 }
 
-stop_server() {
-    if [[ -f /tmp/${APP_NAME}-server.pid ]]; then
-        kill "\$(cat /tmp/${APP_NAME}-server.pid)" 2>/dev/null || true
-        rm -f /tmp/${APP_NAME}-server.pid
-        echo "${APP_DISPLAY} server stopped."
+# Launch via Gossamer webview (native desktop)
+launch_gossamer() {
+    build_ffi
+    export LD_LIBRARY_PATH="\$FFI_DIR/zig-out/lib:\${LD_LIBRARY_PATH:-}"
+    export GSA_VERISIMDB_URL="\$VERISIMDB_URL"
+    export GSA_PROFILES_DIR="\$PROFILES_DIR"
+
+    if command -v gossamer &>/dev/null; then
+        exec gossamer \\
+            --load "\$FFI_DIR/zig-out/lib/libgsa.so" \\
+            --html "\$REPO_DIR/src/gui/host.html" \\
+            --title "${APP_DISPLAY}" \\
+            --width 1400 --height 900
+    else
+        echo "gossamer binary not found in PATH"
+        echo "Falling back to browser mode..."
+        launch_web
     fi
+}
+
+# Launch web interface (opens browser to panel host)
+launch_web() {
+    echo "Opening ${APP_DISPLAY} in browser..."
+    local host_html="\$REPO_DIR/src/gui/host.html"
+    if [[ -f "\$host_html" ]]; then
+        xdg-open "file://\$host_html" 2>/dev/null || \\
+            echo "Open file://\$host_html in your browser"
+    else
+        echo "Panel host HTML not found at \$host_html"
+        exit 1
+    fi
+}
+
+# Stop VeriSimDB
+stop_services() {
+    echo "Stopping ${APP_DISPLAY} services..."
+    systemctl --user stop gsa-verisimdb 2>/dev/null || \\
+        podman stop gsa-verisimdb 2>/dev/null || \\
+        echo "No running services found."
+    echo "Done."
 }
 
 case "\$MODE" in
     --gossamer)
-        start_server
-        if command -v gossamer &>/dev/null; then
-            exec gossamer --url "http://localhost:${APP_PORT}" --title "${APP_DISPLAY}"
-        else
-            open_client
-        fi
+        check_verisimdb || true
+        launch_gossamer
         ;;
     --web)
-        start_server
-        open_client
+        check_verisimdb || true
+        launch_web
         ;;
     --stop)
-        stop_server
+        stop_services
         ;;
     --auto|*)
-        start_server
-        if command -v gossamer &>/dev/null; then
-            exec gossamer --url "http://localhost:${APP_PORT}" --title "${APP_DISPLAY}"
-        else
-            open_client
-        fi
+        check_verisimdb || true
+        launch_gossamer
         ;;
 esac
 LAUNCHER_EOF
@@ -131,6 +169,7 @@ cat > "$CONFIG_FILE" << CONF_EOF
 install_dir=$REPO_DIR
 install_type=user
 os=linux
+verisimdb_port=${APP_PORT}
 installed_at=$(date -Iseconds)
 CONF_EOF
 echo "  + Config -> $CONFIG_FILE"
@@ -142,10 +181,15 @@ gtk-update-icon-cache "$HOME/.local/share/icons/hicolor/" 2>/dev/null || true
 echo ""
 echo "Done! ${APP_DISPLAY} is now available in your application menu."
 echo ""
+echo "Prerequisites:"
+echo "  1. Build Zig FFI:   cd src/interface/ffi && zig build"
+echo "  2. Start VeriSimDB: systemctl --user start gsa-verisimdb"
+echo "  3. Install Gossamer for native desktop mode (optional)"
+echo ""
 echo "Commands:"
 echo "  ${APP_NAME}-launcher            # Start (auto-detect Gossamer/browser)"
 echo "  ${APP_NAME}-launcher --web      # Force browser mode"
 echo "  ${APP_NAME}-launcher --gossamer # Force Gossamer mode"
-echo "  ${APP_NAME}-launcher --stop     # Stop server"
+echo "  ${APP_NAME}-launcher --stop     # Stop services"
 echo ""
 echo "To remove: $0 --remove"
