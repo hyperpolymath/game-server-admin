@@ -13,12 +13,23 @@ environment = { VERISIM_HTTP_HOST = "[::1]", VERISIM_HTTP_PORT = "8090" }
 restart = "unless-stopped"
 healthcheck = { test = "wget --spider http://[::1]:8090/health", interval = "15s", timeout = "5s", retries = 3 }
 
+[services.gsa-verisimdb-backup]
+image = "ghcr.io/hyperpolymath/gsa-verisimdb:latest"
+build = { context = "verisimdb", containerfile = "Containerfile" }
+ports = ["8091:8080"]
+volumes = ["gsa-verisimdb-backup-data:/data"]
+environment = { VERISIM_HTTP_HOST = "[::1]", VERISIM_HTTP_PORT = "8080", VERISIM_PERSISTENCE_DIR = "/data" }
+restart = "unless-stopped"
+healthcheck = { test = "wget --spider http://[::1]:8080/health", interval = "30s", timeout = "5s", retries = 3 }
+depends_on = ["gsa-verisimdb"]
+
 [services.gsa-app]
 build = { context = "..", containerfile = "Containerfile" }
-depends_on = ["gsa-verisimdb"]
-environment = { GSA_VERISIMDB_URL = "http://gsa-verisimdb:8090", GSA_PROFILES_DIR = "/app/profiles" }
+depends_on = ["gsa-verisimdb", "gsa-verisimdb-backup"]
+environment = { GSA_VERISIMDB_URL = "http://gsa-verisimdb:8090", GSA_BACKUP_VERISIMDB_URL = "http://gsa-verisimdb-backup:8091", GSA_PROFILES_DIR = "/app/profiles" }
 volumes = ["../profiles:/app/profiles:ro"]
 network_mode = "host"
 
 [volumes]
 gsa-verisimdb-data = {}
+gsa-verisimdb-backup-data = {}

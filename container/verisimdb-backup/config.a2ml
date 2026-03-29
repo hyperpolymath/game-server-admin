@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# VeriSimDB backup instance configuration for Game Server Admin
+# Stores game save metadata, snapshots, and restore points.
+# This is a SEPARATE instance — data lives in gsa-verisimdb-backup-data volume.
+
+@verisimdb-instance(name="gsa-verisimdb-backup", version="0.1.0"):
+  @network:
+    http_host = "[::1]"
+    http_port = 8091
+    max_request_body = "50MB"
+    request_timeout_seconds = 60
+  @end
+
+  @storage:
+    mode = "persistent"
+    persistence_dir = "/data"
+    wal_enabled = true
+    wal_sync_interval_ms = 500
+    graph_backend = "redb"
+    document_backend = "tantivy"
+  @end
+
+  @drift:
+    enabled = true
+    check_interval_seconds = 60
+    thresholds:
+      semantic_vector_drift = 0.5
+      graph_document_drift = 0.5
+      temporal_consistency = 0.3
+      provenance_drift = 0.1
+    @end
+  @end
+
+  @auth:
+    mode = "local-only"
+    public_read = false
+    require_api_key = false
+  @end
+
+  @labels:
+    application = "game-server-admin"
+    domain = "infrastructure/game-saves"
+    role = "backup"
+    clade = "ix"
+  @end
+
+  @octad-schema:
+    # Each game save is an octad:
+    #   Document:    save file metadata (game, server, timestamp, size, checksum)
+    #   Semantic:    save type tags (auto-save, manual, pre-update, rollback-point)
+    #   Graph:       save → server, save → game-profile, save → parent-save
+    #   Temporal:    save creation timestamp, TTL, retention policy
+    #   Provenance:  who triggered the save, why (pre-config-change, scheduled, manual)
+    #   Spatial:     (unused for saves)
+    #   Vector:      config embedding for "find similar save states"
+    #   Tensor:      server metrics at save time [players, tps, memory, uptime]
+  @end
+@end

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Containerfile for the GSA game save backup VeriSimDB instance
+# Stores game save metadata, snapshots, and restore points
+# Reuses the same VeriSimDB image — only env vars differ
+
+FROM localhost/gsa-verisimdb:latest
+
+# Override for backup instance port
+ENV VERISIM_PORT=8091
+ENV VERISIM_PERSISTENCE_DIR=/data
+ENV RUST_LOG=info
+
+EXPOSE 8091

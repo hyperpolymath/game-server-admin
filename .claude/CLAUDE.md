@@ -62,7 +62,9 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 - **Secrets** must be redacted as `[REDACTED]` in A2ML output and octad JSON
 - **Machine-readable metadata** lives in `.machine_readable/` ONLY (never root)
 - **Game profiles** are A2ML files in `profiles/` — support quoted AND unquoted attribute values
-- **VeriSimDB instance** is dedicated (port 8090) — never store GSA data in the VeriSimDB source repo
+- **VeriSimDB instances** are dedicated — never store GSA data in the VeriSimDB source repo
+  - **Main** (port 8090, `GSA_VERISIMDB_URL`): server config, probe data, octads
+  - **Backup** (port 8091, `GSA_BACKUP_VERISIMDB_URL`): game save metadata, snapshots, restore points
 - **Container images** use Chainguard Wolfi base, Podman, `Containerfile` (never Docker/Dockerfile)
 
 ## Current State (2026-03-29)
@@ -89,6 +91,8 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 | GUI panels | `src/gui/panels/` (7 panels) |
 | Panel clades | `panel-clades/` (9 base + game children) |
 | Ephapax core | `src/core/` (Shell, Bridge, Types, Capabilities) |
-| VeriSimDB container | `container/verisimdb/` |
-| VeriSimDB quadlet | `container/verisimdb/gsa-verisimdb.container` |
+| VeriSimDB (main, port 8090) | `container/verisimdb/` |
+| VeriSimDB (backup saves, port 8091) | `container/verisimdb-backup/` |
+| Main quadlet | `container/verisimdb/gsa-verisimdb.container` |
+| Backup quadlet | `container/verisimdb-backup/gsa-verisimdb-backup.container` |
 | Desktop entry | `game-server-admin.desktop` |

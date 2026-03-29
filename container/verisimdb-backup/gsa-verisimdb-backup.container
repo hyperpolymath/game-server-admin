@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Podman Quadlet unit for the GSA game save backup VeriSimDB instance
+#
+# This instance stores:
+#   - Game save file metadata (title, timestamps, checksums)
+#   - Save snapshots as document octads (before/after config changes)
+#   - Restore point provenance (who backed up, when, why)
+#   - Drift detection between live config and last known-good save
+#
+# Install to ~/.config/containers/systemd/ then:
+#   systemctl --user daemon-reload
+#   systemctl --user start gsa-verisimdb-backup
+#
+# Verify:
+#   curl -sf http://[::1]:8091/health
+
+[Unit]
+Description=VeriSimDB backup instance for Game Server Admin game saves (port 8091)
+After=gsa-verisimdb.service
+Wants=gsa-verisimdb.service
+
+[Container]
+Image=localhost/gsa-verisimdb:latest
+ContainerName=gsa-verisimdb-backup
+AutoUpdate=local
+
+# Backup instance on port 8091 (main instance is 8090)
+PublishPort=[::1]:8091:8080
+Volume=gsa-verisimdb-backup-data:/data:Z
+
+Environment=VERISIM_HTTP_HOST=[::1]
+Environment=VERISIM_HTTP_PORT=8080
+Environment=VERISIM_PERSISTENCE_DIR=/data
+Environment=VERISIM_FEATURES=persistent
+Environment=RUST_LOG=info
+
+# Health check
+HealthCmd=wget --no-verbose --tries=1 --spider http://[::1]:8080/health || exit 1
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=10s
+
+# Resource limits — backup is lighter than primary
+PodmanArgs=--memory=256m --cpus=0.5
+
+ReadOnly=true
+Tmpfs=/tmp
+
+Label=dev.stapeln.app=game-server-admin
+Label=dev.stapeln.role=verisimdb-backup
+Label=dev.stapeln.clade=ix
+
+[Service]
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=30s
+
+[Install]
+WantedBy=default.target
