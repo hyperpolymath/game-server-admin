@@ -50,6 +50,28 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(lib);
 
     // ---------------------------------------------------------------
+    // CLI executable — gsa
+    // ---------------------------------------------------------------
+    const exe = b.addExecutable(.{
+        .name = "gsa",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/cli.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    b.installArtifact(exe);
+
+    const run_exe = b.addRunArtifact(exe);
+    run_exe.step.dependOn(b.getInstallStep());
+    if (b.args) |run_args| {
+        run_exe.addArgs(run_args);
+    }
+    const run_step = b.step("run", "Run the GSA CLI");
+    run_step.dependOn(&run_exe.step);
+
+    // ---------------------------------------------------------------
     // Static library — libgsa.a
     // ---------------------------------------------------------------
     const lib_static = b.addLibrary(.{

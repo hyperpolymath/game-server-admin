@@ -11,8 +11,14 @@ Gossamer GUI + Zig FFI + Idris2 ABI + VeriSimDB backing store.
 # All commands run from src/interface/ffi/
 cd src/interface/ffi
 
-# Build shared + static library
+# Build shared + static library + CLI executable
 zig build
+
+# Run the CLI (from repo root)
+just run status            # system status + VeriSimDB health + profiles
+just run probe <host> [port]  # fingerprint a game server
+just run profiles          # list supported games
+just run version           # print version
 
 # Run unit tests (fast, no I/O)
 zig build test
@@ -35,7 +41,7 @@ panic-attack assail .
 ```
 Gossamer GUI (Ephapax .eph)        -- src/core/, src/gui/panels/
     |  IPC (gossamer:// protocol)
-Zig FFI (libgsa.so)               -- src/interface/ffi/src/ (8 modules)
+Zig FFI (libgsa.so + gsa CLI)     -- src/interface/ffi/src/ (9 modules)
     |  C ABI (13 result codes)
 Idris2 ABI (Types/Foreign/Layout)  -- src/interface/abi/
     |  REST (port 8090)
@@ -54,6 +60,7 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 | `server_actions.zig` | Start/stop/restart/logs via Podman/Docker/systemd |
 | `game_profiles.zig` | A2ML profile registry + parser |
 | `groove_client.zig` | .well-known Groove voice alerting |
+| `cli.zig` | Standalone CLI executable (status, probe, profiles, version) |
 
 ## Key Conventions
 
@@ -71,7 +78,7 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 
 - **Completion**: 93% (Phases 1-12 complete, 13-15 nearly done)
 - **Zig version**: 0.15.2 (see `.tool-versions`)
-- **Exported FFI symbols**: 22 (comptime linker hints in main.zig, was 9)
+- **Exported FFI symbols**: 24 (comptime linker hints in main.zig)
 - **Tests**: All 3 Zig suites pass. E2E: 8/8 against live VeriSimDB. Gossamer chain: 23/25 (2 Ephapax parser gaps).
 - **VeriSimDB**: Main on 8090 (built, running), backup on 8091 (game saves)
 - **Icon**: SVG + 256px PNG in assets/
@@ -101,4 +108,5 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 | Icon assets | `assets/icon.svg`, `assets/icon-256.png` |
 | E2E test | `scripts/e2e-test.sh` |
 | Gossamer chain test | `scripts/gossamer-integration-test.sh` |
+| CLI binary | `src/interface/ffi/zig-out/bin/gsa` |
 | Desktop entry | `game-server-admin.desktop` |

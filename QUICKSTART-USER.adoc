@@ -26,8 +26,26 @@ just tour      # guided project tour
 just help-me   # see common workflows
 ----
 
+== Run the CLI
+
+[source,bash]
+----
+# Start the backing database
+just verisimdb-up
+
+# Check everything is healthy
+just run status
+
+# Probe a game server
+just run probe my-server.example.com 25565
+
+# List supported games
+just run profiles
+----
+
 == Get Help
 
 * `just help-me` — common workflows
 * `just doctor` — diagnose toolchain issues
+* `just run help` — CLI usage
 * https://github.com/hyperpolymath/game-server-admin/issues — report bugs

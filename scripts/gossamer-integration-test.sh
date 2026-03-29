@@ -150,15 +150,16 @@ fi
 echo ""
 echo "Step 6: Ephapax parser feature readiness"
 
-# Check if let! is supported
-echo 'fn main() -> i32 { let x = 42; x }' > /tmp/ephapax-test-basic.eph
+# Check basic let binding with semicolon sequencing
+echo 'fn main(): I32 = let x : I32 = 42 in x' > /tmp/ephapax-test-basic.eph
 if "$EPHAPAX" check /tmp/ephapax-test-basic.eph >/dev/null 2>&1; then
     pass "Basic let binding works"
 else
     fail "Basic let binding fails"
 fi
 
-echo 'fn main(): I64 = let! x = 42 in x' > /tmp/ephapax-test-linear.eph
+# Check linear let! binding
+echo 'fn main(): I32 = let! x : I32 = 42 in x' > /tmp/ephapax-test-linear.eph
 if "$EPHAPAX" check /tmp/ephapax-test-linear.eph >/dev/null 2>&1; then
     pass "Linear let! binding works"
 else

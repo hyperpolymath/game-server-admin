@@ -64,9 +64,31 @@ Valheim, Barotrauma, Don't Starve Together, Minecraft Java/Bedrock, Factorio, Te
 # Start the VeriSimDB instance
 just verisimdb-up
 
-# Build and launch the GUI
+# Build and run the CLI
+just run status              # system status, VeriSimDB health, loaded profiles
+just run probe <host> [port] # fingerprint a game server (default port 27015)
+just run profiles            # list all 17 supported game profiles
+
+# Or build and launch the GUI
 just build && just gui
 ----
+
+=== CLI Reference
+
+The `gsa` binary is built automatically by `zig build` and lives at `src/interface/ffi/zig-out/bin/gsa`.
+
+[cols="1,2"]
+|===
+| Command | Description
+
+| `gsa status` | VeriSimDB health, build info, loaded game profiles
+| `gsa probe <host> [port]` | Fingerprint a game server (Steam, Minecraft, RCON, HTTP, TCP banner)
+| `gsa profiles` | JSON listing of all supported games with engine/port/config details
+| `gsa version` | Print version string
+| `gsa help` | Usage information
+|===
+
+Environment variables: `GSA_VERISIMDB_URL` (default `http://localhost:8090`), `GSA_PROFILES_DIR` (default `./profiles`).
 
 == Adding a Game Profile
 

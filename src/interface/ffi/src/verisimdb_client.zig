@@ -161,8 +161,8 @@ pub const VeriSimClient = struct {
         const result = self.doRequest(.GET, "/health", null) catch return false;
         defer self.allocator.free(result);
 
-        // The health endpoint returns {"status":"ok"} when healthy
-        return std.mem.indexOf(u8, result, "\"ok\"") != null;
+        // The health endpoint returns {"status":"healthy"} when healthy
+        return std.mem.indexOf(u8, result, "\"healthy\"") != null;
     }
 
     // ─── Internal HTTP helper ────────────────────────────────────────

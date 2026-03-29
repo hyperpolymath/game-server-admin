@@ -23,8 +23,21 @@ just heal      # auto-install missing tools
 
 [source,bash]
 ----
-just tour      # understand the codebase
-just help-me   # see available commands
+just tour       # understand the codebase
+just help-me    # see available commands
+
+# Build everything (ABI + FFI library + CLI executable)
+just build
+
+# Run the CLI
+just run status              # system health + profiles
+just run probe <host> [port] # fingerprint a game server
+
+# Run tests
+cd src/interface/ffi
+zig build test               # unit tests
+zig build test-integration   # integration tests
+zig build test-smoke         # smoke tests
 ----
 
 == Before Committing

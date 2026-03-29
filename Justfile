@@ -331,19 +331,107 @@ generate-clades:
 verisimdb-up:
     @echo "Starting gsa-verisimdb on port 8090..."
     cd container && podman compose -f selur-compose.toml up -d gsa-verisimdb
-    @echo "VeriSimDB running at http://[::1]:8090"
+    @echo "VeriSimDB running at http://localhost:8090"
 
 # Stop the dedicated VeriSimDB instance
 verisimdb-down:
     @echo "Stopping gsa-verisimdb..."
     cd container && podman compose -f selur-compose.toml down gsa-verisimdb
 
+# Build the VeriSimDB container image from source
+verisimdb-build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERISIMDB_SRC="${VERISIMDB_SRC:-../nextgen-databases/verisimdb}"
+    if [ ! -d "$VERISIMDB_SRC/rust-core" ]; then
+        echo "ERROR: VeriSimDB source not found at $VERISIMDB_SRC"
+        echo "Set VERISIMDB_SRC to the verisimdb repo root"
+        exit 1
+    fi
+    echo "Building gsa-verisimdb image from $VERISIMDB_SRC..."
+    # Create temp build context with VeriSimDB source
+    BUILD_CTX=$(mktemp -d)
+    trap 'rm -rf "$BUILD_CTX"' EXIT
+    cp container/verisimdb/Containerfile "$BUILD_CTX/"
+    cp -a "$VERISIMDB_SRC" "$BUILD_CTX/verisimdb-src"
+    podman build -t gsa-verisimdb:latest -f "$BUILD_CTX/Containerfile" "$BUILD_CTX"
+    echo "Built gsa-verisimdb:latest"
+
+# Install Podman Quadlet units for VeriSimDB systemd integration
+quadlet-install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    QUADLET_DIR="${HOME}/.config/containers/systemd"
+    echo "Installing GSA quadlets to $QUADLET_DIR..."
+    mkdir -p "$QUADLET_DIR"
+    cp container/verisimdb/gsa-verisimdb.container "$QUADLET_DIR/"
+    cp container/verisimdb-backup/gsa-verisimdb-backup.container "$QUADLET_DIR/"
+    systemctl --user daemon-reload
+    echo "Quadlets installed. Start with:"
+    echo "  systemctl --user start gsa-verisimdb"
+    echo "  systemctl --user start gsa-verisimdb-backup"
+
+# Remove Podman Quadlet units
+quadlet-remove:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    QUADLET_DIR="${HOME}/.config/containers/systemd"
+    echo "Stopping GSA services..."
+    systemctl --user stop gsa-verisimdb-backup 2>/dev/null || true
+    systemctl --user stop gsa-verisimdb 2>/dev/null || true
+    echo "Removing quadlet files..."
+    rm -f "$QUADLET_DIR/gsa-verisimdb.container"
+    rm -f "$QUADLET_DIR/gsa-verisimdb-backup.container"
+    systemctl --user daemon-reload
+    echo "Quadlets removed."
+
+# Full VeriSimDB deployment: build image → install quadlets → start
+verisimdb-deploy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "═══════════════════════════════════════════════════"
+    echo "  GSA VeriSimDB Deployment Pipeline"
+    echo "═══════════════════════════════════════════════════"
+    just verisimdb-build
+    just quadlet-install
+    echo ""
+    echo "Starting VeriSimDB services..."
+    systemctl --user start gsa-verisimdb
+    # Wait for main instance health before starting backup
+    echo "Waiting for main instance health..."
+    for i in $(seq 1 10); do
+        if curl -sf http://[::1]:8090/health >/dev/null 2>&1; then
+            echo "  Main instance healthy!"
+            break
+        fi
+        [ "$i" -eq 10 ] && echo "WARNING: Main instance not healthy after 10s"
+        sleep 1
+    done
+    systemctl --user start gsa-verisimdb-backup
+    echo ""
+    echo "Deployment complete:"
+    systemctl --user status gsa-verisimdb --no-pager 2>/dev/null | head -5 || true
+    systemctl --user status gsa-verisimdb-backup --no-pager 2>/dev/null | head -5 || true
+
+# Check VeriSimDB systemd service status
+verisimdb-status:
+    #!/usr/bin/env bash
+    echo "Main VeriSimDB (port 8090):"
+    systemctl --user status gsa-verisimdb --no-pager 2>/dev/null || echo "  Not installed"
+    echo ""
+    echo "Backup VeriSimDB (port 8091):"
+    systemctl --user status gsa-verisimdb-backup --no-pager 2>/dev/null || echo "  Not installed"
+    echo ""
+    echo "Health checks:"
+    curl -sf http://[::1]:8090/health && echo " ← main (8090)" || echo "  main (8090): unreachable"
+    curl -sf http://[::1]:8091/health && echo " ← backup (8091)" || echo "  backup (8091): unreachable"
+
 # Launch the Gossamer GUI
-gui:
-    @echo "Launching Game Server Admin GUI..."
-    GSA_VERISIMDB_URL="${GSA_VERISIMDB_URL:-http://[::1]:8090}" \
+gui: build-ffi
+    @echo "Launching Game Server Admin..."
+    GSA_VERISIMDB_URL="${GSA_VERISIMDB_URL:-http://localhost:8090}" \
     GSA_PROFILES_DIR="${GSA_PROFILES_DIR:-./profiles}" \
-    ./src/interface/ffi/zig-out/bin/gsa
+    ./src/interface/ffi/zig-out/bin/gsa status
 
 # Test probe engine against known ports
 test-probe:
@@ -369,26 +457,34 @@ profile-count:
 # TEST & QUALITY
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Run all tests
+# Run all tests (unit + integration)
 test *args:
-    @echo "Running tests..."
-    # TODO: Replace with your test command
-    # Examples:
-    #   cargo test {{args}}
-    #   mix test {{args}}
-    #   zig build test {{args}}
-    #   deno test {{args}}
-    @echo "Tests passed!"
+    @echo "Running Zig unit tests..."
+    cd src/interface/ffi && zig build test {{args}}
+    @echo "Running Zig integration tests..."
+    cd src/interface/ffi && zig build test-integration {{args}}
+    @echo "All tests passed!"
 
 # Run tests with verbose output
 test-verbose:
     @echo "Running tests (verbose)..."
-    # TODO: Replace with verbose test command
+    cd src/interface/ffi && zig build test 2>&1
 
-# Smoke test
+# Smoke test — quick sanity: build + unit tests + profile count
 test-smoke:
-    @echo "Smoke test..."
-    # TODO: Add basic sanity checks
+    #!/usr/bin/env bash
+    set -euo pipefail
+    FFI_DIR="src/interface/ffi"
+    echo "Smoke test: build FFI..."
+    (cd "$FFI_DIR" && zig build)
+    echo "Smoke test: unit tests..."
+    (cd "$FFI_DIR" && zig build test)
+    echo "Smoke test: smoke suite..."
+    (cd "$FFI_DIR" && zig build test-smoke)
+    PROFILES=$(ls profiles/*.a2ml 2>/dev/null | wc -l)
+    echo "Smoke test: $PROFILES game profiles found"
+    [[ "$PROFILES" -ge 1 ]] || { echo "FAIL: No game profiles"; exit 1; }
+    echo "Smoke test passed!"
 
 # Run all quality checks
 quality: fmt-check lint test
@@ -435,14 +531,16 @@ lint:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Run the application
-run *args: build
-    # TODO: Replace with your run command
-    echo "Run not configured yet"
+run *args: build-ffi
+    GSA_VERISIMDB_URL="${GSA_VERISIMDB_URL:-http://localhost:8090}" \
+    GSA_PROFILES_DIR="${GSA_PROFILES_DIR:-./profiles}" \
+    ./src/interface/ffi/zig-out/bin/gsa {{args}}
 
 # Run with verbose output
-run-verbose *args: build
-    # TODO: Replace with verbose run command
-    echo "Run not configured yet"
+run-verbose *args: build-ffi
+    GSA_VERISIMDB_URL="${GSA_VERISIMDB_URL:-http://localhost:8090}" \
+    GSA_PROFILES_DIR="${GSA_PROFILES_DIR:-./profiles}" \
+    ./src/interface/ffi/zig-out/bin/gsa {{args}}
 
 # Install to user path
 install: build-release
