@@ -24,15 +24,15 @@
 set -euo pipefail
 
 VERISIMDB_URL="${GSA_VERISIMDB_URL:-http://[::1]:8090}"
-TARGET_SERVER="${1:-}"
+TARGET_SERVER="${1:-${GSA_PROBE_TARGET:-}}"
 PASSED=0
 FAILED=0
 TOTAL=0
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-pass() { ((PASSED++)); ((TOTAL++)); echo "  PASS: $1"; }
-fail() { ((FAILED++)); ((TOTAL++)); echo "  FAIL: $1"; }
+pass() { PASSED=$((PASSED + 1)); TOTAL=$((TOTAL + 1)); echo "  PASS: $1"; }
+fail() { FAILED=$((FAILED + 1)); TOTAL=$((TOTAL + 1)); echo "  FAIL: $1"; }
 
 check() {
     local desc="$1"
@@ -69,7 +69,7 @@ echo ""
 
 echo "Step 1: VeriSimDB health check"
 check "VeriSimDB is reachable" curl -sf "${VERISIMDB_URL}/health"
-check_output "VeriSimDB returns ok" "ok" curl -sf "${VERISIMDB_URL}/health"
+check_output "VeriSimDB returns healthy" "healthy" curl -sf "${VERISIMDB_URL}/health"
 
 if [[ $FAILED -gt 0 ]]; then
     echo ""
@@ -86,44 +86,15 @@ echo "Step 2: Create test octad"
 
 TEST_OCTAD=$(cat <<'JSON'
 {
-  "document": {
-    "title": "e2e-test-server",
-    "body": "Minecraft Java Edition test server for GSA e2e validation. Running version 1.21.4 with max-players=32 and difficulty=normal.",
-    "fields": {"game_id": "minecraft-java", "test": "true"}
-  },
-  "semantic": {
-    "types": ["https://gsa.hyperpolymath.dev/types/GameServer", "https://gsa.hyperpolymath.dev/types/GameServer/Minecraft"],
-    "properties": {}
-  },
-  "graph": {
-    "relationships": [["has-profile", "profile:minecraft-java"], ["in-cluster", "cluster:e2e-test"]]
-  },
-  "vector": {
-    "embedding": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
-    "model": "test-8dim"
-  },
-  "provenance": {
-    "event_type": "created",
-    "actor": "gsa-e2e-test",
-    "description": "Created by e2e integration test"
-  },
-  "spatial": {
-    "latitude": 51.5074,
-    "longitude": -0.1278,
-    "altitude": 0.0
-  },
-  "metadata": {
-    "game_id": "minecraft-java",
-    "host": "127.0.0.1",
-    "port": "25565",
-    "protocol": "minecraft-query",
-    "status": "test"
-  }
+  "title": "e2e-test-server",
+  "body": "Minecraft Java Edition test server for GSA e2e validation. Running version 1.21.4 with max-players=32 and difficulty=normal.",
+  "types": ["https://gsa.hyperpolymath.dev/types/GameServer", "https://gsa.hyperpolymath.dev/types/GameServer/Minecraft"],
+  "relationships": [["has-profile", "profile:minecraft-java"], ["in-cluster", "cluster:e2e-test"]]
 }
 JSON
 )
 
-CREATE_RESPONSE=$(curl -sf -X POST "${VERISIMDB_URL}/api/v1/octads" \
+CREATE_RESPONSE=$(curl -sf -X POST "${VERISIMDB_URL}/octads" \
     -H "Content-Type: application/json" \
     -d "$TEST_OCTAD" 2>/dev/null) || { fail "Create octad (HTTP error)"; CREATE_RESPONSE=""; }
 
@@ -151,23 +122,23 @@ echo ""
 echo "Step 3: Query octad back"
 
 if [[ "$OCTAD_ID" != "e2e-test-fallback" ]]; then
-    check_output "GET octad by ID" "e2e-test-server" \
-        curl -sf "${VERISIMDB_URL}/api/v1/octads/${OCTAD_ID}"
+    check_output "GET octad by ID" "$OCTAD_ID" \
+        curl -sf "${VERISIMDB_URL}/octads/${OCTAD_ID}"
 fi
 
-check_output "Text search for 'minecraft'" "minecraft" \
-    curl -sf "${VERISIMDB_URL}/api/v1/search/text?q=minecraft&limit=5"
+check_output "Text search for 'e2e-test'" "e2e-test" \
+    curl -sf "${VERISIMDB_URL}/search/text?q=e2e-test&limit=5"
 
 # ── Step 4: Drift Detection ──────────────────────────────────────────
 
 echo ""
 echo "Step 4: Drift detection"
 
-check "Drift status endpoint responds" curl -sf "${VERISIMDB_URL}/api/v1/drift/status"
+check "Drift status endpoint responds" curl -sf "${VERISIMDB_URL}/drift/status"
 
 if [[ "$OCTAD_ID" != "e2e-test-fallback" ]]; then
     # Entity-level drift check
-    DRIFT_RESPONSE=$(curl -sf "${VERISIMDB_URL}/api/v1/drift/entity/${OCTAD_ID}" 2>/dev/null) || true
+    DRIFT_RESPONSE=$(curl -sf "${VERISIMDB_URL}/drift/entity/${OCTAD_ID}" 2>/dev/null) || true
     if [[ -n "$DRIFT_RESPONSE" ]]; then
         pass "Entity drift check (id=$OCTAD_ID)"
     else
@@ -210,27 +181,13 @@ if [[ -n "$TARGET_SERVER" ]]; then
         # Store probe result as octad
         PROBE_OCTAD=$(cat <<PROBEJSON
 {
-  "document": {
-    "title": "probe-${host}-${port}",
-    "body": "Live probe result for ${host}:${port} from GSA e2e test",
-    "fields": {"probe": "true", "host": "$host", "port": "$port"}
-  },
-  "metadata": {
-    "game_id": "unknown",
-    "host": "$host",
-    "port": "$port",
-    "protocol": "tcp-connect",
-    "status": "reachable"
-  },
-  "provenance": {
-    "event_type": "probed",
-    "actor": "gsa-e2e-test",
-    "description": "Live TCP probe from e2e test"
-  }
+  "title": "probe-${host}-${port}",
+  "body": "Live probe result for ${host}:${port} from GSA e2e test. Protocol: tcp-connect. Status: reachable.",
+  "types": ["https://gsa.hyperpolymath.dev/types/ProbeResult"]
 }
 PROBEJSON
 )
-        PROBE_RESPONSE=$(curl -sf -X POST "${VERISIMDB_URL}/api/v1/octads" \
+        PROBE_RESPONSE=$(curl -sf -X POST "${VERISIMDB_URL}/octads" \
             -H "Content-Type: application/json" \
             -d "$PROBE_OCTAD" 2>/dev/null) || true
 
@@ -253,7 +210,7 @@ echo ""
 echo "Step 6: Cleanup"
 
 if [[ "$OCTAD_ID" != "e2e-test-fallback" ]]; then
-    check "Delete test octad" curl -sf -X DELETE "${VERISIMDB_URL}/api/v1/octads/${OCTAD_ID}"
+    check "Delete test octad" curl -sf -X DELETE "${VERISIMDB_URL}/octads/${OCTAD_ID}"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────
