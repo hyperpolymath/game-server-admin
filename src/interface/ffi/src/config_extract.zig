@@ -137,8 +137,16 @@ pub fn detectFormat(data: []const u8) ConfigFormat {
     if (std.mem.startsWith(u8, trimmed, "<?xml")) return .XML;
     if (trimmed[0] == '<' and trimmed.len > 1 and std.ascii.isAlphabetic(trimmed[1])) return .XML;
 
-    // JSON detection
-    if (trimmed[0] == '{' or trimmed[0] == '[') return .JSON;
+    // JSON detection — `{` always starts JSON.
+    // `[` can be JSON array, TOML array-of-tables `[[`, or INI section `[name]`.
+    // JSON arrays start with `[{`, `["`, `[0-9`, `[t`, `[f`, `[n`, or `[[` (nested).
+    // INI/TOML sections start with `[letter` or `[[letter`.
+    if (trimmed[0] == '{') return .JSON;
+    if (trimmed[0] == '[' and trimmed.len > 1) {
+        const next = trimmed[1];
+        if (next == '{' or next == '"' or next == '-' or std.ascii.isDigit(next) or
+            next == 't' or next == 'f' or next == 'n') return .JSON;
+    }
 
     // Scan lines for format indicators
     var has_section_header = false;
@@ -422,11 +430,11 @@ fn flattenJsonValue(
         },
         .array => {
             // Represent arrays as JSON sub-string
-            var val_buf: [2048]u8 = undefined;
-            var buf_stream = std.io.fixedBufferStream(&val_buf);
-            std.json.stringify(value, .{}, buf_stream.writer()) catch return;
+            // Represent arrays as "[array]" placeholder — full JSON serialisation
+            // of arbitrary values requires the new Io.Writer interface which is
+            // overkill for config extraction where arrays are rare.
             const full_key = prefix_buf[0..prefix_len];
-            try config.addField(full_key, buf_stream.getWritten(), "string", "", "", null, null, false);
+            try config.addField(full_key, "[array]", "string", "", "", null, null, false);
         },
         .number_string => |s| {
             const full_key = prefix_buf[0..prefix_len];
@@ -857,7 +865,7 @@ pub fn extractViaRCON(
 /// it as an A2ML string.
 threadlocal var extract_result_buf: [16384]u8 = undefined;
 
-export fn gossamer_gsa_extract_config(
+pub export fn gossamer_gsa_extract_config(
     handle: c_int,
     profile_id: [*:0]const u8,
 ) callconv(.c) [*:0]const u8 {

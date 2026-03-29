@@ -354,7 +354,7 @@ fn sendTTSAlert(
 ///
 /// Returns 0 on success (at least one target reachable), or a GsaResult
 /// error code if no targets are reachable.
-export fn gossamer_gsa_groove_discover() callconv(.c) c_int {
+pub export fn gossamer_gsa_groove_discover() callconv(.c) c_int {
     _ = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);
@@ -393,7 +393,7 @@ export fn gossamer_gsa_groove_discover() callconv(.c) c_int {
 /// The pointer is valid until the next call on the same thread.
 threadlocal var groove_status_buf: [1024]u8 = undefined;
 
-export fn gossamer_gsa_groove_status(
+pub export fn gossamer_gsa_groove_status(
     target_name: [*:0]const u8,
 ) callconv(.c) [*:0]const u8 {
     const name = std.mem.span(target_name);
@@ -441,7 +441,7 @@ export fn gossamer_gsa_groove_status(
 /// `message`   — human-readable alert description
 ///
 /// Returns 0 on success, negative GsaResult on failure.
-export fn gossamer_gsa_groove_alert(
+pub export fn gossamer_gsa_groove_alert(
     severity: c_int,
     server_id: [*:0]const u8,
     message: [*:0]const u8,
@@ -494,7 +494,7 @@ export fn gossamer_gsa_groove_alert(
 /// `text` — the text to be spoken by Burble's TTS engine.
 ///
 /// Returns 0 on success, negative GsaResult on failure.
-export fn gossamer_gsa_groove_tts_alert(
+pub export fn gossamer_gsa_groove_tts_alert(
     text: [*:0]const u8,
 ) callconv(.c) c_int {
     _ = main.getGlobalHandle() orelse {

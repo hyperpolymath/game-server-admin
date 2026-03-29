@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+#
+# Podman Quadlet unit for the GSA-dedicated VeriSimDB instance
+#
+# Install to ~/.config/containers/systemd/ then:
+#   systemctl --user daemon-reload
+#   systemctl --user start gsa-verisimdb
+#
+# Verify:
+#   podman ps | grep gsa-verisimdb
+#   curl -sf http://[::1]:8090/health
+
+[Unit]
+Description=VeriSimDB instance for Game Server Admin (port 8090)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/gsa-verisimdb:latest
+ContainerName=gsa-verisimdb
+AutoUpdate=local
+
+# Network — localhost only, IPv6 preferred
+PublishPort=[::1]:8090:8090
+PublishPort=[::1]:50061:50061
+
+# Persistent data volume
+Volume=gsa-verisimdb-data:/data:Z
+
+# Environment from config.a2ml
+Environment=VERISIM_HTTP_HOST=[::1]
+Environment=VERISIM_HTTP_PORT=8090
+Environment=VERISIM_GRPC_PORT=50061
+Environment=VERISIM_PERSISTENCE_DIR=/data
+Environment=VERISIM_FEATURES=persistent
+
+# Health check (15s interval matches drift detection)
+HealthCmd=wget --no-verbose --tries=1 --spider http://[::1]:8090/health || exit 1
+HealthInterval=15s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=10s
+
+# Resource limits — VeriSimDB is lightweight
+PodmanArgs=--memory=512m --cpus=1.0
+
+# Security — read-only rootfs where possible
+ReadOnly=true
+Tmpfs=/tmp
+
+# Labels for Stapeln/cerro-torre
+Label=dev.stapeln.app=game-server-admin
+Label=dev.stapeln.role=verisimdb
+Label=dev.stapeln.clade=ix
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+
+[Install]
+WantedBy=default.target

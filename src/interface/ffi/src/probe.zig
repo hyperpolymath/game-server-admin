@@ -660,7 +660,7 @@ pub fn matchToProfile(
 ///
 /// Returns 0 on success (result cached in handle), or a negative GsaResult
 /// error code.
-export fn gossamer_gsa_probe(
+pub export fn gossamer_gsa_probe(
     host_ptr: [*:0]const u8,
     port_c: c_int,
 ) callconv(.c) c_int {
@@ -701,7 +701,7 @@ export fn gossamer_gsa_probe(
 /// until the next call to this function on the same thread.
 threadlocal var fingerprint_result_buf: [8192]u8 = undefined;
 
-export fn gossamer_gsa_fingerprint(
+pub export fn gossamer_gsa_fingerprint(
     host_ptr: [*:0]const u8,
     ports_json: [*:0]const u8,
 ) callconv(.c) [*:0]const u8 {

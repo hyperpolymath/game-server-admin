@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# asdf tool versions for game-server-admin
+#
+# Active tools: rust (nightly), zig, idris2, just
+# Commented tools: not required by this project
+rust nightly
+zig 0.15.2
+idris2 0.7.0
+just 1.40.0
+# nickel 1.10.0
+# gleam 1.8.0
+# elixir 1.18.0
+# erlang 27.2

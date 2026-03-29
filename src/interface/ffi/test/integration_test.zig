@@ -11,14 +11,15 @@
 const std = @import("std");
 const testing = std.testing;
 
-// Import all modules via the root (main.zig)
-const main = @import("../src/main.zig");
-const probe = @import("../src/probe.zig");
-const config_extract = @import("../src/config_extract.zig");
-const a2ml_emit = @import("../src/a2ml_emit.zig");
-const verisimdb_client = @import("../src/verisimdb_client.zig");
-const server_actions = @import("../src/server_actions.zig");
-const game_profiles = @import("../src/game_profiles.zig");
+// Import all modules via the gsa build module (see build.zig addImport)
+const gsa = @import("gsa");
+const main = gsa;
+const probe = gsa.probe;
+const config_extract = gsa.config_extract;
+const a2ml_emit = gsa.a2ml_emit;
+const verisimdb_client = gsa.verisimdb_client;
+const server_actions = gsa.server_actions;
+const game_profiles = gsa.game_profiles;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. Result code mapping — all 13 values match Idris2 ABI

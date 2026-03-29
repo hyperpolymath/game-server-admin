@@ -204,7 +204,7 @@ pub fn getGlobalHandle() ?*GsaHandle {
 ///     profiles.
 ///
 /// Returns 0 on success, negative GsaResult on failure.
-export fn gossamer_gsa_init(
+pub export fn gossamer_gsa_init(
     verisimdb_url: [*:0]const u8,
     profiles_dir: [*:0]const u8,
 ) callconv(.c) c_int {
@@ -233,7 +233,7 @@ export fn gossamer_gsa_init(
 /// Shut down the library and release all resources.
 ///
 /// Returns 0 on success, negative GsaResult on failure.
-export fn gossamer_gsa_shutdown() callconv(.c) c_int {
+pub export fn gossamer_gsa_shutdown() callconv(.c) c_int {
     global_mutex.lock();
     defer global_mutex.unlock();
 
@@ -252,12 +252,12 @@ export fn gossamer_gsa_shutdown() callconv(.c) c_int {
 ///
 /// Returns a NUL-terminated string in thread-local storage.  The pointer
 /// remains valid until the next FFI call on the same thread.
-export fn gossamer_gsa_last_error() callconv(.c) [*:0]const u8 {
+pub export fn gossamer_gsa_last_error() callconv(.c) [*:0]const u8 {
     return @as([*:0]const u8, @ptrCast(&last_error_buf));
 }
 
 /// Library version string (e.g. "0.1.0").
-export fn gossamer_gsa_version() callconv(.c) [*:0]const u8 {
+pub export fn gossamer_gsa_version() callconv(.c) [*:0]const u8 {
     return VERSION.ptr;
 }
 

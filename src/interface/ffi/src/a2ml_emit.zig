@@ -458,7 +458,7 @@ fn stringToFormat(s: []const u8) config_extract.ConfigFormat {
 threadlocal var emit_result_buf: [16384]u8 = undefined;
 
 /// Convert a JSON config representation to A2ML.
-export fn gossamer_gsa_a2ml_emit(
+pub export fn gossamer_gsa_a2ml_emit(
     config_json: [*:0]const u8,
 ) callconv(.c) [*:0]const u8 {
     const allocator = std.heap.c_allocator;
@@ -489,7 +489,7 @@ export fn gossamer_gsa_a2ml_emit(
 threadlocal var parse_result_buf: [16384]u8 = undefined;
 
 /// Parse A2ML back to a JSON representation.
-export fn gossamer_gsa_a2ml_parse(
+pub export fn gossamer_gsa_a2ml_parse(
     a2ml_ptr: [*:0]const u8,
 ) callconv(.c) [*:0]const u8 {
     const allocator = std.heap.c_allocator;

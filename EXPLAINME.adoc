@@ -12,7 +12,7 @@ The probe engine uses table-driven port scanning with protocol-specific handshak
 Extracted configs are serialised into A2ML and stored in a dedicated VeriSimDB instance (port 8090) as octads with 8 modalities.
 See `src/interface/ffi/src/probe.zig` for the probe implementation and `profiles/*.a2ml` for game definitions.
 
-**Caveat:** "Any" means any game with a known `.a2ml` profile -- unknown games get best-effort fingerprinting but no structured config extraction. Lua table parsing handles simple key-value patterns but not deeply nested tables. VeriSimDB normaliser regeneration is partially stubbed (5/6 strategies return `[regenerated]`).
+**Caveat:** "Any" means any game with a known `.a2ml` profile -- unknown games get best-effort fingerprinting but no structured config extraction. Lua table parsing handles simple key-value patterns but not deeply nested tables. VeriSimDB normaliser regeneration uses a `SummaryRegenerator` dry-run stub (in `verisimdb/rust-core/verisim-normalizer/src/regeneration.rs`, not in this repo) -- production use requires wiring real storage backends for the 8 modality regenerators.
 
 [cols="1,2"]
 |===

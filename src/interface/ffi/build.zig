@@ -17,6 +17,22 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // ---------------------------------------------------------------
+    // Optional: path to Gossamer library for full-stack builds
+    //
+    //   zig build -Dgossamer-lib-path=/path/to/gossamer/zig-out/lib
+    //
+    // When provided, the integration tests can link against
+    // libgossamer.so for end-to-end verification.  Without this
+    // flag, libgsa builds and tests standalone (which is fine —
+    // Gossamer loads libgsa via dlopen at runtime).
+    // ---------------------------------------------------------------
+    const gossamer_lib_path = b.option(
+        []const u8,
+        "gossamer-lib-path",
+        "Path to Gossamer zig-out/lib/ directory containing libgossamer.so",
+    );
+
+    // ---------------------------------------------------------------
     // Shared library — libgsa.so / libgsa.dylib / gsa.dll
     // ---------------------------------------------------------------
     const lib = b.addLibrary(.{
@@ -65,20 +81,60 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_unit_tests.step);
 
     // ---------------------------------------------------------------
+    // Shared module for test targets — exposes src/ modules to tests
+    // without requiring relative imports outside the module path.
+    // ---------------------------------------------------------------
+    const src_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
+    // ---------------------------------------------------------------
     // Integration tests
     // ---------------------------------------------------------------
-    const integration_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("test/integration_test.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
+    const integration_mod = b.createModule(.{
+        .root_source_file = b.path("test/integration_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
     });
+    integration_mod.addImport("gsa", src_module);
+
+    const integration_tests = b.addTest(.{
+        .root_module = integration_mod,
+    });
+
+    // If gossamer library path is provided, add it to the integration tests
+    // so they can resolve gossamer symbols during full-stack verification.
+    if (gossamer_lib_path) |goss_path| {
+        integration_mod.addLibraryPath(.{ .cwd_relative = goss_path });
+        integration_mod.addRPath(.{ .cwd_relative = goss_path });
+    }
 
     const run_integration_tests = b.addRunArtifact(integration_tests);
     const integration_step = b.step("test-integration", "Run FFI integration tests");
     integration_step.dependOn(&run_integration_tests.step);
+
+    // ---------------------------------------------------------------
+    // Smoke tests (end-to-end pipeline without live services)
+    // ---------------------------------------------------------------
+    const smoke_mod = b.createModule(.{
+        .root_source_file = b.path("test/smoke_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    smoke_mod.addImport("gsa", src_module);
+
+    const smoke_tests = b.addTest(.{
+        .root_module = smoke_mod,
+    });
+
+    const run_smoke_tests = b.addRunArtifact(smoke_tests);
+    const smoke_step = b.step("test-smoke", "Run end-to-end smoke tests (no live services needed)");
+    smoke_step.dependOn(&run_smoke_tests.step);
 
     // ---------------------------------------------------------------
     // Cross-compile convenience targets

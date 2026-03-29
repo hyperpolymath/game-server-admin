@@ -447,7 +447,7 @@ fn parseAndDispatch(allocator: Allocator, json_str: []const u8) !ActionResult {
 ///   {"success": true/false, "output": "...", "exit_code": N}
 threadlocal var action_result_buf: [65536]u8 = undefined;
 
-export fn gossamer_gsa_server_action(
+pub export fn gossamer_gsa_server_action(
     handle: c_int,
     action_json: [*:0]const u8,
 ) callconv(.c) [*:0]const u8 {
@@ -505,7 +505,7 @@ export fn gossamer_gsa_server_action(
 /// Returns a NUL-terminated string of log text.
 threadlocal var logs_result_buf: [65536]u8 = undefined;
 
-export fn gossamer_gsa_get_logs(
+pub export fn gossamer_gsa_get_logs(
     handle: c_int,
     lines: c_int,
 ) callconv(.c) [*:0]const u8 {

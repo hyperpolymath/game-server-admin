@@ -181,40 +181,31 @@ pub const VeriSimClient = struct {
         var url_buf: [2048]u8 = undefined;
         const url_str = std.fmt.bufPrint(&url_buf, "{s}{s}", .{ self.base_url, path }) catch return error.URLTooLong;
 
-        const uri = std.Uri.parse(url_str) catch return error.InvalidURL;
+        // Use the Zig 0.15 fetch() API with Io.Writer.Allocating to collect
+        // the response body into a dynamically-growing buffer.
+        var alloc_writer = std.Io.Writer.Allocating.init(self.allocator);
+        errdefer alloc_writer.deinit();
 
-        var header_buf: [4096]u8 = undefined;
-        var req = try self.http_client.open(method, uri, .{
-            .server_header_buffer = &header_buf,
+        const result = try self.http_client.fetch(.{
+            .location = .{ .url = url_str },
+            .method = method,
+            .payload = body,
             .extra_headers = &.{
                 .{ .name = "Content-Type", .value = "application/json" },
                 .{ .name = "Accept", .value = "application/json" },
             },
+            .response_writer = &alloc_writer.writer,
         });
-        defer req.deinit();
-
-        // Send body if present
-        if (body) |b| {
-            req.transfer_encoding = .{ .content_length = b.len };
-        }
-
-        try req.send();
-
-        if (body) |b| {
-            try req.writeAll(b);
-        }
-
-        try req.finish();
-        try req.wait();
 
         // Check status
-        if (req.status != .ok and req.status != .created and req.status != .no_content) {
+        if (result.status != .ok and result.status != .created and result.status != .no_content) {
+            alloc_writer.deinit();
             return error.HTTPError;
         }
 
-        // Read response body
-        const response_body = try req.reader().readAllAlloc(self.allocator, 1024 * 1024);
-        return response_body;
+        // Extract the response body as an owned slice
+        var list = alloc_writer.toArrayList();
+        return list.toOwnedSlice(self.allocator);
     }
 };
 
@@ -308,7 +299,7 @@ pub fn serverToOctadJson(
 /// `octad_json` — JSON string conforming to the VeriSimDB octad schema.
 ///
 /// Returns 0 on success, negative GsaResult on failure.
-export fn gossamer_gsa_verisimdb_store(
+pub export fn gossamer_gsa_verisimdb_store(
     octad_json: [*:0]const u8,
 ) callconv(.c) c_int {
     const gsa = main.getGlobalHandle() orelse {
@@ -335,7 +326,7 @@ export fn gossamer_gsa_verisimdb_store(
 /// Returns a NUL-terminated JSON string with the query results.
 threadlocal var vql_result_buf: [16384]u8 = undefined;
 
-export fn gossamer_gsa_verisimdb_query(
+pub export fn gossamer_gsa_verisimdb_query(
     vql: [*:0]const u8,
 ) callconv(.c) [*:0]const u8 {
     const gsa = main.getGlobalHandle() orelse {
@@ -364,7 +355,7 @@ export fn gossamer_gsa_verisimdb_query(
 /// Check VeriSimDB health.
 ///
 /// Returns 0 if healthy, non-zero otherwise.
-export fn gossamer_gsa_verisimdb_health() callconv(.c) c_int {
+pub export fn gossamer_gsa_verisimdb_health() callconv(.c) c_int {
     const gsa = main.getGlobalHandle() orelse {
         return @intFromEnum(main.GsaResult.not_initialized);
     };
@@ -379,7 +370,7 @@ export fn gossamer_gsa_verisimdb_health() callconv(.c) c_int {
 /// Get drift information for a server.
 threadlocal var drift_result_buf: [8192]u8 = undefined;
 
-export fn gossamer_gsa_verisimdb_drift(
+pub export fn gossamer_gsa_verisimdb_drift(
     server_id: [*:0]const u8,
 ) callconv(.c) [*:0]const u8 {
     const gsa = main.getGlobalHandle() orelse {

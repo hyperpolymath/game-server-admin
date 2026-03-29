@@ -191,6 +191,19 @@ pub const ProfileRegistry = struct {
         try self.profiles.put(id_key, profile);
     }
 
+    /// Register a profile from raw A2ML text (no file I/O).
+    pub fn registerFromText(self: *ProfileRegistry, a2ml_text: []const u8) !void {
+        var profile = try parseA2MLProfile(a2ml_text, self.allocator);
+        errdefer profile.deinit();
+
+        if (profile.id.len == 0) return error.MissingProfileId;
+
+        const id_key = try self.allocator.dupe(u8, profile.id);
+        errdefer self.allocator.free(id_key);
+
+        try self.profiles.put(id_key, profile);
+    }
+
     /// Look up a profile by its ID.
     pub fn getProfile(self: *ProfileRegistry, id: []const u8) ?*GameProfile {
         return self.profiles.getPtr(id);
@@ -435,18 +448,36 @@ fn extractAttr(data: []const u8, tag: []const u8, name: []const u8) ?[]const u8 
 }
 
 /// Extract a named attribute from an attribute string.
-/// Handles both `name="value"` and `name='value'` patterns.
+/// Handles `name="value"`, `name='value'`, and `name=value` (unquoted) patterns.
 fn extractAttrFrom(attrs: []const u8, name: []const u8) ?[]const u8 {
     // Search for name="
     var search_buf: [128]u8 = undefined;
-    const search = std.fmt.bufPrint(&search_buf, "{s}=\"", .{name}) catch return null;
+    const search_quoted = std.fmt.bufPrint(&search_buf, "{s}=\"", .{name}) catch return null;
 
-    if (std.mem.indexOf(u8, attrs, search)) |start| {
-        const val_start = start + search.len;
+    if (std.mem.indexOf(u8, attrs, search_quoted)) |start| {
+        const val_start = start + search_quoted.len;
         if (std.mem.indexOfScalarPos(u8, attrs, val_start, '"')) |val_end| {
             return attrs[val_start..val_end];
         }
     }
+
+    // Fallback: unquoted value (e.g. number=25565)
+    var search_unquoted_buf: [128]u8 = undefined;
+    const search_unquoted = std.fmt.bufPrint(&search_unquoted_buf, "{s}=", .{name}) catch return null;
+
+    if (std.mem.indexOf(u8, attrs, search_unquoted)) |start| {
+        const val_start = start + search_unquoted.len;
+        if (val_start >= attrs.len) return null;
+        // Skip if the next char is a quote (already handled above)
+        if (attrs[val_start] == '"' or attrs[val_start] == '\'') return null;
+        // Read until comma, closing paren, whitespace, or end
+        var val_end = val_start;
+        while (val_end < attrs.len and attrs[val_end] != ',' and attrs[val_end] != ')' and attrs[val_end] != ' ' and attrs[val_end] != '\t') {
+            val_end += 1;
+        }
+        if (val_end > val_start) return attrs[val_start..val_end];
+    }
+
     return null;
 }
 
@@ -457,7 +488,7 @@ fn extractAttrFrom(attrs: []const u8, name: []const u8) ?[]const u8 {
 /// Load game profiles from a directory of .a2ml files.
 ///
 /// Returns the number of profiles loaded, or a negative error code.
-export fn gossamer_gsa_load_profiles(
+pub export fn gossamer_gsa_load_profiles(
     dir: [*:0]const u8,
 ) callconv(.c) c_int {
     const gsa = main.getGlobalHandle() orelse {
@@ -480,7 +511,7 @@ export fn gossamer_gsa_load_profiles(
 /// Returns a NUL-terminated JSON string.
 threadlocal var list_profiles_buf: [16384]u8 = undefined;
 
-export fn gossamer_gsa_list_profiles() callconv(.c) [*:0]const u8 {
+pub export fn gossamer_gsa_list_profiles() callconv(.c) [*:0]const u8 {
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @as([*:0]const u8, @ptrCast(&[_:0]u8{ '[', ']' }));
@@ -502,7 +533,7 @@ export fn gossamer_gsa_list_profiles() callconv(.c) [*:0]const u8 {
 /// Add a profile from an A2ML string (not a file path).
 ///
 /// Returns 0 on success, negative error code on failure.
-export fn gossamer_gsa_add_profile(
+pub export fn gossamer_gsa_add_profile(
     a2ml: [*:0]const u8,
 ) callconv(.c) c_int {
     const gsa = main.getGlobalHandle() orelse {

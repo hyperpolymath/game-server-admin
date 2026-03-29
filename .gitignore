@@ -22,6 +22,7 @@ Thumbs.db
 zig-out/
 zig-cache/
 .zig-cache/
+test_managed/
 
 # Dependencies
 /node_modules/
@@ -109,5 +110,5 @@ sync_report*.txt
 # Hypatia scan cache (local-only)
 .hypatia/
 
-# asdf version manager
-.tool-versions
+# asdf version manager (tracked — needed for reproducible builds)
+# .tool-versions

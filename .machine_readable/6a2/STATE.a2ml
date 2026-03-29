@@ -6,13 +6,13 @@
 [metadata]
 project = "game-server-admin"
 version = "0.1.0"
-last-updated = "2026-03-22"
+last-updated = "2026-03-29"
 status = "active"
 
 [project-context]
 name = "game-server-admin"
 purpose = "Universal game server probe, configuration management, and administration via Gossamer webview + VeriSimDB backing store. Extracts config into A2ML format with full provenance tracking."
-completion-percentage = 75
+completion-percentage = 82
 
 [position]
 phase = "implementation"
@@ -32,27 +32,30 @@ milestones = [
   { name = "Phase 10: PanLL harness manifest + panel.json descriptors", completion = 100 },
   { name = "Phase 11: Justfile GSA-specific recipes", completion = 100 },
   { name = "Phase 12: Documentation (README, EXPLAINME)", completion = 100 },
-  { name = "Phase 13: Integration testing (Zig build + Gossamer link)", completion = 0 },
-  { name = "Phase 14: End-to-end test (probe real server → GUI)", completion = 0 },
-  { name = "Phase 15: Container deployment (selur-compose)", completion = 0 },
+  { name = "Phase 13: Integration testing (Zig build + Gossamer link)", completion = 60 },
+  { name = "Phase 14: End-to-end test (probe real server → GUI)", completion = 40 },
+  { name = "Phase 15: Container deployment (selur-compose)", completion = 50 },
 ]
 
 [blockers-and-issues]
 blockers = [
-  { id = "B1", severity = "medium", description = "Zig FFI needs libgossamer.so linked — requires Gossamer build in PATH" },
+  { id = "B1", severity = "resolved", description = "Zig FFI now supports -Dgossamer-lib-path for optional Gossamer linking" },
   { id = "B2", severity = "low", description = "Bitbucket mirror needs manual repo creation or API token refresh" },
+  { id = "B3", severity = "info", description = "VeriSimDB normaliser SummaryRegenerator is a dry-run stub (by design) — real storage backends needed for production. Stubs are in verisimdb/rust-core/verisim-normalizer/src/regeneration.rs." },
 ]
 
 [critical-next-actions]
 actions = [
-  "Wire Zig build to link against libgossamer.so from gossamer repo",
-  "Run `zig build test` to validate FFI integration tests",
-  "Deploy gsa-verisimdb container and test REST API connectivity",
-  "End-to-end test: probe a Valheim/Minecraft server through the GUI",
+  "Run `zig build test-smoke` to validate full pipeline smoke tests",
+  "Build gsa-verisimdb container image: `podman build -t gsa-verisimdb:latest -f container/verisimdb/Containerfile .`",
+  "Deploy quadlet: cp container/verisimdb/gsa-verisimdb.container ~/.config/containers/systemd/ && systemctl --user daemon-reload && systemctl --user start gsa-verisimdb",
+  "End-to-end test: probe a live Minecraft/Valheim server through the GUI",
   "Generate game profile child clades: `just generate-clades`",
+  "Wire real VeriSimDB storage backends for normaliser regeneration (in verisimdb repo, not here)",
 ]
 
 [session-history]
 sessions = [
   { date = "2026-03-22", summary = "Created repo — 412 files, 28901 lines. Full ABI/FFI/Core/GUI/Profiles/Clades/VeriSimDB. Pushed to GitHub + GitLab. PanLL integration committed." },
+  { date = "2026-03-29", summary = "Review + hardening: callconv(.c) compat fix, build.zig gossamer-lib-path option, e2e smoke tests, VeriSimDB quadlet, asdf .tool-versions activated, STATE/EXPLAINME updated, normalizer status clarified." },
 ]
