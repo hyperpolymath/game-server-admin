@@ -43,11 +43,11 @@ echo "Step 1: Ephapax compiler"
 
 if [[ -x "$EPHAPAX" ]]; then
     pass "Ephapax binary exists ($EPHAPAX)"
-    version=$("$EPHAPAX" --version 2>&1 || true)
-    if [[ -n "$version" ]]; then
+    if "$EPHAPAX" --version >/dev/null 2>&1; then
+        version=$("$EPHAPAX" --version 2>&1 || true)
         pass "Ephapax runs (${version})"
     else
-        fail "Ephapax won't execute"
+        fail "Ephapax won't execute (rebuild with: cargo build -p ephapax-cli)"
     fi
 else
     fail "Ephapax binary not found at $EPHAPAX"
@@ -150,16 +150,20 @@ fi
 echo ""
 echo "Step 6: Ephapax parser feature readiness"
 
-# Check basic let binding with semicolon sequencing
-echo 'fn main(): I32 = let x : I32 = 42 in x' > /tmp/ephapax-test-basic.eph
+# Check basic let binding with semicolon sequencing (heredoc avoids bash escaping)
+cat > /tmp/ephapax-test-basic.eph << 'EPHTEST'
+fn main(): I32 = let x : I32 = 42 in x
+EPHTEST
 if "$EPHAPAX" check /tmp/ephapax-test-basic.eph >/dev/null 2>&1; then
     pass "Basic let binding works"
 else
     fail "Basic let binding fails"
 fi
 
-# Check linear let! binding
-echo 'fn main(): I32 = let! x : I32 = 42 in x' > /tmp/ephapax-test-linear.eph
+# Check linear let! binding (use heredoc to avoid bash ! escaping)
+cat > /tmp/ephapax-test-linear.eph << 'EPHTEST'
+fn main(): I32 = let! x : I32 = 42 in x
+EPHTEST
 if "$EPHAPAX" check /tmp/ephapax-test-linear.eph >/dev/null 2>&1; then
     pass "Linear let! binding works"
 else

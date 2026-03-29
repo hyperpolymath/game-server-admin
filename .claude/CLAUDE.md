@@ -79,10 +79,10 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 - **Completion**: 93% (Phases 1-12 complete, 13-15 nearly done)
 - **Zig version**: 0.15.2 (see `.tool-versions`)
 - **Exported FFI symbols**: 24 (comptime linker hints in main.zig)
-- **Tests**: All 3 Zig suites pass. E2E: 8/8 against live VeriSimDB. Gossamer chain: 23/25 (2 Ephapax parser gaps).
+- **Tests**: All 3 Zig suites pass. E2E: 8/8 against live VeriSimDB. Gossamer chain: 25/25.
 - **VeriSimDB**: Main on 8090 (built, running), backup on 8091 (game saves)
 - **Icon**: SVG + 256px PNG in assets/
-- **Remaining**: Ephapax parser completion (`;`, zero-arg calls, lambda blocks), Bitbucket mirror
+- **Remaining**: Bitbucket mirror (SSH key issue)
 
 ## Lint / Quality
 
