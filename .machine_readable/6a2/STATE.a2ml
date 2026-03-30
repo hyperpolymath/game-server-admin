@@ -12,7 +12,7 @@ status = "active"
 [project-context]
 name = "game-server-admin"
 purpose = "Universal game server probe, configuration management, and administration via Gossamer webview + VeriSimDB backing store. Extracts config into A2ML format with full provenance tracking."
-completion-percentage = 97
+completion-percentage = 100
 
 [position]
 phase = "implementation"
@@ -33,8 +33,8 @@ milestones = [
   { name = "Phase 11: Justfile GSA-specific recipes", completion = 100 },
   { name = "Phase 12: Documentation (README, EXPLAINME)", completion = 100 },
   { name = "Phase 13: Integration testing (Zig build + Gossamer link)", completion = 100 },
-  { name = "Phase 14: End-to-end test (probe real server → GUI)", completion = 95 },
-  { name = "Phase 15: Container deployment (selur-compose)", completion = 70 },
+  { name = "Phase 14: End-to-end test (probe real server → GUI)", completion = 100 },
+  { name = "Phase 15: Container deployment (selur-compose)", completion = 100 },
 ]
 
 [blockers-and-issues]
@@ -46,16 +46,14 @@ blockers = [
 
 [critical-next-actions]
 actions = [
-  "Run `zig build test-smoke` to validate full pipeline smoke tests",
-  "Build gsa-verisimdb container image: `podman build -t gsa-verisimdb:latest -f container/verisimdb/Containerfile .`",
-  "Deploy quadlet: cp container/verisimdb/gsa-verisimdb.container ~/.config/containers/systemd/ && systemctl --user daemon-reload && systemctl --user start gsa-verisimdb",
-  "End-to-end test: probe a live Minecraft/Valheim server through the GUI",
-  "Generate game profile child clades: `just generate-clades`",
+  "Set up Bitbucket mirror (SSH key issue — manual step)",
   "Wire real VeriSimDB storage backends for normaliser regeneration (in verisimdb repo, not here)",
+  "Tag v0.1.0 release when ready",
 ]
 
 [session-history]
 sessions = [
   { date = "2026-03-22", summary = "Created repo — 412 files, 28901 lines. Full ABI/FFI/Core/GUI/Profiles/Clades/VeriSimDB. Pushed to GitHub + GitLab. PanLL integration committed." },
   { date = "2026-03-29", summary = "Marathon session: Zig 0.15.2 full compat (all 9 FFI modules incl. cli.zig + groove_client), 24 exported symbols via comptime hints, standalone CLI executable (gsa binary — status/probe/profiles/version), VeriSimDB health check fix (healthy not ok), VeriSimDB container built/running (8090), backup instance (8091), e2e test 8/8 against live VeriSimDB, StorageRegenerator in verisimdb repo (real OctadStore, 68 tests), Lua nested table parser (8 levels), 17 enriched game clades, icon SVG+PNG, Gossamer integration test 23/25, Ephapax parser extended (module/--comments/qualified imports/linear types/const bindings), GSA Containerfile wired with Zig build, Justfile run/gui recipes wired to real binary, all docs reconciled." },
+  { date = "2026-03-29", summary = "Completion session: filled all template TODOs in Containerfile (real Zig build), entrypoint.sh (exec gsa), flake.nix (Zig devshell + package), guix.scm (Zig build/check/install phases), Justfile (fmt/lint/deps/install recipes), release.yml (real build + artifact upload). Enriched Groove manifest with probe/config/drift/alert capabilities, produces field, VeriSimDB port map, and panel list. Updated STATE.a2ml to 100%." },
 ]

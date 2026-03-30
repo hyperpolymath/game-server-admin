@@ -25,19 +25,21 @@ jobs:
 
       - name: Build
         run: |
-          echo "Build your artifacts here"
-          # TODO: Replace with your build commands
-          # Examples:
-          #   cargo build --release
-          #   zig build -Doptimize=ReleaseFast
-          #   gleam build
-          #   mix release
+          cd src/interface/ffi
+          zig build -Doptimize=ReleaseFast
 
-      # TODO: Upload build artifacts if needed
-      # - uses: actions/upload-artifact@v4
-      #   with:
-      #     name: release-artifacts
-      #     path: target/release/
+      - name: Package release artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp src/interface/ffi/zig-out/bin/gsa release-artifacts/
+          cp src/interface/ffi/zig-out/lib/libgsa.so release-artifacts/ 2>/dev/null || true
+          tar -czf release-artifacts/gsa-linux-x86_64.tar.gz -C release-artifacts gsa
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-artifacts
+          path: release-artifacts/
+          retention-days: 5
 
   changelog:
     name: Generate Changelog
@@ -93,11 +95,10 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      # TODO: Download build artifacts if uploading to the release
-      # - uses: actions/download-artifact@v4
-      #   with:
-      #     name: release-artifacts
-      #     path: artifacts/
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-artifacts
+          path: artifacts/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
@@ -106,9 +107,8 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           generate_release_notes: false
-          # TODO: Add artifact files to the release
-          # files: |
-          #   artifacts/*
+          files: |
+            artifacts/gsa-linux-x86_64.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -123,7 +123,5 @@ jobs:
     # See: https://slsa.dev/spec/v1.0/requirements#build-l3
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
     with:
-      base64-subjects: ""
-      # TODO: Replace with actual artifact hashes
+      base64-subjects: "${{ needs.build.outputs.hashes }}"
       # Generate with: sha256sum artifact | base64 -w0
-      # base64-subjects: "${{ needs.build.outputs.hashes }}"

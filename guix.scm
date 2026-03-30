@@ -7,7 +7,7 @@
 ;;   guix shell -D -f guix.scm    # Enter development shell
 ;;   guix build -f guix.scm       # Build package
 ;;
-;; TODO: Replace game-server-admin and customize inputs for your language/stack.
+;; Stack: Zig FFI + Idris2 ABI + VeriSimDB
 ;; See: https://guix.gnu.org/manual/en/html_node/Defining-Packages.html
 
 (use-modules (guix packages)
@@ -28,43 +28,46 @@
   (arguments
    '(#:phases
      (modify-phases %standard-phases
-       ;; TODO: Customize build phases for your project
-       ;; Examples for common stacks:
-       ;;
-       ;; Rust:
-       ;;   (replace 'build (lambda _ (invoke "cargo" "build" "--release")))
-       ;;   (replace 'check (lambda _ (invoke "cargo" "test")))
-       ;;
-       ;; Elixir:
-       ;;   (replace 'build (lambda _ (invoke "mix" "compile")))
-       ;;   (replace 'check (lambda _ (invoke "mix" "test")))
-       ;;
-       ;; Zig:
-       ;;   (replace 'build (lambda _ (invoke "zig" "build")))
-       ;;   (replace 'check (lambda _ (invoke "zig" "build" "test")))
        (delete 'configure)
-       (delete 'build)
-       (delete 'check)
+       ;; Build the Zig FFI library and standalone CLI binary.
+       (replace 'build
+         (lambda _
+           (with-directory-excursion "src/interface/ffi"
+             (invoke "zig" "build" "-Doptimize=ReleaseSafe"))))
+       ;; Run the Zig unit test suite.
+       (replace 'check
+         (lambda _
+           (with-directory-excursion "src/interface/ffi"
+             (invoke "zig" "build" "test"))))
        (replace 'install
          (lambda* (#:key outputs #:allow-other-keys)
            (let ((out (assoc-ref outputs "out")))
+             (mkdir-p (string-append out "/bin"))
+             (mkdir-p (string-append out "/lib"))
              (mkdir-p (string-append out "/share/doc"))
+             (mkdir-p (string-append out "/share/game-server-admin/profiles"))
+             (copy-file "src/interface/ffi/zig-out/bin/gsa"
+                        (string-append out "/bin/gsa"))
+             (when (file-exists? "src/interface/ffi/zig-out/lib/libgsa.so")
+               (copy-file "src/interface/ffi/zig-out/lib/libgsa.so"
+                          (string-append out "/lib/libgsa.so")))
              (copy-file "README.adoc"
-                        (string-append out "/share/doc/README.adoc"))))))))
+                        (string-append out "/share/doc/README.adoc"))
+             (for-each
+               (lambda (f)
+                 (copy-file f
+                   (string-append out "/share/game-server-admin/profiles/"
+                                  (basename f))))
+               (find-files "profiles" "\\.a2ml$"))))))))
   (native-inputs
    (list
-    ;; TODO: Add build-time dependencies
-    ;; Examples:
-    ;;   rust (gnu packages rust)
-    ;;   elixir (gnu packages elixir)
-    ;;   zig (gnu packages zig)
+    ;; Zig compiler for building the FFI layer
+    ;; zig   ; (gnu packages zig) — uncomment when available in Guix
     ))
   (inputs
-   (list
-    ;; TODO: Add runtime dependencies
-    ))
+   (list))
   (home-page "https://github.com/hyperpolymath/game-server-admin")
-  (synopsis "{{PROJECT_PURPOSE}}")
+  (synopsis "Universal game server probe, config management, and administration")
   (description "RSR-compliant project. See README.adoc for details.")
   (license (list
             ;; PMPL-1.0-or-later extends MPL-2.0

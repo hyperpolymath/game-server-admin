@@ -16,7 +16,7 @@
 # With direnv (.envrc already configured):
 #   direnv allow         # Auto-enters shell on cd
 #
-# TODO: Replace game-server-admin and Universal game server probe, config management, and administration via Gossamer + VeriSimDB with actual values.
+# Stack: Zig FFI + Idris2 ABI + Ephapax GUI (Gossamer) + VeriSimDB
 
 {
   description = "game-server-admin — RSR-compliant project";
@@ -77,13 +77,9 @@
         #
         # ---------------------------------------------------------------
         languageTools = with pkgs; [
-          # TODO: Uncomment or add packages for your stack.
-          # Example for a Rust project:
-          # rustc
-          # cargo
-          # clippy
-          # rustfmt
-          # rust-analyzer
+          zig     # FFI layer build system and compiler
+          zls     # Zig language server
+          idris2  # ABI formal definitions
         ];
 
       in
@@ -136,24 +132,19 @@
 
           src = self;
 
-          # TODO: Replace with real build instructions.
-          # Examples:
-          #
-          # Rust (use rustPlatform.buildRustPackage instead of stdenv):
-          #   packages.default = pkgs.rustPlatform.buildRustPackage { ... };
-          #
-          # Elixir (use mixRelease):
-          #   packages.default = pkgs.beamPackages.mixRelease { ... };
-          #
-          # Zig:
-          #   buildPhase = "zig build -Doptimize=ReleaseSafe";
+          nativeBuildInputs = [ pkgs.zig ];
 
+          # Build the Zig FFI library and standalone CLI binary.
           buildPhase = ''
-            echo "TODO: Add build commands for game-server-admin"
+            cd src/interface/ffi
+            zig build -Doptimize=ReleaseSafe
           '';
 
           installPhase = ''
-            mkdir -p $out/share/doc
+            mkdir -p $out/bin $out/lib $out/share/doc $out/share/game-server-admin/profiles
+            cp src/interface/ffi/zig-out/bin/gsa $out/bin/
+            cp src/interface/ffi/zig-out/lib/libgsa.so $out/lib/ 2>/dev/null || true
+            cp -r profiles/* $out/share/game-server-admin/profiles/
             cp README.adoc $out/share/doc/ 2>/dev/null || true
           '';
 

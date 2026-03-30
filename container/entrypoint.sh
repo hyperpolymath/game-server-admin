@@ -54,10 +54,8 @@ fi
 # Replace the entrypoint shell with the application process so that
 # signals are delivered directly and PID 1 is the application.
 #
-# TODO: Replace the command below with your application binary.
-# Examples:
-#   exec /app/gsa
-#   exec /app/release/bin/gsa start
-#   exec /app/gsa serve --host "${APP_HOST}" --port "${APP_PORT}"
+# The GSA CLI binary.  In the Containerfile this is installed at
+# /usr/local/bin/gsa.  When run via `podman run`, arguments are
+# forwarded through CMD (defaults to "status" if none given).
 
-exec "$@"
+exec /usr/local/bin/gsa "$@"

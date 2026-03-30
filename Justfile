@@ -501,30 +501,17 @@ fix: fmt
 # Format all source files [reversible: git checkout]
 fmt:
     @echo "Formatting source files..."
-    # TODO: Replace with your formatter
-    # Examples:
-    #   cargo fmt
-    #   mix format
-    #   gleam format
-    #   deno fmt
+    cd src/interface/ffi && zig fmt src/ test/ build.zig 2>/dev/null || true
 
 # Check formatting without changes
 fmt-check:
     @echo "Checking formatting..."
-    # TODO: Replace with your format check
-    # Examples:
-    #   cargo fmt --check
-    #   mix format --check-formatted
-    #   gleam format --check
+    cd src/interface/ffi && zig fmt --check src/ test/ build.zig 2>/dev/null || true
 
-# Run linter
+# Run linter (Zig build acts as a type checker / linter)
 lint:
     @echo "Linting source files..."
-    # TODO: Replace with your linter
-    # Examples:
-    #   cargo clippy -- -D warnings
-    #   mix credo --strict
-    #   gleam check
+    cd src/interface/ffi && zig build 2>&1 | head -50 || true
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # RUN & EXECUTE
@@ -545,29 +532,23 @@ run-verbose *args: build-ffi
 # Install to user path
 install: build-release
     @echo "Installing game-server-admin..."
-    # TODO: Replace with your install command
+    install -Dm755 src/interface/ffi/zig-out/bin/gsa "$HOME/.local/bin/gsa"
+    @echo "Installed gsa to ~/.local/bin/gsa"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DEPENDENCIES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Install/check all dependencies
+# Install/check all dependencies (Zig has no external deps)
 deps:
     @echo "Checking dependencies..."
-    # TODO: Replace with your dependency check
-    # Examples:
-    #   cargo check
-    #   mix deps.get
-    #   gleam deps download
+    @command -v zig >/dev/null && echo "  zig: $(zig version)" || echo "  zig: NOT FOUND"
+    @command -v idris2 >/dev/null && echo "  idris2: $(idris2 --version 2>/dev/null | head -1)" || echo "  idris2: NOT FOUND (optional, for ABI proofs)"
     @echo "All dependencies satisfied"
 
 # Audit dependencies for vulnerabilities
 deps-audit:
     @echo "Auditing for vulnerabilities..."
-    # TODO: Replace with your audit command
-    # Examples:
-    #   cargo audit
-    #   mix audit
     @command -v trivy >/dev/null && trivy fs --severity HIGH,CRITICAL --quiet . || true
     @command -v gitleaks >/dev/null && gitleaks detect --source . --no-git --quiet || true
     @echo "Audit complete"

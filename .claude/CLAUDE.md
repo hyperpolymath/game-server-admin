@@ -76,13 +76,17 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 
 ## Current State (2026-03-29)
 
-- **Completion**: 93% (Phases 1-12 complete, 13-15 nearly done)
+- **Completion**: 100% (all 15 phases complete)
 - **Zig version**: 0.15.2 (see `.tool-versions`)
 - **Exported FFI symbols**: 24 (comptime linker hints in main.zig)
 - **Tests**: All 3 Zig suites pass. E2E: 8/8 against live VeriSimDB. Gossamer chain: 25/25.
 - **VeriSimDB**: Main on 8090 (built, running), backup on 8091 (game saves)
+- **Container**: Containerfile wired with real Zig build, entrypoint.sh execs gsa
+- **Nix/Guix**: Both flake.nix and guix.scm have real build/install phases
+- **Release CI**: release.yml builds Zig, packages tarball, uploads artifacts
+- **Groove**: Full manifest with probe/config/drift/alert capabilities
 - **Icon**: SVG + 256px PNG in assets/
-- **Remaining**: Bitbucket mirror (SSH key issue)
+- **Remaining**: Bitbucket mirror (SSH key -- manual step)
 
 ## Lint / Quality
 

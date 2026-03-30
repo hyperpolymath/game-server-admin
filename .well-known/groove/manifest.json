@@ -2,6 +2,7 @@
   "groove_version": "1",
   "service_id": "game-server-admin",
   "service_version": "0.1.0",
+  "description": "Universal game server probe, config management, and administration via Gossamer + VeriSimDB",
   "capabilities": {
     "workflow": {
       "type": "workflow",
@@ -10,13 +11,60 @@
       "endpoint": "/api/servers",
       "requires_auth": true,
       "panel_compatible": true
+    },
+    "probe": {
+      "type": "probe",
+      "description": "Protocol fingerprinting for game servers (Steam Query, Minecraft Query, RCON, etc.)",
+      "protocol": "http",
+      "endpoint": "/api/probe",
+      "requires_auth": false,
+      "panel_compatible": true
+    },
+    "config": {
+      "type": "config",
+      "description": "Game server config extraction and A2ML serialisation (XML, INI, JSON, YAML, TOML, Lua, KV, ENV)",
+      "protocol": "http",
+      "endpoint": "/api/config",
+      "requires_auth": true,
+      "panel_compatible": true
+    },
+    "drift": {
+      "type": "drift",
+      "description": "Config drift detection via VeriSimDB octad comparison",
+      "protocol": "http",
+      "endpoint": "/api/drift",
+      "requires_auth": true,
+      "panel_compatible": true
+    },
+    "alert": {
+      "type": "alert",
+      "description": "Voice and text alerts when server health thresholds are exceeded",
+      "protocol": "http",
+      "endpoint": "/api/alert",
+      "requires_auth": true,
+      "panel_compatible": false
     }
   },
-  "consumes": ["octad-storage", "voice", "text"],
+  "consumes": ["octad-storage", "voice", "text", "tts"],
+  "produces": ["server-probe-data", "config-snapshots", "drift-reports", "health-alerts", "a2ml-profiles"],
   "endpoints": {
     "health": "/health",
-    "groove": "/.well-known/groove"
+    "groove": "/.well-known/groove",
+    "verisimdb": "http://localhost:8090"
   },
   "health": "/health",
-  "applicability": ["individual", "team"]
+  "panels": [
+    "gsa-browser",
+    "gsa-config",
+    "gsa-actions",
+    "gsa-logs",
+    "gsa-health",
+    "gsa-history",
+    "gsa-search"
+  ],
+  "verisimdb": {
+    "main": {"port": 8090, "grpc": 50061, "volume": "gsa-verisimdb-data"},
+    "backup": {"port": 8091, "volume": "gsa-verisimdb-backup-data"}
+  },
+  "applicability": ["individual", "team", "self-hosted"]
 }
