@@ -78,6 +78,9 @@ flake.lock
 *.key
 secrets/
 
+# User configuration (contains sensitive server credentials)
+user-config.ncl
+
 # Test/Coverage
 /coverage/
 htmlcov/

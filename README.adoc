@@ -16,6 +16,8 @@ The AI reads the manifest, asks you a few questions, and handles everything.
 
 GSA can attach to _any_ game server, fingerprint it via protocol probing, extract its configuration into A2ML format, and provide a rich GUI for viewing, editing, and tracking config changes with full provenance.
 
+**New in this version:** User-configurable server connections with support for default servers and favorites list. See <<Configuration>> for details.
+
 === Architecture
 
 [source]
@@ -128,6 +130,47 @@ Each managed server is a VeriSimDB octad with all 8 modalities:
 * **Spatial:** datacenter geolocation
 
 Dedicated instance on port 8090 with persistent storage and 15s drift detection.
+
+== Configuration
+
+GSA now supports user-specific configuration through a Nickel (`.ncl`) configuration file. This allows you to:
+
+- Set a default server IP and port
+- Maintain a list of favorite servers
+- Customize UI preferences
+- Configure connection settings
+
+=== Initial Setup
+
+To create a default configuration file:
+
+[source,bash]
+----
+./gsa config init
+----
+
+This creates `user-config.ncl` from the template.
+
+=== Configuration Commands
+
+[source,bash]
+----
+# Show current configuration
+./gsa config show
+
+# Set default server
+./gsa config set-default mc.example.com 25565
+
+# Add a favorite server
+./gsa config add-favorite "My Minecraft" mc.example.com 25565
+
+# List favorite servers
+./gsa config list-favorites
+----
+
+=== Configuration File
+
+The configuration file (`user-config.ncl`) is **gitignored** to ensure your server credentials remain private. See `USER-CONFIG.md` for complete documentation.
 
 == License
 

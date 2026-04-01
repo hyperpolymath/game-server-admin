@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Game Server Admin — User Configuration Template
+#
+# This file defines user-specific settings including default server connections
+# and favorite servers. Copy this to user-config.ncl and customize.
+#
+# ⚠️  IMPORTANT: user-config.ncl is gitignored — it will never be committed.
+#              This ensures your server credentials stay private.
+
+{
+  # Default server connection (used when no server is explicitly selected)
+  default_server = {
+    # Hostname or IP address of the default game server
+    host = "localhost",
+    
+    # Port number for the default game server
+    port = 25565,
+    
+    # Optional: Default game profile ID (matches profiles/*.a2ml id attribute)
+    # profile_id = "minecraft-java",
+    
+    # Optional: RCON password (if applicable)
+    # rcon_password = "",
+  },
+
+  # Favorite servers list
+  # Each entry can be selected quickly from the UI
+  favorites = [
+    # Example favorite server configuration
+    # {
+    #   name = "My Minecraft Server",
+    #   host = "mc.example.com",
+    #   port = 25565,
+    #   profile_id = "minecraft-java",
+    #   rcon_password = "",
+    # },
+    
+    # Add more favorites as needed
+    # {
+    #   name = "My CS2 Server",
+    #   host = "cs2.example.com",
+    #   port = 27015,
+    #   profile_id = "csgo-cs2",
+    # },
+  ],
+
+  # UI preferences
+  ui = {
+    # Theme: "light", "dark", or "system"
+    theme = "system",
+    
+    # Default panel to show on startup
+    default_panel = "gsa-browser",
+    
+    # Show advanced options by default
+    show_advanced = false,
+  },
+
+  # Connection settings
+  connection = {
+    # Timeout in milliseconds for server probes
+    timeout_ms = 5000,
+    
+    # Maximum retries for failed connections
+    max_retries = 3,
+    
+    # Enable verbose logging for troubleshooting
+    verbose_logging = false,
+  },
+
+  # VeriSimDB settings
+  verisimdb = {
+    # URL of the VeriSimDB instance
+    url = "http://localhost:8090",
+    
+    # Enable automatic data submission
+    auto_submit = true,
+  },
+}
