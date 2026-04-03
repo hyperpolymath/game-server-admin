@@ -517,8 +517,12 @@ lint:
 # RUN & EXECUTE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Run the application
-run *args: build-ffi
+# Launch GSA (platform-detect, self-heal, git cycle)
+run:
+    deno run --allow-all run.js
+
+# Run the GSA binary directly (status probe, config, etc.)
+run-admin *args: build-ffi
     GSA_VERISIMDB_URL="${GSA_VERISIMDB_URL:-http://localhost:8090}" \
     GSA_PROFILES_DIR="${GSA_PROFILES_DIR:-./profiles}" \
     ./src/interface/ffi/zig-out/bin/gsa {{args}}
