@@ -413,6 +413,84 @@ verisimdb-deploy:
     systemctl --user status gsa-verisimdb --no-pager 2>/dev/null | head -5 || true
     systemctl --user status gsa-verisimdb-backup --no-pager 2>/dev/null | head -5 || true
 
+# ─── Game server provisioner ──────────────────────────────────────────────────
+#
+# Schema-driven game server minter.  Reads profiles/<game>.a2ml and
+# container/<game>/ to provision a complete running server:
+#   build → volumes → firewall → quadlet → start → verify → register in VeriSimDB
+#
+# Usage:
+#   just game-deploy GAME=cryofall           # any supported profile
+#   just cryofall-deploy                      # CryoFall shorthand
+#   just game-deploy GAME=cryofall DRY=1      # preview without executing
+#   just verpex-deploy GAME=cryofall          # SSH deploy to Verpex VPS
+
+# Generic game server deploy — GAME must be a profile ID (profiles/<GAME>.a2ml)
+game-deploy GAME="" DRY="0":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GAME="{{ GAME }}"
+    if [ -z "${GAME}" ]; then
+        echo "Usage: just game-deploy GAME=<profile-id>"
+        echo "Profiles: $(ls profiles/*.a2ml | sed 's|profiles/||; s|\.a2ml||' | tr '\n' ' ')"
+        exit 1
+    fi
+    PROVISION_DRY_RUN="{{ DRY }}" bash scripts/provision-server.sh "${GAME}"
+
+# CryoFall shorthand — equivalent to: just game-deploy GAME=cryofall
+cryofall-deploy:
+    just game-deploy GAME=cryofall
+
+# Build the CryoFall container image only (no full provision)
+cryofall-build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building CryoFall server image..."
+    podman build \
+        -t localhost/cryofall-server:latest \
+        -f container/cryofall/Containerfile \
+        .
+    echo "Built localhost/cryofall-server:latest"
+
+# CryoFall service management (via systemd Quadlet)
+cryofall-start:
+    systemctl --user start gsa-cryofall
+
+cryofall-stop:
+    systemctl --user stop gsa-cryofall
+
+cryofall-restart:
+    systemctl --user restart gsa-cryofall
+
+cryofall-logs:
+    podman logs --tail 100 -f cryofall
+
+cryofall-status:
+    #!/usr/bin/env bash
+    echo "CryoFall container:"
+    podman inspect --format "  Status: {{.State.Status}}  Health: {{.State.Health.Status}}" cryofall 2>/dev/null || echo "  Not running"
+    echo ""
+    echo "Systemd service:"
+    systemctl --user status gsa-cryofall --no-pager 2>/dev/null | head -8 || echo "  Not installed"
+
+# Deploy to Verpex VPS via SSH (run this from local machine)
+# Requires SSH key access: root@209.42.26.106
+verpex-deploy GAME="cryofall":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    GAME="{{ GAME }}"
+    VERPEX_HOST="209.42.26.106"
+    VERPEX_USER="root"
+    echo "Deploying ${GAME} server to Verpex VPS (${VERPEX_HOST})..."
+    # Copy provisioner + profiles + container definition
+    ssh "${VERPEX_USER}@${VERPEX_HOST}" "mkdir -p ~/gsa-provision/${GAME}"
+    rsync -az --progress \
+        profiles/ scripts/ container/"${GAME}"/ \
+        "${VERPEX_USER}@${VERPEX_HOST}:~/gsa-provision/${GAME}/"
+    # Run provisioner on the VPS
+    ssh "${VERPEX_USER}@${VERPEX_HOST}" "cd ~/gsa-provision/${GAME} && bash provision-server.sh ${GAME}"
+    echo "Remote provisioning complete."
+
 # Check VeriSimDB systemd service status
 verisimdb-status:
     #!/usr/bin/env bash
