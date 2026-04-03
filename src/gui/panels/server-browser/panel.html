@@ -1,5 +1,5 @@
 <!--
-  SPDX-License-Identifier: PMPL-1.0-or-later
+  SPDX-License-Identifier: AGPL-3.0-or-later
   Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
 
   server-browser/panel.html — Game Hub: discovery, setup, and lifecycle management
@@ -576,7 +576,7 @@ Preparing installation...</pre>
       }
 
       html += '</div>'
-        + '<button class="btn btn-sm btn-primary" style="width:100%;" onclick="event.stopPropagation();">Set Up Server</button>'
+        + '<button class="btn btn-sm btn-primary" style="width:100%;" onclick="event.stopPropagation();startSetupWizard(' + escapeHtml(JSON.stringify(JSON.stringify(p))) + ')">Set Up Server</button>'
         + '</div>';
     });
 
@@ -717,7 +717,7 @@ Preparing installation...</pre>
       }
 
       html += '</div>'
-        + '<button class="btn btn-sm btn-primary" style="width:100%;">Set Up Server</button>'
+        + '<button class="btn btn-sm btn-primary" style="width:100%;" onclick="event.stopPropagation();' + (r.profile ? 'startSetupWizard(' + escapeHtml(JSON.stringify(JSON.stringify(r.profile))) + ')' : 'startSteamSetup(' + (r.appid || 0) + ',\'' + escapeHtml(r.name) + '\')') + '">Set Up Server</button>'
         + '</div>';
     });
 

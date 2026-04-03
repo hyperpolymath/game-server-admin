@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: PMPL-1.0-or-later
+-- SPDX-License-Identifier: AGPL-3.0-or-later
 -- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
 --
 -- Shell.eph — Gossamer webview lifecycle for Game Server Admin
@@ -177,6 +177,18 @@ fn bindAllHandlers(channel: I64, caps: &GsaCapSet) -> I64 =
   -- Game Hub: File browser dialog
   let! channel = __ffi("gossamer_channel_bind", channel, "browse_file",
     fn(payload: String) -> String { Bridge.handleBrowseFile(payload) }) in
+
+  -- Groove voice alerting handlers (Burble/Vext integration)
+  let! channel = __ffi("gossamer_channel_bind", channel, "groove_discover",
+    fn(payload: String) -> String { Bridge.handleGrooveDiscover(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "groove_alert",
+    fn(payload: String) -> String { Bridge.handleGrooveAlert(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "groove_status",
+    fn(payload: String) -> String { Bridge.handleGrooveStatus(payload) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "groove_tts",
+    fn(payload: String) -> String { Bridge.handleGrooveTTS(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "groove_drift_alert",
+    fn(payload: String) -> String { Bridge.handleGrooveDriftAlert(payload, caps) }) in
 
   channel
 
