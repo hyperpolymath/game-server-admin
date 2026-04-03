@@ -458,7 +458,7 @@ fn parseAndDispatch(allocator: Allocator, json_str: []const u8) !ActionResult {
 ///
 /// Returns a NUL-terminated JSON string with the action result:
 ///   {"success": true/false, "output": "...", "exit_code": N}
-threadlocal var action_result_buf: [65536]u8 = undefined;
+threadlocal var action_result_buf: [65536:0]u8 = undefined;
 
 pub export fn gossamer_gsa_server_action(
     handle: c_int,
@@ -467,7 +467,7 @@ pub export fn gossamer_gsa_server_action(
     _ = handle;
     _ = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
 
     const allocator = std.heap.c_allocator;
@@ -475,7 +475,7 @@ pub export fn gossamer_gsa_server_action(
 
     const result = parseAndDispatch(allocator, json_str) catch |err| {
         main.setError("action dispatch failed: {s}", .{@errorName(err)});
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
     defer allocator.free(result.output);
 
@@ -486,7 +486,7 @@ pub export fn gossamer_gsa_server_action(
     writer.print("{{\"success\":{s},\"exit_code\":{d},\"output\":\"", .{
         if (result.success) "true" else "false",
         result.exit_code,
-    }) catch return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+    }) catch return "ERR";
 
     // Escape the output for JSON embedding
     for (result.output) |ch| {
@@ -510,13 +510,13 @@ pub export fn gossamer_gsa_server_action(
     writer.writeByte(0) catch {};
 
     main.clearError();
-    return @as([*:0]const u8, @ptrCast(&action_result_buf));
+    return &action_result_buf;
 }
 
 /// Get the last N lines of logs.
 ///
 /// Returns a NUL-terminated string of log text.
-threadlocal var logs_result_buf: [65536]u8 = undefined;
+threadlocal var logs_result_buf: [65536:0]u8 = undefined;
 
 pub export fn gossamer_gsa_get_logs(
     handle: c_int,
@@ -525,7 +525,7 @@ pub export fn gossamer_gsa_get_logs(
     _ = handle;
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
 
     const allocator = std.heap.c_allocator;
@@ -535,13 +535,13 @@ pub export fn gossamer_gsa_get_logs(
     var it = gsa.active_connections.iterator();
     const entry = it.next() orelse {
         main.setErrorStr("no servers tracked");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
 
     const conn = entry.value_ptr;
     const logs = streamLogs(allocator, conn.host, entry.key_ptr.*, line_count, .podman) catch |err| {
         main.setError("log retrieval failed: {s}", .{@errorName(err)});
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
     defer allocator.free(logs);
 
@@ -550,7 +550,7 @@ pub export fn gossamer_gsa_get_logs(
     logs_result_buf[copy_len] = 0;
 
     main.clearError();
-    return @as([*:0]const u8, @ptrCast(&logs_result_buf));
+    return &logs_result_buf;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

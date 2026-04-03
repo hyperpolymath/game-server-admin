@@ -324,14 +324,14 @@ pub export fn gossamer_gsa_verisimdb_store(
 /// Execute a VQL query against VeriSimDB.
 ///
 /// Returns a NUL-terminated JSON string with the query results.
-threadlocal var vql_result_buf: [16384]u8 = undefined;
+threadlocal var vql_result_buf: [16384:0]u8 = undefined;
 
 pub export fn gossamer_gsa_verisimdb_query(
     vql: [*:0]const u8,
 ) callconv(.c) [*:0]const u8 {
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
 
     var client = VeriSimClient.init(std.heap.c_allocator, gsa.verisimdb_url);
@@ -340,7 +340,7 @@ pub export fn gossamer_gsa_verisimdb_query(
     const vql_str = std.mem.span(vql);
     const result = client.executeVQL(vql_str) catch |err| {
         main.setError("VQL query failed: {s}", .{@errorName(err)});
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
     defer std.heap.c_allocator.free(result);
 
@@ -349,7 +349,7 @@ pub export fn gossamer_gsa_verisimdb_query(
     vql_result_buf[copy_len] = 0;
 
     main.clearError();
-    return @as([*:0]const u8, @ptrCast(&vql_result_buf));
+    return &vql_result_buf;
 }
 
 /// Check VeriSimDB health.
@@ -368,14 +368,14 @@ pub export fn gossamer_gsa_verisimdb_health() callconv(.c) c_int {
 }
 
 /// Get drift information for a server.
-threadlocal var drift_result_buf: [8192]u8 = undefined;
+threadlocal var drift_result_buf: [8192:0]u8 = undefined;
 
 pub export fn gossamer_gsa_verisimdb_drift(
     server_id: [*:0]const u8,
 ) callconv(.c) [*:0]const u8 {
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
 
     var client = VeriSimClient.init(std.heap.c_allocator, gsa.verisimdb_url);
@@ -384,7 +384,7 @@ pub export fn gossamer_gsa_verisimdb_drift(
     const sid = std.mem.span(server_id);
     const result = client.getDrift(sid) catch |err| {
         main.setError("drift query failed: {s}", .{@errorName(err)});
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
     defer std.heap.c_allocator.free(result);
 
@@ -393,7 +393,7 @@ pub export fn gossamer_gsa_verisimdb_drift(
     drift_result_buf[copy_len] = 0;
 
     main.clearError();
-    return @as([*:0]const u8, @ptrCast(&drift_result_buf));
+    return &drift_result_buf;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

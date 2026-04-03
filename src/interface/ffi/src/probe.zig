@@ -699,7 +699,7 @@ pub export fn gossamer_gsa_probe(
 /// Returns a NUL-terminated JSON string with an array of fingerprint
 /// objects.  Caller must treat the pointer as read-only; it is valid
 /// until the next call to this function on the same thread.
-threadlocal var fingerprint_result_buf: [8192]u8 = undefined;
+threadlocal var fingerprint_result_buf: [8192:0]u8 = undefined;
 
 pub export fn gossamer_gsa_fingerprint(
     host_ptr: [*:0]const u8,
@@ -712,7 +712,7 @@ pub export fn gossamer_gsa_fingerprint(
     var buf_stream = std.io.fixedBufferStream(&fingerprint_result_buf);
     const writer = buf_stream.writer();
 
-    writer.writeAll("[") catch return @as([*:0]const u8, @ptrCast(&[_:0]u8{'[', ']'}));
+    writer.writeAll("[") catch return "[]";
 
     // Simple JSON array parser: expect [1234, 5678, ...]
     var first = true;
@@ -751,7 +751,7 @@ pub export fn gossamer_gsa_fingerprint(
     writer.writeAll("]") catch {};
     writer.writeByte(0) catch {};
 
-    return @as([*:0]const u8, @ptrCast(&fingerprint_result_buf));
+    return &fingerprint_result_buf;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

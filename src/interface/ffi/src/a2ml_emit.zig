@@ -456,7 +456,7 @@ fn stringToFormat(s: []const u8) config_extract.ConfigFormat {
 // Exported C ABI functions
 // ═══════════════════════════════════════════════════════════════════════════════
 
-threadlocal var emit_result_buf: [16384]u8 = undefined;
+threadlocal var emit_result_buf: [16384:0]u8 = undefined;
 
 /// Convert a JSON config representation to A2ML.
 pub export fn gossamer_gsa_a2ml_emit(
@@ -467,7 +467,7 @@ pub export fn gossamer_gsa_a2ml_emit(
 
     var parsed = config_extract.parseJSON(allocator, json_str) catch {
         main.setErrorStr("JSON parse failed");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
     defer parsed.deinit();
 
@@ -476,7 +476,7 @@ pub export fn gossamer_gsa_a2ml_emit(
 
     const a2ml = emitA2ML(allocator, "unknown", "unknown", &parsed, &empty_profile) catch {
         main.setErrorStr("A2ML emit failed");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
     defer allocator.free(a2ml);
 
@@ -484,10 +484,10 @@ pub export fn gossamer_gsa_a2ml_emit(
     @memcpy(emit_result_buf[0..copy_len], a2ml[0..copy_len]);
     emit_result_buf[copy_len] = 0;
 
-    return @as([*:0]const u8, @ptrCast(&emit_result_buf));
+    return &emit_result_buf;
 }
 
-threadlocal var parse_result_buf: [16384]u8 = undefined;
+threadlocal var parse_result_buf: [16384:0]u8 = undefined;
 
 /// Parse A2ML back to a JSON representation.
 pub export fn gossamer_gsa_a2ml_parse(
@@ -498,7 +498,7 @@ pub export fn gossamer_gsa_a2ml_parse(
 
     var config = parseA2ML(allocator, a2ml_str) catch {
         main.setErrorStr("A2ML parse failed");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
     defer config.deinit();
 
@@ -507,7 +507,7 @@ pub export fn gossamer_gsa_a2ml_parse(
     defer json_buf.deinit();
     const writer = json_buf.writer();
 
-    writer.writeAll("{") catch return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+    writer.writeAll("{") catch return "ERR";
     for (config.fields.items, 0..) |field, i| {
         if (i > 0) writer.writeAll(",") catch {};
         writer.print("\"{s}\":\"{s}\"", .{ field.key, field.value }) catch {};
@@ -519,7 +519,7 @@ pub export fn gossamer_gsa_a2ml_parse(
     @memcpy(parse_result_buf[0..copy_len], json[0..copy_len]);
     parse_result_buf[copy_len] = 0;
 
-    return @as([*:0]const u8, @ptrCast(&parse_result_buf));
+    return &parse_result_buf;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

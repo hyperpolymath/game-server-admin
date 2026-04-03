@@ -1006,7 +1006,7 @@ pub fn extractViaRCON(
 
 /// Extract the configuration for a server/profile combination and return
 /// it as an A2ML string.
-threadlocal var extract_result_buf: [16384]u8 = undefined;
+threadlocal var extract_result_buf: [16384:0]u8 = undefined;
 
 pub export fn gossamer_gsa_extract_config(
     handle: c_int,
@@ -1015,13 +1015,13 @@ pub export fn gossamer_gsa_extract_config(
     _ = handle;
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
 
     const pid = std.mem.span(profile_id);
     const profile = gsa.profile_registry.getProfile(pid) orelse {
         main.setError("unknown profile: {s}", .{pid});
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
 
     // Try to extract config from the profile's configured path
@@ -1032,13 +1032,13 @@ pub export fn gossamer_gsa_extract_config(
         .podman,
     ) catch |err| {
         main.setError("extraction failed: {s}", .{@errorName(err)});
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
     defer std.heap.c_allocator.free(config_data);
 
     var parsed = parseAuto(std.heap.c_allocator, config_data) catch {
         main.setErrorStr("parse failed");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
     defer parsed.deinit();
 
@@ -1051,7 +1051,7 @@ pub export fn gossamer_gsa_extract_config(
         profile,
     ) catch {
         main.setErrorStr("A2ML emit failed");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ 'E', 'R', 'R' }));
+        return "ERR";
     };
     defer std.heap.c_allocator.free(a2ml);
 
@@ -1060,7 +1060,7 @@ pub export fn gossamer_gsa_extract_config(
     @memcpy(extract_result_buf[0..copy_len], a2ml[0..copy_len]);
     extract_result_buf[copy_len] = 0;
 
-    return @as([*:0]const u8, @ptrCast(&extract_result_buf));
+    return &extract_result_buf;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

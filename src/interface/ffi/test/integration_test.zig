@@ -465,14 +465,19 @@ test "known ports: major games are represented" {
 // 6. VeriSimDB client URL construction
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// NOTE: These tests use http:// (not https://) because VeriSimDB runs on the
+// loopback interface (127.0.0.1 / ::1) during local development and CI.
+// No TLS is needed for loopback-only communication; production deployments
+// behind a reverse proxy use TLS at the proxy boundary.
+
 test "VeriSimDB client: stores base URL" {
-    const client = verisimdb_client.VeriSimClient.init(testing.allocator, "http://localhost:7820");
-    try testing.expectEqualStrings("http://localhost:7820", client.base_url);
+    const client = verisimdb_client.VeriSimClient.init(testing.allocator, "http://[::1]:7820");
+    try testing.expectEqualStrings("http://[::1]:7820", client.base_url);
 }
 
 test "VeriSimDB client: different URLs are distinct" {
-    const c1 = verisimdb_client.VeriSimClient.init(testing.allocator, "http://host1:7820");
-    const c2 = verisimdb_client.VeriSimClient.init(testing.allocator, "http://host2:7821");
+    const c1 = verisimdb_client.VeriSimClient.init(testing.allocator, "http://[::1]:7820");
+    const c2 = verisimdb_client.VeriSimClient.init(testing.allocator, "http://[::1]:7821");
     try testing.expect(!std.mem.eql(u8, c1.base_url, c2.base_url));
 }
 
@@ -652,7 +657,7 @@ test "ConfigFormat enum has 8 variants" {
 
 test "GsaHandle: create, track, query, destroy" {
     const allocator = testing.allocator;
-    const handle = try main.GsaHandle.create(allocator, "http://test:7820", "");
+    const handle = try main.GsaHandle.create(allocator, "http://[::1]:7820", "");
     defer handle.destroy();
 
     try testing.expect(handle.initialized);

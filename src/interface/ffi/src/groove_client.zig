@@ -392,7 +392,7 @@ pub export fn gossamer_gsa_groove_discover() callconv(.c) c_int {
 ///
 /// Returns a NUL-terminated JSON string with the target status.
 /// The pointer is valid until the next call on the same thread.
-threadlocal var groove_status_buf: [1024]u8 = undefined;
+threadlocal var groove_status_buf: [1024:0]u8 = undefined;
 
 pub export fn gossamer_gsa_groove_status(
     target_name: [*:0]const u8,
@@ -407,7 +407,7 @@ pub export fn gossamer_gsa_groove_status(
         var stream = std.io.fixedBufferStream(&groove_status_buf);
         stream.writer().print("{{\"status\":\"unknown\",\"name\":\"{s}\",\"reachable\":false}}", .{name}) catch {};
         stream.writer().writeByte(0) catch {};
-        return @as([*:0]const u8, @ptrCast(&groove_status_buf));
+        return &groove_status_buf;
     };
 
     const status_str: []const u8 = switch (target.status) {
@@ -432,7 +432,7 @@ pub export fn gossamer_gsa_groove_status(
     ) catch {};
     stream.writer().writeByte(0) catch {};
 
-    return @as([*:0]const u8, @ptrCast(&groove_status_buf));
+    return &groove_status_buf;
 }
 
 /// Send an alert message to the first reachable Groove target (Burble preferred).

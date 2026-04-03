@@ -83,7 +83,7 @@ pub const GsaResult = enum(c_int) {
 
 /// Fixed-size thread-local buffer for the last error message.
 /// Callers retrieve it via `gossamer_gsa_last_error`.
-threadlocal var last_error_buf: [512]u8 = [_]u8{0} ** 512;
+threadlocal var last_error_buf: [512:0]u8 = [_:0]u8{0} ** 512;
 threadlocal var last_error_len: usize = 0;
 
 /// Write an error message into the thread-local buffer.
@@ -279,7 +279,7 @@ pub export fn gossamer_gsa_shutdown() callconv(.c) c_int {
 /// Returns a NUL-terminated string in thread-local storage.  The pointer
 /// remains valid until the next FFI call on the same thread.
 pub export fn gossamer_gsa_last_error() callconv(.c) [*:0]const u8 {
-    return @as([*:0]const u8, @ptrCast(&last_error_buf));
+    return &last_error_buf;
 }
 
 /// Library version string (e.g. "0.1.0").

@@ -509,17 +509,17 @@ pub export fn gossamer_gsa_load_profiles(
 /// List all loaded profiles as a JSON array.
 ///
 /// Returns a NUL-terminated JSON string.
-threadlocal var list_profiles_buf: [16384]u8 = undefined;
+threadlocal var list_profiles_buf: [16384:0]u8 = undefined;
 
 pub export fn gossamer_gsa_list_profiles() callconv(.c) [*:0]const u8 {
     const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ '[', ']' }));
+        return "[]";
     };
 
     const json = gsa.profile_registry.listProfiles(std.heap.c_allocator) catch {
         main.setErrorStr("list profiles failed");
-        return @as([*:0]const u8, @ptrCast(&[_:0]u8{ '[', ']' }));
+        return "[]";
     };
     defer std.heap.c_allocator.free(json);
 
@@ -527,7 +527,7 @@ pub export fn gossamer_gsa_list_profiles() callconv(.c) [*:0]const u8 {
     @memcpy(list_profiles_buf[0..copy_len], json[0..copy_len]);
     list_profiles_buf[copy_len] = 0;
 
-    return @as([*:0]const u8, @ptrCast(&list_profiles_buf));
+    return &list_profiles_buf;
 }
 
 /// Add a profile from an A2ML string (not a file path).

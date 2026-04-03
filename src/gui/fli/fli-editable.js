@@ -161,12 +161,13 @@
     var min = element.dataset.editableMin;
     var max = element.dataset.editableMax;
 
-    // Store state
+    // Store state — capture child nodes via deep clone so cancelEdit restores
+    // the DOM directly (no innerHTML re-parse, no injection risk).
     activeEditor = {
       element: element,
       key: key,
       oldValue: oldValue,
-      oldHTML: element.innerHTML,
+      oldNodes: Array.from(element.childNodes).map(function(n) { return n.cloneNode(true); }),
       opts: opts
     };
 
@@ -319,7 +320,7 @@
     var opts = activeEditor.opts;
 
     element.classList.remove('fli-editing');
-    element.innerHTML = activeEditor.oldHTML;
+    element.replaceChildren.apply(element, activeEditor.oldNodes);
 
     if (opts.onCancel) opts.onCancel(activeEditor.key, activeEditor.oldValue);
 
