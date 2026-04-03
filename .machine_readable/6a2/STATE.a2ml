@@ -6,7 +6,7 @@
 [metadata]
 project = "game-server-admin"
 version = "0.1.0"
-last-updated = "2026-04-03"
+last-updated = "2026-04-03b"
 status = "active"
 
 [project-context]
@@ -57,4 +57,5 @@ sessions = [
   { date = "2026-03-29", summary = "Marathon session: Zig 0.15.2 full compat (all 9 FFI modules incl. cli.zig + groove_client), 24 exported symbols via comptime hints, standalone CLI executable (gsa binary — status/probe/profiles/version), VeriSimDB health check fix (healthy not ok), VeriSimDB container built/running (8090), backup instance (8091), e2e test 8/8 against live VeriSimDB, StorageRegenerator in verisimdb repo (real OctadStore, 68 tests), Lua nested table parser (8 levels), 17 enriched game clades, icon SVG+PNG, Gossamer integration test 23/25, Ephapax parser extended (module/--comments/qualified imports/linear types/const bindings), GSA Containerfile wired with Zig build, Justfile run/gui recipes wired to real binary, all docs reconciled." },
   { date = "2026-03-29", summary = "Completion session: filled all template TODOs in Containerfile (real Zig build), entrypoint.sh (exec gsa), flake.nix (Zig devshell + package), guix.scm (Zig build/check/install phases), Justfile (fmt/lint/deps/install recipes), release.yml (real build + artifact upload). Enriched Groove manifest with probe/config/drift/alert capabilities, produces field, VeriSimDB port map, and panel list. Updated STATE.a2ml to 100%." },
   { date = "2026-04-03", summary = "Blitz session: 112 Zig tests (was ~40). 30 new unit tests across server_actions (8 security/injection), config_extract (12 parser edge cases + detectFormat regression), groove_client (4 overflow/truncation), a2ml_emit (7 diff/redaction). Fixed 7 pre-existing Zig 0.15.2 compat bugs: std.json.stringify→json.fmt, std.fs.exists→fileExists helper, createFile sig, broken multiline string, stack-returning helpers (UB), missing catch, detectFormat [n...] false positive. Idris2 Layout.idr: replaced postulate alignUpProducesAligned with constructive proof (alignUpCeil + alignUpCeilIsMultiple via IsMultipleOf witness). Removed fake fuzz placeholder. All docs updated." },
+  { date = "2026-04-03b", summary = "Security hardening: replaced 427 AGPL-3.0-or-later headers with PMPL-1.0-or-later, replaced LICENSE with PMPL text. Fixed critical vuln (executeSSH shell injection — refactored to argv slice + -- separator). Fixed temp-file TOCTOU in gossamer-integration-test.sh (mktemp). Removed dangling-ref getWriter function. Replaced hardcoded test credentials. Added escapeXml to fli-gauge.js, escapeHtml+data-tip escaping to fli-tooltip.js, DOM node clone in fli-editable.js cancelEdit. Eliminated all 8 @ptrCast calls across FFI layer (string literals + [N:0]u8 sentinel buffers). Filled K9 template-hunt.k9.ncl TODO placeholders with GSA deployment content. All 111 Zig tests pass. panic-attack: 0 weak points (was 21)." },
 ]
