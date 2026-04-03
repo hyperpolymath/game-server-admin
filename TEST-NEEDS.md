@@ -1,57 +1,74 @@
 # Test & Benchmark Requirements
 
-## Current State
-- Unit tests: NONE
-- Integration tests: 2 Zig integration tests (template-level)
-- E2E tests: NONE
-- Benchmarks: NONE
-- panic-attack scan: NEVER RUN (feature dir exists but no report)
+## Current State (2026-04-03 blitz)
 
-## What's Missing
-### Point-to-Point (P2P)
-13 Zig + 13 Ephapax + 3 Idris2 + 5 JS + 1 ReScript source files with ZERO functional tests:
+- **Unit tests**: 67 tests across 8 Zig modules (was: NONE)
+- **Integration tests**: 39 tests in `test/integration_test.zig`
+- **Smoke tests**: 5 end-to-end tests in `test/smoke_test.zig`
+- **Total**: 111 Zig tests, all passing
+- **Benchmarks**: NONE (planned)
+- **Fuzz**: No harness yet (placeholder removed; see `tests/fuzz/README.md`)
 
-#### Core (Ephapax — 6 files):
-- Types.eph — no tests
-- Capabilities.eph — no tests
-- Shell.eph — no tests
-- Bridge.eph — no tests
-- GrooveClient.eph — no tests
+## What Was Added (2026-04-03)
 
-#### GUI (Ephapax — 1 file):
-- main.eph — no tests
+### Security Tests (server_actions.zig — 8 new tests)
+- isLocalhost edge cases: IPv6, injection strings, whitespace, case
+- parseAndDispatch: invalid JSON, empty JSON, unknown action/runtime
+- ActionKind integer mapping verification
+- executeAction: local podman, systemd journalctl paths
 
-#### Zig (13 files):
-- Only 2 template integration tests
+### Config Parser Edge Cases (config_extract.zig — 11 new tests)
+- Empty/whitespace input handling
+- XML self-closing and element patterns
+- JSON nested object flattening, booleans, nulls
+- parseAuto dispatch verification
+- Secret detection for password/token/secret keys
+- ParsedConfig.getField null for missing keys
+- isNumeric edge cases
 
-#### JavaScript (5 files):
-- No tests
+### Groove Client Tests (groove_client.zig — 4 new tests)
+- Target registry overflow (MAX_TARGETS = 8)
+- Buffer truncation for oversized name/host
+- TargetStatus enum completeness
+- Empty name/host edge cases
 
-#### Idris2 ABI (3 files):
-- No verification tests
+### A2ML Tests (a2ml_emit.zig — 7 new tests)
+- applyDiff: key-value Modified/Added/Removed
+- extractA2MLAttr and extractQuotedValue edge cases
+- Secret redaction verification
+
+### Bug Fixes
+- Fixed `std.json.stringify` -> `std.json.fmt` (Zig 0.15.2 compat)
+- Fixed `std.fs.exists` -> `fileExists` helper (Zig 0.15.2 compat)
+- Fixed `std.fs.cwd().createFile` signature (Zig 0.15.2 compat)
+- Fixed broken multiline string in CLI usage text
+- Fixed stack-returning helper functions (undefined behavior)
+- Fixed multiple missing `catch {}` on writeAll calls
+
+## What's Still Missing
+
+### Ephapax / GUI Tests
+- Core: Types.eph, Capabilities.eph, Shell.eph, Bridge.eph, GrooveClient.eph
+- GUI: main.eph, 7 panel .eph files
+- JavaScript: 5 bridge/glue files
+- These require Ephapax compiler + Gossamer runtime
+
+### Idris2 ABI Tests
+- Layout.idr postulate replaced with constructive proof (`alignUpCeil` + `alignUpCeilIsMultiple`)
+- No compile-time Idris2 tests wired into CI yet
 
 ### End-to-End (E2E)
-- Game server lifecycle: discover -> connect -> configure -> monitor -> restart
-- Panel system: load panels -> display server status -> interact
-- Groove integration: discover services -> negotiate capabilities
-- Shell execution: send command -> execute on server -> return output
-- Per-game profile: load profile -> apply settings -> verify
-- VeriSimDB integration: store server metrics -> query -> dashboard
-- Clade system integration: classify servers -> manage taxonomy
+- [ ] Game server lifecycle: discover -> connect -> configure -> monitor -> restart
+- [ ] Panel system: load panels -> display -> interact
+- [ ] Groove integration: discover services -> negotiate capabilities
+- [ ] Per-game profile: load -> apply -> verify
+- [ ] VeriSimDB integration: store -> query -> dashboard
 
 ### Aspect Tests
-- [ ] Security (shell command injection — CRITICAL, server credential handling, Groove auth, capability escalation)
-- [ ] Performance (server monitoring poll latency, multi-server dashboard rendering)
-- [ ] Concurrency (multiple server management, concurrent shell sessions)
-- [ ] Error handling (server unreachable, auth failure, malformed server response)
-- [ ] Accessibility (admin panel keyboard navigation, screen reader, color contrast)
-
-### Build & Execution
-- [ ] zig build — not verified
-- [ ] Ephapax compile — not verified
-- [ ] GUI launches — not verified
-- [ ] Shell command execution — not verified
-- [ ] Self-diagnostic — none
+- [ ] Performance: poll latency, multi-server dashboard rendering
+- [ ] Concurrency: multiple server management, concurrent sessions
+- [ ] Error handling: unreachable servers, auth failures, malformed responses
+- [ ] Accessibility: keyboard navigation, screen reader, color contrast
 
 ### Benchmarks Needed
 - Server status poll frequency vs latency
@@ -65,10 +82,6 @@
 - [ ] Groove handshake self-test
 
 ## Priority
-- **HIGH** — Game server administration tool (13 Zig + 13 Ephapax + 5 JS files) with ZERO functional tests. The Shell.eph module that executes commands on remote servers is a massive security surface that is completely untested. Command injection testing is non-negotiable for any tool that runs shell commands on game servers.
-
-## FAKE-FUZZ ALERT
-
-- `tests/fuzz/placeholder.txt` is a scorecard placeholder inherited from rsr-template-repo — it does NOT provide real fuzz testing
-- Replace with an actual fuzz harness (see rsr-template-repo/tests/fuzz/README.adoc) or remove the file
-- Priority: P2 — creates false impression of fuzz coverage
+- **DONE** — Core Zig FFI modules now have comprehensive tests including security-critical command injection coverage
+- **MEDIUM** — Ephapax/GUI tests (requires runtime tooling)
+- **LOW** — Benchmarks, fuzz harness, E2E with live services

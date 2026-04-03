@@ -4,7 +4,7 @@
   "description": "Discover, fingerprint, and manage game servers",
   "version": "0.1.0",
   "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
-  "license": "PMPL-1.0-or-later",
+  "license": "AGPL-3.0-or-later",
   "runtime": "gossamer",
   "dimensions": { "width": 1400, "height": 900, "resizable": true },
   "entry": "../../src/gui/panels/server-browser/panel.html",

@@ -591,3 +591,52 @@ test "upsert and find target" {
     // Clean up
     groove_target_count = 0;
 }
+
+test "target registry overflow: last slot overwritten at MAX_TARGETS" {
+    groove_target_count = 0;
+    // Fill all 8 slots
+    var i: u16 = 0;
+    while (i < MAX_TARGETS) : (i += 1) {
+        var name_buf: [16]u8 = undefined;
+        const name = std.fmt.bufPrint(&name_buf, "target-{d}", .{i}) catch "?";
+        _ = upsertTarget(name, "127.0.0.1", 6000 + i);
+    }
+    try std.testing.expectEqual(@as(usize, MAX_TARGETS), groove_target_count);
+
+    // Insert one more — should overwrite last slot
+    _ = upsertTarget("overflow", "10.0.0.1", 9999);
+    try std.testing.expectEqual(@as(usize, MAX_TARGETS), groove_target_count);
+    // Last slot should be the overflow target
+    try std.testing.expectEqualStrings("overflow", groove_targets[MAX_TARGETS - 1].nameSlice());
+    groove_target_count = 0;
+}
+
+test "GrooveTarget buffer truncation: oversized name and host" {
+    var target = GrooveTarget{};
+    // Name buffer is 64 bytes — pass 100 chars
+    const long_name = "A" ** 100;
+    target.setName(long_name);
+    try std.testing.expectEqual(@as(usize, 64), target.name_len);
+
+    // Host buffer is 256 bytes — pass 512 chars
+    const long_host = "B" ** 512;
+    target.setHost(long_host);
+    try std.testing.expectEqual(@as(usize, 256), target.host_len);
+}
+
+test "TargetStatus enum has 4 variants" {
+    const fields = @typeInfo(TargetStatus).@"enum".fields;
+    try std.testing.expectEqual(@as(usize, 4), fields.len);
+    try std.testing.expectEqual(@as(u8, 0), @intFromEnum(TargetStatus.unknown));
+    try std.testing.expectEqual(@as(u8, 1), @intFromEnum(TargetStatus.reachable));
+    try std.testing.expectEqual(@as(u8, 2), @intFromEnum(TargetStatus.not_reachable));
+    try std.testing.expectEqual(@as(u8, 3), @intFromEnum(TargetStatus.@"error"));
+}
+
+test "empty name and host edge case" {
+    var target = GrooveTarget{};
+    try std.testing.expectEqual(@as(usize, 0), target.name_len);
+    try std.testing.expectEqual(@as(usize, 0), target.host_len);
+    try std.testing.expectEqualStrings("", target.nameSlice());
+    try std.testing.expectEqualStrings("", target.hostSlice());
+}

@@ -15,7 +15,7 @@ game-server-admin — containerised service packaged as a verified
 cerro-torre .ctp bundle with Ed25519 signing and full provenance
 tracking.
 """
-license = "PMPL-1.0-or-later"
+license = "AGPL-3.0-or-later"
 homepage = "https://github/hyperpolymath/game-server-admin"
 maintainer = "Jonathan D.A. Jewell <{{EMAIL}}>"
 

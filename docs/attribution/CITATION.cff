@@ -9,7 +9,7 @@ version: 0.1.0
 date-released: 2026-03-22
 url: "https://github/hyperpolymath/game-server-admin"
 repository-code: "https://github/hyperpolymath/game-server-admin"
-license: PMPL-1.0-or-later
+license: AGPL-3.0-or-later
 keywords:
   - "rsr"
   - "formal-verification"

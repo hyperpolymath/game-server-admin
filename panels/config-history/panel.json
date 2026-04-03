@@ -4,7 +4,7 @@
   "description": "Config version timeline with diff viewer and provenance chain",
   "version": "0.1.0",
   "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
-  "license": "PMPL-1.0-or-later",
+  "license": "AGPL-3.0-or-later",
   "runtime": "gossamer",
   "dimensions": { "width": 1400, "height": 900, "resizable": true },
   "entry": "../../src/gui/panels/config-history/panel.html",

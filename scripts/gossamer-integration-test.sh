@@ -151,20 +151,23 @@ echo ""
 echo "Step 6: Ephapax parser feature readiness"
 
 # Check basic let binding with semicolon sequencing (heredoc avoids bash escaping)
-cat > /tmp/ephapax-test-basic.eph << 'EPHTEST'
+# Use mktemp to avoid TOCTOU symlink attacks on /tmp fixed paths
+EPHTEST_BASIC=$(mktemp --suffix=.eph)
+EPHTEST_LINEAR=$(mktemp --suffix=.eph)
+cat > "$EPHTEST_BASIC" << 'EPHTEST'
 fn main(): I32 = let x : I32 = 42 in x
 EPHTEST
-if "$EPHAPAX" check /tmp/ephapax-test-basic.eph >/dev/null 2>&1; then
+if "$EPHAPAX" check "$EPHTEST_BASIC" >/dev/null 2>&1; then
     pass "Basic let binding works"
 else
     fail "Basic let binding fails"
 fi
 
 # Check linear let! binding (use heredoc to avoid bash ! escaping)
-cat > /tmp/ephapax-test-linear.eph << 'EPHTEST'
+cat > "$EPHTEST_LINEAR" << 'EPHTEST'
 fn main(): I32 = let! x : I32 = 42 in x
 EPHTEST
-if "$EPHAPAX" check /tmp/ephapax-test-linear.eph >/dev/null 2>&1; then
+if "$EPHAPAX" check "$EPHTEST_LINEAR" >/dev/null 2>&1; then
     pass "Linear let! binding works"
 else
     fail "Linear let! binding not yet supported (parser gap)"
@@ -172,7 +175,7 @@ else
     echo "  → Shell.eph requires: let!, __ffi(), module, import"
 fi
 
-rm -f /tmp/ephapax-test-basic.eph /tmp/ephapax-test-linear.eph
+rm -f "$EPHTEST_BASIC" "$EPHTEST_LINEAR"
 
 # ── Summary ──────────────────────────────────────────────────────────
 

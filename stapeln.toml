@@ -9,7 +9,7 @@ name = "game-server-admin"
 version = "0.1.0"
 description = "game-server-admin container service"
 author = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
-license = "PMPL-1.0-or-later"
+license = "AGPL-3.0-or-later"
 registry = "ghcr.io/hyperpolymath"
 
 [build]

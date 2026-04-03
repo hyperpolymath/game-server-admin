@@ -153,7 +153,7 @@ test "Lua parser: deeply nested tables" {
         \\  },
         \\  network = {
         \\    cluster_name = "My DST Server",
-        \\    cluster_password = "secret123",
+        \\    cluster_password = "",
         \\    lan_only = false,
         \\  },
         \\  misc = {
@@ -245,7 +245,7 @@ test "A2ML: emit produces valid structure" {
 
     try config.addField("server-name", "Integration Test", "string", "Server Name", "Default", null, null, false);
     try config.addField("max-players", "32", "int", "Max Players", "20", 1.0, 100.0, false);
-    try config.addField("rcon.password", "hunter2", "secret", "RCON Password", "", null, null, true);
+    try config.addField("rcon.password", "", "secret", "RCON Password", "", null, null, true);
 
     var profile = game_profiles.GameProfile.empty();
 

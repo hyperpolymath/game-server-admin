@@ -30,6 +30,22 @@
    * @param {number} value - Normalised value (0.0 to 1.0)
    * @returns {string} CSS colour string
    */
+  /**
+   * Escape special XML/SVG characters in a string to prevent injection.
+   * Must be applied to any user-supplied text before embedding in SVG.
+   *
+   * @param {string} str - Raw string
+   * @returns {string} XML-escaped string safe for SVG text content
+   */
+  function escapeXml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function valueColour(value) {
     if (value < 0.2) return '#3fb950';
     if (value < 0.4) return '#7ec84a';
@@ -135,7 +151,7 @@
     if (label) {
       svg += '<text x="' + cx + '" y="' + (cy + Math.round(size / 5)) + '" text-anchor="middle"'
         + ' fill="#8b949e" font-size="' + Math.round(size / 11) + '" font-family="system-ui, sans-serif">'
-        + label + '</text>';
+        + escapeXml(label) + '</text>';
     }
 
     svg += '</svg>';
@@ -192,7 +208,7 @@
     if (label) {
       svg += '<text x="' + cx + '" y="' + (cy + Math.round(size / 5.5)) + '" text-anchor="middle"'
         + ' fill="#8b949e" font-size="' + Math.round(size / 9) + '" font-family="system-ui, sans-serif">'
-        + label + '</text>';
+        + escapeXml(label) + '</text>';
     }
 
     svg += '</svg>';

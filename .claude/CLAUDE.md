@@ -74,12 +74,17 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
   - **Backup** (port 8091, `GSA_BACKUP_VERISIMDB_URL`): game save metadata, snapshots, restore points
 - **Container images** use Chainguard Wolfi base, Podman, `Containerfile` (never Docker/Dockerfile)
 
-## Current State (2026-03-29)
+## Current State (2026-04-03)
 
 - **Completion**: 100% (all 15 phases complete)
 - **Zig version**: 0.15.2 (see `.tool-versions`)
 - **Exported FFI symbols**: 24 (comptime linker hints in main.zig)
-- **Tests**: All 3 Zig suites pass. E2E: 8/8 against live VeriSimDB. Gossamer chain: 25/25.
+- **Tests**: 111 Zig tests across 3 suites (unit: 67, integration: 39, smoke: 5). All passing.
+  - Security tests for command injection in server_actions
+  - Config parser edge cases for all 8 formats
+  - A2ML round-trip, diff, and secret redaction tests
+  - Groove target registry overflow and buffer truncation tests
+- **Idris2 ABI**: Alignment postulate replaced with constructive proof (`alignUpCeil` + `alignUpCeilIsMultiple`)
 - **VeriSimDB**: Main on 8090 (built, running), backup on 8091 (game saves)
 - **Container**: Containerfile wired with real Zig build, entrypoint.sh execs gsa
 - **Nix/Guix**: Both flake.nix and guix.scm have real build/install phases

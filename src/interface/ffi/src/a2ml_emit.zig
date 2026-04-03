@@ -393,8 +393,9 @@ pub fn applyDiff(
                 }
             }
 
-            std.json.stringify(parsed.value, .{ .whitespace = .indent_2 }, writer) catch {
+            writer.print("{f}", .{std.json.fmt(parsed.value, .{ .whitespace = .indent_2 })}) catch {
                 try writer.writeAll(original_text);
+                return result.toOwnedSlice();
             };
 
             return result.toOwnedSlice();
@@ -597,4 +598,80 @@ test "format round-trip" {
     try std.testing.expectEqual(config_extract.ConfigFormat.KeyValue, stringToFormat("key-value"));
     try std.testing.expectEqualStrings("xml", formatToString(.XML));
     try std.testing.expectEqualStrings("json", formatToString(.JSON));
+}
+
+test "applyDiff key-value: Modified replaces value" {
+    const allocator = std.testing.allocator;
+    const original = "name=Old\nport=25565\n";
+    const diffs = [_]ConfigDiff{.{
+        .key = "name",
+        .old_value = "Old",
+        .new_value = "New",
+        .action = .Modified,
+    }};
+    const result = try applyDiff(allocator, original, .KeyValue, &diffs);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "name=New") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "port=25565") != null);
+}
+
+test "applyDiff key-value: Added appends new key" {
+    const allocator = std.testing.allocator;
+    const original = "name=Test\n";
+    const diffs = [_]ConfigDiff{.{
+        .key = "new-key",
+        .old_value = "",
+        .new_value = "new-value",
+        .action = .Added,
+    }};
+    const result = try applyDiff(allocator, original, .KeyValue, &diffs);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "new-key=new-value") != null);
+}
+
+test "applyDiff key-value: Removed strips line" {
+    const allocator = std.testing.allocator;
+    const original = "keep=yes\nremove=this\nkeep2=also\n";
+    const diffs = [_]ConfigDiff{.{
+        .key = "remove",
+        .old_value = "this",
+        .new_value = "",
+        .action = .Removed,
+    }};
+    const result = try applyDiff(allocator, original, .KeyValue, &diffs);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "keep=yes") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "keep2=also") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "remove=this") == null);
+}
+
+test "extractA2MLAttr: finds attribute" {
+    const attrs = "key=\"server-name\", type=\"string\"";
+    try std.testing.expectEqualStrings("server-name", extractA2MLAttr(attrs, "key").?);
+    try std.testing.expectEqualStrings("string", extractA2MLAttr(attrs, "type").?);
+    try std.testing.expect(extractA2MLAttr(attrs, "missing") == null);
+}
+
+test "extractA2MLAttr: empty string" {
+    try std.testing.expect(extractA2MLAttr("", "key") == null);
+}
+
+test "extractQuotedValue: basic cases" {
+    try std.testing.expectEqualStrings("hello", extractQuotedValue("  \"hello\"  ").?);
+    try std.testing.expect(extractQuotedValue("no quotes here") == null);
+    try std.testing.expect(extractQuotedValue("") == null);
+}
+
+test "secret redaction in A2ML output" {
+    const allocator = std.testing.allocator;
+    var config = config_extract.ParsedConfig.init(allocator, .KeyValue, "/test");
+    defer config.deinit();
+    try config.addField("public", "visible", "string", "", "", null, null, false);
+    try config.addField("rcon.password", "super_secret", "secret", "", "", null, null, true);
+    var profile = game_profiles.GameProfile.empty();
+    const a2ml = try emitA2ML(allocator, "s1", "game", &config, &profile);
+    defer allocator.free(a2ml);
+    try std.testing.expect(std.mem.indexOf(u8, a2ml, "[REDACTED]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, a2ml, "super_secret") == null);
+    try std.testing.expect(std.mem.indexOf(u8, a2ml, "visible") != null);
 }

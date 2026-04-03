@@ -151,7 +151,7 @@
           meta = with pkgs.lib; {
             description = "Universal game server probe, config management, and administration via Gossamer + VeriSimDB";
             homepage = "https://github.com/hyperpolymath/game-server-admin";
-            license = licenses.mpl20; # PMPL-1.0-or-later extends MPL-2.0
+            license = licenses.mpl20; # AGPL-3.0-or-later extends MPL-2.0
             maintainers = [];
             platforms = [ "x86_64-linux" "aarch64-linux" ];
           };

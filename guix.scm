@@ -70,5 +70,5 @@
   (synopsis "Universal game server probe, config management, and administration")
   (description "RSR-compliant project. See README.adoc for details.")
   (license (list
-            ;; PMPL-1.0-or-later extends MPL-2.0
+            ;; AGPL-3.0-or-later extends MPL-2.0
             mpl2.0)))

@@ -195,7 +195,7 @@ init:
         -e "s|${LB}DATE${RB}|${CURRENT_DATE}|g"
         -e "s|${LB}SECURITY_EMAIL${RB}|${SECURITY_EMAIL}|g"
         -e "s|${LB}CONDUCT_EMAIL${RB}|${CONDUCT_EMAIL}|g"
-        -e "s|${LB}LICENSE${RB}|PMPL-1.0-or-later|g"
+        -e "s|${LB}LICENSE${RB}|AGPL-3.0-or-later|g"
         -e "s|${LB}CONDUCT_TEAM${RB}|Code of Conduct Committee|g"
         -e "s|${LB}RESPONSE_TIME${RB}|48 hours|g"
         -e "s|${LB}MAIN_BRANCH${RB}|main|g"
@@ -215,7 +215,7 @@ init:
     # Replace in all text files (skip .git, LICENSE text, and binaries)
     find . -type f \
         -not -path './.git/*' \
-        -not -name 'PMPL-1.0-or-later.txt' \
+        -not -name 'AGPL-3.0-or-later.txt' \
         -not -name '*.png' -not -name '*.jpg' -not -name '*.gif' \
         -not -name '*.woff' -not -name '*.woff2' \
         | while read -r file; do
@@ -809,7 +809,7 @@ validate-rsr:
     for f in .machine_readable/STATE.a2ml .machine_readable/META.a2ml .machine_readable/ECOSYSTEM.a2ml .machine_readable/anchors/ANCHOR.a2ml .machine_readable/policies/MAINTENANCE-AXES.a2ml .machine_readable/policies/MAINTENANCE-CHECKLIST.a2ml .machine_readable/policies/SOFTWARE-DEVELOPMENT-APPROACH.a2ml; do
         [ -f "$f" ] || MISSING="$MISSING $f"
     done
-    for f in licensing/exhibits/EXHIBIT-A-ETHICAL-USE.txt licensing/exhibits/EXHIBIT-B-QUANTUM-SAFE.txt licensing/texts/PMPL-1.0-or-later.txt; do
+    for f in licensing/exhibits/EXHIBIT-A-ETHICAL-USE.txt licensing/exhibits/EXHIBIT-B-QUANTUM-SAFE.txt licensing/texts/AGPL-3.0-or-later.txt; do
         [ -f "$f" ] || MISSING="$MISSING $f"
     done
     for f in src/interface/abi src/interface/ffi src/interface/generated; do

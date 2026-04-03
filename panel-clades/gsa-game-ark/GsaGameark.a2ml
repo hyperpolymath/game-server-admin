@@ -3,12 +3,12 @@
 
 [clade-metadata]
 id = "gsa-game-ark"
-name = "GSA ark"
-short-name = "ark"
+name = "GSA ARK: Survival Evolved"
+short-name = "ARK: Survival Evolved"
 version = "1.0.0"
 kind = "game-profile"
 icon = "gamepad"
-description = "Game profile clade for ark — inherits from gsa-game"
+description = "Game profile clade for ARK: Survival Evolved — inherits from gsa-game"
 
 [clade-traits]
 has-backend = true
@@ -18,15 +18,3 @@ has-real-time = true
 
 [clade-taxonomy]
 inherits-from = "gsa-game"
-
-[clade-game-specific]
-primary-port = "7777/UDP"
-probe-protocol = "steam-query"
-config-format = "ini"
-
-[clade-panel-customisation]
-# Panels inherited from gsa-game parent, with game-specific overrides:
-server-browser-columns = ["name", "players", "map", "version", "latency"]
-config-editor-format = "ini"
-health-dashboard-metrics = ["players", "tps", "memory", "cpu"]
-log-viewer-filter-presets = ["error", "warning", "chat", "join/leave"]

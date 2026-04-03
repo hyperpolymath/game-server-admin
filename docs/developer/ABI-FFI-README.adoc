@@ -375,7 +375,7 @@ When modifying the ABI/FFI:
 
 ## License
 
-PMPL-1.0-or-later
+AGPL-3.0-or-later
 
 ## See Also
 

@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: PMPL-1.0-or-later
-# Auto-generated from profiles/terraria.a2ml
+# Auto-generated from profiles/cryofall.a2ml
 
 [clade-metadata]
-id = "gsa-game-terraria"
-name = "GSA Terraria"
-short-name = "Terraria"
+id = "gsa-game-cryofall"
+name = "GSA CryoFall"
+short-name = "CryoFall"
 version = "1.0.0"
 kind = "game-profile"
 icon = "gamepad"
-description = "Game profile clade for Terraria — inherits from gsa-game"
+description = "Game profile clade for CryoFall — inherits from gsa-game"
 
 [clade-traits]
 has-backend = true

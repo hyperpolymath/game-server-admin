@@ -1,6 +1,6 @@
 {
   "$schema": "https://panll.dev/schemas/panel-manifest/v1.json",
-  "spdx": "PMPL-1.0-or-later",
+  "spdx": "AGPL-3.0-or-later",
   "service_id": "game-server-admin",
   "domain": "Game Server Management",
   "version": "0.1.0",

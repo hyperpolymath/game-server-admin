@@ -18,10 +18,10 @@ const probe_mod = @import("probe.zig");
 const game_profiles = @import("game_profiles.zig");
 const verisimdb_client = @import("verisimdb_client.zig");
 
-/// Buffered writer wrapping a std.fs.File for stdout/stderr output.
-fn getWriter(file: std.fs.File) std.fs.File.Writer {
-    var buf: [4096]u8 = undefined;
-    return file.writer(&buf);
+/// Check if a file exists (Zig 0.15.2 compat — no std.fs.exists).
+fn fileExists(path: []const u8) bool {
+    std.fs.cwd().access(path, .{}) catch return false;
+    return true;
 }
 
 pub fn main() !void {
@@ -235,7 +235,7 @@ fn cmdConfigInit(out: std.fs.File) void {
     const config_path = "user-config.ncl";
     
     // Check if config already exists
-    if (std.fs.exists(config_path)) {
+    if (fileExists(config_path)) {
         out.writeAll("✗ Config file already exists at ") catch {};
         out.writeAll(config_path) catch {};
         out.writeAll("\n") catch {};
@@ -243,7 +243,7 @@ fn cmdConfigInit(out: std.fs.File) void {
     }
     
     // Check if template exists
-    if (!std.fs.exists(template_path)) {
+    if (!fileExists(template_path)) {
         const err_f = std.fs.File.stderr();
         err_f.writeAll("✗ Template file not found: ") catch {};
         err_f.writeAll(template_path) catch {};
@@ -261,7 +261,7 @@ fn cmdConfigInit(out: std.fs.File) void {
     };
     defer template_file.close();
     
-    const config_file = std.fs.cwd().createFile(config_path) catch |err| {
+    const config_file = std.fs.cwd().createFile(config_path, .{}) catch |err| {
         const err_f = std.fs.File.stderr();
         err_f.writeAll("✗ Failed to create config file: ") catch {};
         err_f.writeAll(@errorName(err)) catch {};
@@ -277,12 +277,12 @@ fn cmdConfigInit(out: std.fs.File) void {
         const n = template_file.read(&buf) catch 0;
         if (n == 0) break;
         bytes_read += n;
-        try config_file.write(&buf[0..n]);
+        _ = config_file.write(buf[0..n]) catch break;
     }
     
     out.writeAll("✓ Created user config from template: ") catch {};
     out.writeAll(config_path) catch {};
-    out.writeAll(" (");
+    out.writeAll(" (") catch {};
     var buf2: [32]u8 = undefined;
     const bytes_str = std.fmt.bufPrint(&buf2, "{d}", .{bytes_read}) catch "?";
     out.writeAll(bytes_str) catch {};
@@ -295,7 +295,7 @@ fn cmdConfigInit(out: std.fs.File) void {
 fn cmdConfigShow(out: std.fs.File) void {
     const config_path = "user-config.ncl";
     
-    if (!std.fs.exists(config_path)) {
+    if (!fileExists(config_path)) {
         out.writeAll("✗ No config file found. Run `gsa config init` to create one.\n") catch {};
         return;
     }
@@ -309,15 +309,15 @@ fn cmdConfigShow(out: std.fs.File) void {
     };
     defer file.close();
     
-    out.writeAll("=== User Config (");
-    out.writeAll(config_path);
+    out.writeAll("=== User Config (") catch {};
+    out.writeAll(config_path) catch {};
     out.writeAll(") ===\n\n") catch {};
     
     var buf: [4096]u8 = undefined;
     while (true) {
         const n = file.read(&buf) catch 0;
         if (n == 0) break;
-        out.writeAll(&buf[0..n]) catch {};
+        out.writeAll(buf[0..n]) catch {};
     }
 }
 
@@ -325,7 +325,7 @@ fn cmdConfigShow(out: std.fs.File) void {
 fn cmdConfigSetDefault(host: []const u8, port: u16, out: std.fs.File) void {
     const config_path = "user-config.ncl";
     
-    if (!std.fs.exists(config_path)) {
+    if (!fileExists(config_path)) {
         out.writeAll("✗ No config file found. Run `gsa config init` first.\n") catch {};
         return;
     }
@@ -347,11 +347,9 @@ fn cmdConfigSetDefault(host: []const u8, port: u16, out: std.fs.File) void {
     // Simple string replacement for default server
     // In a real implementation, you'd use a proper Nickel parser
     // For now, we'll do a simple pattern replacement
-    
-    const new_config = try replaceDefaultServer(existing_content, host, port);
-    
+
     // Write back
-    const out_file = std.fs.cwd().createFile(config_path) catch |err| {
+    const out_file = std.fs.cwd().createFile(config_path, .{}) catch |err| {
         const err_f = std.fs.File.stderr();
         err_f.writeAll("✗ Failed to write config: ") catch {};
         err_f.writeAll(@errorName(err)) catch {};
@@ -359,15 +357,15 @@ fn cmdConfigSetDefault(host: []const u8, port: u16, out: std.fs.File) void {
         std.process.exit(1);
     };
     defer out_file.close();
-    
-    try out_file.write(new_config);
+
+    writeWithDefaultServer(existing_content, host, port, out_file) catch {};
     
     out.writeAll("✓ Updated default server to ") catch {};
     out.writeAll(host) catch {};
-    out.writeAll(":");
-    var port_buf: [16]u8 = undefined;
-    const port_str = std.fmt.bufPrint(&port_buf, "{d}", .{port}) catch "?";
-    out.writeAll(port_str) catch {};
+    out.writeAll(":") catch {};
+    var port_buf2: [16]u8 = undefined;
+    const port_str2 = std.fmt.bufPrint(&port_buf2, "{d}", .{port}) catch "?";
+    out.writeAll(port_str2) catch {};
     out.writeAll("\n") catch {};
 }
 
@@ -375,7 +373,7 @@ fn cmdConfigSetDefault(host: []const u8, port: u16, out: std.fs.File) void {
 fn cmdConfigAddFavorite(name: []const u8, host: []const u8, port: u16, out: std.fs.File) void {
     const config_path = "user-config.ncl";
     
-    if (!std.fs.exists(config_path)) {
+    if (!fileExists(config_path)) {
         out.writeAll("✗ No config file found. Run `gsa config init` first.\n") catch {};
         return;
     }
@@ -395,10 +393,9 @@ fn cmdConfigAddFavorite(name: []const u8, host: []const u8, port: u16, out: std.
     const existing_content = existing[0..n];
     
     // Add favorite to the favorites list
-    const new_config = try addFavoriteServer(existing_content, name, host, port);
-    
+
     // Write back
-    const out_file = std.fs.cwd().createFile(config_path) catch |err| {
+    const out_file = std.fs.cwd().createFile(config_path, .{}) catch |err| {
         const err_f = std.fs.File.stderr();
         err_f.writeAll("✗ Failed to write config: ") catch {};
         err_f.writeAll(@errorName(err)) catch {};
@@ -406,17 +403,17 @@ fn cmdConfigAddFavorite(name: []const u8, host: []const u8, port: u16, out: std.
         std.process.exit(1);
     };
     defer out_file.close();
-    
-    try out_file.write(new_config);
+
+    writeWithFavorite(existing_content, name, host, port, out_file) catch {};
     
     out.writeAll("✓ Added favorite server: ") catch {};
     out.writeAll(name) catch {};
     out.writeAll(" (") catch {};
     out.writeAll(host) catch {};
-    out.writeAll(":");
-    var port_buf: [16]u8 = undefined;
-    const port_str = std.fmt.bufPrint(&port_buf, "{d}", .{port}) catch "?";
-    out.writeAll(port_str) catch {};
+    out.writeAll(":") catch {};
+    var port_buf2: [16]u8 = undefined;
+    const port_str2 = std.fmt.bufPrint(&port_buf2, "{d}", .{port}) catch "?";
+    out.writeAll(port_str2) catch {};
     out.writeAll(")\n") catch {};
 }
 
@@ -424,7 +421,7 @@ fn cmdConfigAddFavorite(name: []const u8, host: []const u8, port: u16, out: std.
 fn cmdConfigListFavorites(out: std.fs.File) void {
     const config_path = "user-config.ncl";
     
-    if (!std.fs.exists(config_path)) {
+    if (!fileExists(config_path)) {
         out.writeAll("✗ No config file found. Run `gsa config init` first.\n") catch {};
         return;
     }
@@ -437,94 +434,49 @@ fn cmdConfigListFavorites(out: std.fs.File) void {
     out.writeAll("Use `gsa config show` to view the full config.\n") catch {};
 }
 
-/// Helper: Replace default server in config content
-fn replaceDefaultServer(existing: []const u8, host: []const u8, port: u16) ![]const u8 {
-    var result: [16384]u8 = undefined;
-    var pos: usize = 0;
-    
-    // Find the default_server section
-    const default_start = std.mem.indexOf(u8, existing, "default_server = {") orelse 0;
-    const host_start = std.mem.indexOf(u8, existing, "host = ") orelse 0;
-    const port_start = std.mem.indexOf(u8, existing, "port = ") orelse 0;
-    
-    // Simple approach: replace the host and port lines
-    // Copy everything up to host =
-    if (host_start != 0) {
-        const before_host = existing[0..host_start];
-        pos += before_host.len;
-        @memcpy(result[pos..pos + before_host.len], before_host);
-        pos += before_host.len;
+/// Helper: Write config content with replaced default server to a file.
+fn writeWithDefaultServer(existing: []const u8, host: []const u8, port: u16, out_file: std.fs.File) !void {
+    const host_start = std.mem.indexOf(u8, existing, "host = ") orelse {
+        _ = try out_file.write(existing);
+        return;
+    };
+    const port_start = std.mem.indexOf(u8, existing, "port = ") orelse {
+        _ = try out_file.write(existing);
+        return;
+    };
+    _ = try out_file.write(existing[0..host_start]);
+    var host_buf: [512]u8 = undefined;
+    const host_line = std.fmt.bufPrint(&host_buf, "host = \"{s}\",\n", .{host}) catch return error.InvalidParam;
+    _ = try out_file.write(host_line);
+    const host_region = existing[host_start..port_start];
+    const next_nl = std.mem.indexOfScalar(u8, host_region, '\n') orelse host_region.len;
+    if (next_nl + 1 < host_region.len) {
+        _ = try out_file.write(host_region[next_nl + 1 ..]);
     }
-    
-    // Write new host line
-    const host_line = std.fmt.bufPrint(&result[pos..], "host = \"{s}\",\n", .{host}) catch return error.InvalidParam;
-    pos += host_line.len;
-    
-    // Copy everything between host and port
-    if (host_start != 0 and port_start != 0 and port_start > host_start) {
-        const between = existing[host_start..port_start];
-        // Skip the old host line
-        const next_line = std.mem.indexOfScalar(u8, between, '\n') orelse 0;
-        if (next_line > 0) {
-            const after_host = between[next_line + 1..];
-            @memcpy(result[pos..pos + after_host.len], after_host);
-            pos += after_host.len;
-        }
+    var port_buf: [128]u8 = undefined;
+    const port_line = std.fmt.bufPrint(&port_buf, "port = {d},\n", .{port}) catch return error.InvalidParam;
+    _ = try out_file.write(port_line);
+    const after_port_nl = std.mem.indexOfScalarPos(u8, existing, port_start, '\n') orelse existing.len;
+    if (after_port_nl + 1 < existing.len) {
+        _ = try out_file.write(existing[after_port_nl + 1 ..]);
     }
-    
-    // Write new port line
-    var port_buf: [16]u8 = undefined;
-    const port_str = std.fmt.bufPrint(&port_buf, "{d}", .{port}) catch "?";
-    const port_line = std.fmt.bufPrint(&result[pos..], "port = {s},\n", .{port_str}) catch return error.InvalidParam;
-    pos += port_line.len;
-    
-    // Copy the rest
-    if (port_start != 0) {
-        const after_port = std.mem.indexOfScalar(u8, existing[port_start..], '\n') orelse 0;
-        if (after_port > 0) {
-            const rest = existing[port_start + after_port + 1..];
-            @memcpy(result[pos..pos + rest.len], rest);
-            pos += rest.len;
-        }
-    }
-    
-    return result[0..pos];
 }
 
-/// Helper: Add favorite server to config content
-fn addFavoriteServer(existing: []const u8, name: []const u8, host: []const u8, port: u16) ![]const u8 {
-    var result: [16384]u8 = undefined;
-    var pos: usize = 0;
-    
-    // Find the favorites list end
-    const fav_start = std.mem.indexOf(u8, existing, "favorites = [") orelse 0;
-    const fav_end = std.mem.indexOf(u8, existing, "]") orelse existing.len;
-    
-    // Copy everything up to the closing bracket
-    if (fav_start != 0) {
-        const before_fav = existing[0..fav_end];
-        @memcpy(result[pos..pos + before_fav.len], before_fav);
-        pos += before_fav.len;
-    }
-    
-    // Add new favorite entry
-    var port_buf: [16]u8 = undefined;
-    const port_str = std.fmt.bufPrint(&port_buf, "{d}", .{port}) catch "?";
-    const favorite_entry = std.fmt.bufPrint(
-        &result[pos..],
-        "    {{\n      name = \"{s}\",\n      host = \"{s}\",\n      port = {s},\n    },\n",
-        .{ name, host, port_str }
+/// Helper: Write config content with a new favorite appended to a file.
+fn writeWithFavorite(existing: []const u8, name: []const u8, host: []const u8, port: u16, out_file: std.fs.File) !void {
+    const fav_end = std.mem.indexOf(u8, existing, "]") orelse {
+        _ = try out_file.write(existing);
+        return;
+    };
+    _ = try out_file.write(existing[0..fav_end]);
+    var entry_buf: [512]u8 = undefined;
+    const entry = std.fmt.bufPrint(
+        &entry_buf,
+        "    {{\n      name = \"{s}\",\n      host = \"{s}\",\n      port = {d},\n    }},\n",
+        .{ name, host, port },
     ) catch return error.InvalidParam;
-    pos += favorite_entry.len;
-    
-    // Copy the closing bracket and rest
-    if (fav_end < existing.len) {
-        const rest = existing[fav_end..];
-        @memcpy(result[pos..pos + rest.len], rest);
-        pos += rest.len;
-    }
-    
-    return result[0..pos];
+    _ = try out_file.write(entry);
+    _ = try out_file.write(existing[fav_end..]);
 }
 
 // ── Display helpers ─────────────────────────────────────────────────────────
@@ -554,14 +506,14 @@ fn printUsage(out: std.fs.File) void {
         \\  Commands:
         \\    status              Show system status (VeriSimDB, profiles)
         \\    probe <host> [port] Probe a game server (default port: 27015)
-    config init         Initialize user config from template
-    config show         Show current user configuration
-    config set-default <host> <port>
-                          Set the default server connection
-    config add-favorite <name> <host> <port>
-                          Add a server to favorites
-    config list-favorites
-                          List favorite servers
+        \\    config init         Initialize user config from template
+        \\    config show         Show current user configuration
+        \\    config set-default <host> <port>
+        \\                          Set the default server connection
+        \\    config add-favorite <name> <host> <port>
+        \\                          Add a server to favorites
+        \\    config list-favorites
+        \\                          List favorite servers
         \\    profiles            List available game profiles
         \\    version             Print version
         \\    help                Show this help

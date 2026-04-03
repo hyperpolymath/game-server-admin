@@ -32,6 +32,23 @@
   // Tooltip element
   // =========================================================================
 
+  /**
+   * Escape a plain-text string to safe HTML for injection via innerHTML.
+   * Used when tooltip content comes from HTML attributes (data-tip) that
+   * should be treated as plain text, not trusted HTML.
+   *
+   * @param {string} str - Plain text content
+   * @returns {string} HTML-escaped string
+   */
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   /** Get or create the singleton tooltip element. */
   function ensureTipElement() {
     if (tipEl) return tipEl;
@@ -114,7 +131,8 @@
     el.addEventListener('mouseenter', function(e) {
       var target = e.target.closest('[data-tip]');
       if (target) {
-        var content = target.getAttribute('data-tip');
+        // data-tip attribute values are plain text — escape before treating as HTML
+        var content = escapeHtml(target.getAttribute('data-tip') || '');
         var pos = target.getAttribute('data-tip-pos') || 'auto';
         var delay = parseInt(target.getAttribute('data-tip-delay'), 10) || 300;
         FLI.tooltip.show(target, content, { position: pos, delay: delay });

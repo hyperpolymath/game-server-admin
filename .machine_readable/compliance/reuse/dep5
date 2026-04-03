@@ -3,52 +3,52 @@ Upstream-Name: game-server-admin
 Upstream-Contact: Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 Source: https://github.com/hyperpolymath/game-server-admin
 
-# Default: all files are PMPL-1.0-or-later
+# Default: all files are AGPL-3.0-or-later
 Files: *
 Copyright: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-License: PMPL-1.0-or-later
+License: AGPL-3.0-or-later
 
 # Configuration files that cannot carry headers
 Files: .editorconfig .gitignore .gitattributes .tool-versions .mailmap
 Copyright: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-License: PMPL-1.0-or-later
+License: AGPL-3.0-or-later
 
 # Machine-readable state files
 Files: .machine_readable/*.a2ml
 Copyright: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-License: PMPL-1.0-or-later
+License: AGPL-3.0-or-later
 
 # Bot directives
 Files: .machine_readable/bot_directives/*
 Copyright: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-License: PMPL-1.0-or-later
+License: AGPL-3.0-or-later
 
 # Contractiles
 Files: .machine_readable/contractiles/*
 Copyright: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-License: PMPL-1.0-or-later
+License: AGPL-3.0-or-later
 
 # GitHub/CI configuration
 Files: .github/* .github/**/*
 Copyright: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-License: PMPL-1.0-or-later
+License: AGPL-3.0-or-later
 
 # Generated files
 Files: generated/*
 Copyright: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-License: PMPL-1.0-or-later
+License: AGPL-3.0-or-later
 
 # Lockfiles and auto-generated
 Files: *.lock Cargo.lock flake.lock
 Copyright: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-License: PMPL-1.0-or-later
+License: AGPL-3.0-or-later
 
 # Devcontainer config (JSON, no comments)
 Files: .devcontainer/*.json
 Copyright: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-License: PMPL-1.0-or-later
+License: AGPL-3.0-or-later
 
 # Git-cliff config
 Files: cliff.toml
 Copyright: 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-License: PMPL-1.0-or-later
+License: AGPL-3.0-or-later
