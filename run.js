@@ -197,19 +197,41 @@ async function gitCycle(sync) {
     const commit = await run("git", ["commit", "-m",
       "chore: run.js launch cycle — auto-detected platform, git cycle"]);
     if (commit.ok) log("Committed outstanding changes");
-    else warn("Commit failed: " + commit.err);
+    else { warn("Commit failed: " + commit.err); return; }
   } else {
     log("Nothing to commit");
   }
 
-  if (sync.ahead > 0 || staged.out) {
-    const push = await run("git", ["push", REGISTRY.git.remote, sync.branch]);
-    if (push.ok) log(`Pushed to ${REGISTRY.git.remote}/${sync.branch}`);
-    else warn("Push failed: " + push.err);
+  // Push current branch
+  const pushBranch = await run("git", ["push", REGISTRY.git.remote, sync.branch]);
+  if (pushBranch.ok) log(`Pushed ${sync.branch} → ${REGISTRY.git.remote}`);
+  else warn("Push failed: " + pushBranch.err);
+
+  // Merge to main if not already there
+  const mainBranch = "main";
+  if (sync.branch !== mainBranch) {
+    log(`Merging ${sync.branch} → ${mainBranch}...`);
+    const checkout = await run("git", ["checkout", mainBranch]);
+    if (!checkout.ok) { warn("Could not switch to main: " + checkout.err); return; }
+
+    const merge = await run("git", ["merge", "--ff-only", sync.branch]);
+    if (merge.ok) {
+      log(`Fast-forward merged ${sync.branch} → ${mainBranch}`);
+    } else {
+      const mergeRegular = await run("git", ["merge", sync.branch,
+        "-m", `chore: merge ${sync.branch} → main`]);
+      if (!mergeRegular.ok) { warn("Merge failed: " + mergeRegular.err); return; }
+      log(`Merged ${sync.branch} → ${mainBranch}`);
+    }
+
+    const pushMain = await run("git", ["push", REGISTRY.git.remote, mainBranch]);
+    if (pushMain.ok) log(`Pushed ${mainBranch} → ${REGISTRY.git.remote}`);
+    else warn("Main push failed: " + pushMain.err);
   }
 
+  // Push to mirrors
   for (const mirror of REGISTRY.git.mirrors) {
-    const mp = await run("git", ["push", mirror, sync.branch]);
+    const mp = await run("git", ["push", mirror, mainBranch]);
     if (mp.ok) log(`Pushed to mirror: ${mirror}`);
     else warn(`Mirror push failed (${mirror}): ${mp.err}`);
   }
