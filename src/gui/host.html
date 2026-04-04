@@ -1366,6 +1366,13 @@
           <span class="nav-label">Server Browser</span>
           <span class="nav-status" id="status-server-browser"></span>
         </div>
+        <div class="nav-item" data-panel="nexus-setup" onclick="switchPanel('nexus-setup')">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><circle cx="12" cy="10" r="3"/><path d="M12 7v0m-4.2 7a7 7 0 0 1 8.4 0"/>
+          </svg>
+          <span class="nav-label">Nexus Setup</span>
+          <span class="nav-status" id="status-nexus-setup"></span>
+        </div>
         <div class="nav-item" data-panel="config-editor" onclick="switchPanel('config-editor')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
@@ -1431,6 +1438,9 @@
 
       <div id="panel-server-browser" class="panel-content active">
         <!-- Loaded from panels/server-browser/panel.html -->
+      </div>
+      <div id="panel-nexus-setup" class="panel-content">
+        <!-- Loaded from panels/nexus-setup/panel.html -->
       </div>
       <div id="panel-config-editor" class="panel-content">
         <!-- Loaded from panels/config-editor/panel.html -->
@@ -1561,6 +1571,7 @@
       // Trigger panel-specific refresh
       switch (panelId) {
         case 'server-browser':   if (typeof refreshServerBrowser === 'function') refreshServerBrowser(); break;
+        case 'nexus-setup':      if (typeof refreshNexusSetup === 'function') refreshNexusSetup(); break;
         case 'config-editor':    if (typeof refreshConfigEditor === 'function') refreshConfigEditor(); break;
         case 'server-actions':   if (typeof refreshServerActions === 'function') refreshServerActions(); break;
         case 'live-logs':        if (typeof refreshLiveLogs === 'function') refreshLiveLogs(); break;
@@ -1721,6 +1732,7 @@
     async function loadPanelContent() {
       var panels = [
         { id: 'server-browser',   path: 'src/gui/panels/server-browser/panel.html' },
+        { id: 'nexus-setup',      path: 'src/gui/panels/nexus-setup/panel.html' },
         { id: 'config-editor',    path: 'src/gui/panels/config-editor/panel.html' },
         { id: 'server-actions',   path: 'src/gui/panels/server-actions/panel.html' },
         { id: 'live-logs',        path: 'src/gui/panels/live-logs/panel.html' },
@@ -1786,7 +1798,7 @@
           lastProbe: new Date().toLocaleTimeString()
         });
         // Set all panel statuses to connected
-        ['server-browser', 'config-editor', 'server-actions', 'live-logs',
+        ['server-browser', 'nexus-setup', 'config-editor', 'server-actions', 'live-logs',
          'health-dashboard', 'config-history', 'cross-search'].forEach(function(pid) {
           setPanelStatus(pid, true);
         });
@@ -1848,6 +1860,7 @@
       /** Map of panel ID → array of required FLI module names (clade inheritance) */
       panelTraits: {
         'server-browser':   ['fli-tooltip'],
+        'nexus-setup':      ['fli-terminal', 'fli-tooltip'],
         'config-editor':    ['fli-editable', 'fli-tooltip', 'fli-undo'],
         'server-actions':   ['fli-terminal'],
         'live-logs':        ['fli-terminal'],

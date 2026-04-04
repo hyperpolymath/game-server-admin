@@ -511,3 +511,140 @@ fn handleAddProfile(payload: String) -> String =
     else
       jsonOk("{\"registered\":true}")
   }
+
+-- =============================================================================
+-- Nexus Setup panel handlers (Wizard steps 2, 5, 6, 7)
+-- =============================================================================
+
+-- Resolve a Steam vanity URL to a Steam64 ID and player name.
+-- Wraps gossamer_gsa_steam_resolve_vanity + gossamer_gsa_steam_player_info.
+-- Payload: {"vanity_url": "pengie5"}
+-- Returns: {"steam_id": "...", "name": "...", "profile_url": "..."}
+fn handleSteamResolveVanity(payload: String) -> String =
+  let vanity = jsonField(payload, "vanity_url") in
+  if vanity == "" then
+    jsonError("Missing 'vanity_url'")
+  else {
+    -- Resolve vanity → Steam64 ID
+    let resolve_result = __ffi("gossamer_gsa_steam_resolve_vanity", vanity) in
+    if resolve_result < 0 then
+      jsonError("Vanity URL not found: " ++ vanity)
+    else {
+      let steam_id = __ffi("gossamer_gsa_steam_get_result", resolve_result, "steam_id") in
+      if steam_id == "" then
+        jsonError("Could not resolve vanity: " ++ vanity)
+      else {
+        -- Fetch player summary for display name
+        let player_result = __ffi("gossamer_gsa_steam_player_info", steam_id) in
+        let name        = __ffi("gossamer_gsa_steam_get_result", player_result, "name") in
+        let profile_url = __ffi("gossamer_gsa_steam_get_result", player_result, "profile_url") in
+        jsonOk("{\"steam_id\":\"" ++ steam_id ++ "\",\"name\":\"" ++ name ++
+               "\",\"profile_url\":\"" ++ profile_url ++ "\"}")
+      }
+    }
+  }
+
+-- Fetch Steam player info by Steam64 ID.
+-- Payload: {"steam_id": "76561198149527024"}
+-- Returns: {"steam_id": "...", "name": "...", "profile_url": "..."}
+fn handleSteamPlayerInfo(payload: String) -> String =
+  let steam_id = jsonField(payload, "steam_id") in
+  if steam_id == "" then
+    jsonError("Missing 'steam_id'")
+  else {
+    let result  = __ffi("gossamer_gsa_steam_player_info", steam_id) in
+    let name    = __ffi("gossamer_gsa_steam_get_result", result, "name") in
+    let profile = __ffi("gossamer_gsa_steam_get_result", result, "profile_url") in
+    jsonOk("{\"steam_id\":\"" ++ steam_id ++ "\",\"name\":\"" ++ name ++
+           "\",\"profile_url\":\"" ++ profile ++ "\"}")
+  }
+
+-- Kick off SteamCMD authenticated download for a game profile on a target host.
+-- Runs scripts/steam-stage.sh with the given credentials; returns when complete.
+-- Payload: {"profile_id":"cryofall","steam_user":"...","steam_pass":"...","target_host":"..."}
+-- Returns: {"ok":true,"bytes_transferred":...} or error
+fn handleNexusStageFiles(payload: String, caps: &GsaCapSet) -> String =
+  let profile_id  = jsonField(payload, "profile_id") in
+  let steam_user  = jsonField(payload, "steam_user") in
+  let steam_pass  = jsonField(payload, "steam_pass") in
+  let target_host = jsonField(payload, "target_host") in
+  if profile_id == "" || steam_user == "" || steam_pass == "" then
+    jsonError("Missing required field (profile_id, steam_user, steam_pass)")
+  else {
+    let env_json = "{\"STEAM_USER\":\"" ++ steam_user ++
+                   "\",\"PROVISION_TARGET_HOST\":\"" ++ target_host ++ "\"}" in
+    let result = __ffi("gossamer_gsa_run_script", "scripts/steam-stage.sh", profile_id, env_json, steam_pass) in
+    if result < 0 then
+      jsonError("Staging failed: " ++ __ffi("gossamer_gsa_last_error"))
+    else {
+      let prov = "{\"event_type\":\"nexus_stage\",\"actor\":\"gsa-gui\",\"description\":\"SteamCMD stage for " ++ profile_id ++ " on " ++ target_host ++ "\"}" in
+      __ffi("gossamer_gsa_verisimdb_provenance", profile_id, prov);
+      jsonOk("{\"ok\":true,\"profile_id\":\"" ++ profile_id ++ "\"}")
+    }
+  }
+
+-- Run the schema-driven provisioner (scripts/provision-server.sh) for a profile.
+-- Applies full server config including operators before provisioning.
+-- Payload: {"profile_id":"cryofall","target_host":"...","ssh_user":"root",
+--           "server_config":{...},"operators":[{"steam_id":"...","name":"..."}]}
+-- Returns: {"ok":true,"server_id":"..."} or error
+fn handleNexusProvision(payload: String, caps: &GsaCapSet) -> String =
+  let profile_id  = jsonField(payload, "profile_id") in
+  let target_host = jsonField(payload, "target_host") in
+  let ssh_user    = jsonField(payload, "ssh_user") in
+  let config_json = jsonField(payload, "server_config") in
+  let ops_json    = jsonField(payload, "operators") in
+  if profile_id == "" then
+    jsonError("Missing 'profile_id'")
+  else {
+    -- Write config to a temp Settings.xml from the form values
+    let write_result = __ffi("gossamer_gsa_write_server_config", profile_id, config_json, ops_json) in
+    if write_result < 0 then
+      jsonError("Failed to write server config: " ++ __ffi("gossamer_gsa_last_error"))
+    else {
+      let env_json = "{\"PROVISION_TARGET_HOST\":\"" ++ target_host ++
+                     "\",\"PROVISION_SSH_USER\":\"" ++ ssh_user ++ "\"}" in
+      let result = __ffi("gossamer_gsa_run_script", "scripts/provision-server.sh", profile_id, env_json, "") in
+      if result < 0 then
+        jsonError("Provisioner failed: " ++ __ffi("gossamer_gsa_last_error"))
+      else {
+        -- Register in VeriSimDB
+        let server_id = profile_id ++ "-" ++ target_host in
+        let octad = "{\"id\":\"" ++ server_id ++ "\",\"game_id\":\"" ++ profile_id ++
+                    "\",\"host\":\"" ++ target_host ++ "\",\"managed\":true}" in
+        __ffi("gossamer_gsa_verisimdb_store", octad);
+        let prov = "{\"event_type\":\"nexus_provision\",\"actor\":\"gsa-gui\",\"description\":\"Provisioned " ++ profile_id ++ " on " ++ target_host ++ "\"}" in
+        __ffi("gossamer_gsa_verisimdb_provenance", server_id, prov);
+        jsonOk("{\"ok\":true,\"server_id\":\"" ++ server_id ++ "\"}")
+      }
+    }
+  }
+
+-- Probe the server and confirm VeriSimDB registration after provisioning.
+-- Payload: {"profile_id":"cryofall","target_host":"209.42.26.106","game_port":6000}
+-- Returns: {"ok":true,"verisimdb_registered":true,"dns_name":"cryofall.jewell.nexus","probe_result":{...}}
+fn handleNexusVerify(payload: String, caps: &GsaCapSet) -> String =
+  let profile_id  = jsonField(payload, "profile_id") in
+  let target_host = jsonField(payload, "target_host") in
+  let game_port   = jsonField(payload, "game_port") in
+  if target_host == "" then
+    jsonError("Missing 'target_host'")
+  else {
+    -- Probe the live server
+    let probe = __ffi("gossamer_gsa_probe", target_host, game_port) in
+    let server_id = profile_id ++ "-" ++ target_host in
+    -- Check VeriSimDB registration
+    let vdb_check = __ffi("gossamer_gsa_verisimdb_query",
+      "SELECT id FROM octads WHERE id = '" ++ server_id ++ "'") in
+    let registered = if vdb_check != "" then "true" else "false" in
+    if probe < 0 then
+      -- Not yet reachable — partial ok (provisioned but not responding yet)
+      jsonOk("{\"ok\":false,\"verisimdb_registered\":" ++ registered ++
+             ",\"error\":\"Server not yet responding on UDP " ++ game_port ++ "\"}")
+    else {
+      let prov = "{\"event_type\":\"nexus_verify\",\"actor\":\"gsa-gui\",\"description\":\"Post-provision probe succeeded\"}" in
+      __ffi("gossamer_gsa_verisimdb_provenance", server_id, prov);
+      jsonOk("{\"ok\":true,\"verisimdb_registered\":" ++ registered ++
+             ",\"probe_result\":" ++ __ffi("gossamer_gsa_probe_result_json", probe) ++ "}")
+    }
+  }

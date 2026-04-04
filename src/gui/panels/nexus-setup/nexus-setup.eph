@@ -1,0 +1,55 @@
+-- SPDX-License-Identifier: PMPL-1.0-or-later
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+--
+-- nexus-setup.eph — Nexus Setup panel module for Game Server Admin
+--
+-- This module documents the Nexus Setup panel's IPC contract.
+-- The panel HTML (panel.html) provides a 7-step graphical wizard for
+-- deploying a new managed game server on a target host.  It mirrors the
+-- fire-and-forget scripts/wizard.sh flow entirely in the Gossamer GUI.
+--
+-- Wizard steps:
+--   1. Game profile selection   — list_profiles IPC
+--   2. Steam operator IDs       — steam_resolve_vanity IPC (per slot)
+--   3. Server configuration     — rendered from A2ML profile schema
+--   4. Deployment target        — host / SSH settings
+--   5. Steam file staging       — nexus_stage_files IPC (live log output)
+--   6. Provisioning             — nexus_provision IPC (live log output)
+--   7. Health verify + report   — nexus_verify IPC → connection summary
+--
+-- IPC commands used by this panel:
+--   list_profiles
+--     Payload: {}
+--     Returns: [{ id, name, description, game_port, discovery_port }]
+--
+--   steam_resolve_vanity
+--     Payload: { vanity_url: String }
+--     Returns: { steam_id: String, name: String, ok: Bool }
+--
+--   steam_player_info
+--     Payload: { steam_id: String }
+--     Returns: { steam_id: String, name: String, profile_url: String }
+--
+--   nexus_stage_files
+--     Payload: { profile_id: String, steam_user: String, steam_pass: String,
+--                target_host: String }
+--     Returns: streaming log lines via status_callback; final:
+--              { ok: Bool, bytes_transferred: Int, error: String? }
+--
+--   nexus_provision
+--     Payload: { profile_id: String, target_host: String,
+--                server_name: String, is_private: Bool,
+--                is_pve: Bool, max_players: Int,
+--                operators: [{ steam_id: String, name: String }],
+--                extra_config: { [key: String]: String } }
+--     Returns: streaming log lines; final:
+--              { ok: Bool, server_id: String, error: String? }
+--
+--   nexus_verify
+--     Payload: { profile_id: String, target_host: String, game_port: Int }
+--     Returns: { ok: Bool, probe_result: ProbeResult?,
+--                connection_string: String, verisimdb_registered: Bool }
+
+module GSA.GUI.Panels.NexusSetup
+
+import GSA.Core.Bridge

@@ -1,0 +1,1821 @@
+<!--
+  SPDX-License-Identifier: PMPL-1.0-or-later
+  Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+  nexus-setup/panel.html — Nexus Setup wizard for Game Server Admin
+
+  7-step graphical wizard for deploying a managed game server. Mirrors
+  scripts/wizard.sh entirely in the Gossamer GUI with full form support.
+
+  Steps:
+    1. Select game profile (list_profiles IPC)
+    2. Resolve Steam operator IDs (steam_resolve_vanity IPC per slot)
+    3. Configure server (typed form from A2ML profile schema)
+    4. Set deployment target (host, SSH key)
+    5. Stage game files (nexus_stage_files IPC — live terminal output)
+    6. Provision server (nexus_provision IPC — live terminal output)
+    7. Verify + connection report (nexus_verify IPC)
+
+  IPC commands: list_profiles, steam_resolve_vanity, steam_player_info,
+  nexus_stage_files, nexus_provision, nexus_verify
+-->
+
+<style>
+  /* ============================================================
+     Wizard layout
+     ============================================================ */
+  .ns-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* Progress track */
+  .ns-stepper {
+    display: flex;
+    align-items: center;
+    padding: 18px 24px 14px;
+    border-bottom: 1px solid var(--border-color);
+    gap: 0;
+    flex-shrink: 0;
+    overflow-x: auto;
+  }
+
+  .ns-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 68px;
+    cursor: default;
+    user-select: none;
+  }
+
+  .ns-step-circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg-surface);
+    transition: all 0.2s ease;
+  }
+
+  .ns-step.completed .ns-step-circle {
+    background: var(--success-color);
+    border-color: var(--success-color);
+    color: #fff;
+  }
+
+  .ns-step.active .ns-step-circle {
+    background: var(--info-color);
+    border-color: var(--border-active);
+    color: #fff;
+    box-shadow: 0 0 0 3px rgba(31,111,235,0.2);
+  }
+
+  .ns-step-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .ns-step.active .ns-step-label,
+  .ns-step.completed .ns-step-label {
+    color: var(--text-secondary);
+  }
+
+  .ns-step-connector {
+    flex: 1;
+    height: 2px;
+    background: var(--border-color);
+    min-width: 12px;
+    max-width: 48px;
+    margin-bottom: 20px;
+    transition: background 0.2s ease;
+  }
+
+  .ns-step-connector.completed {
+    background: var(--success-color);
+  }
+
+  /* Step content pane */
+  .ns-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+
+  .ns-step-pane {
+    display: none;
+    max-width: 760px;
+  }
+
+  .ns-step-pane.active {
+    display: block;
+  }
+
+  .ns-step-title {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--text-primary);
+  }
+
+  .ns-step-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    line-height: 1.6;
+  }
+
+  /* Form rows */
+  .ns-field {
+    margin-bottom: 16px;
+  }
+
+  .ns-field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .ns-field input[type="text"],
+  .ns-field input[type="password"],
+  .ns-field input[type="number"],
+  .ns-field select,
+  .ns-field textarea {
+    width: 100%;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: var(--font-ui);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .ns-field input:focus,
+  .ns-field select:focus,
+  .ns-field textarea:focus {
+    border-color: var(--border-active);
+  }
+
+  .ns-field .ns-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* Inline resolve row */
+  .ns-resolve-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .ns-resolve-row input {
+    flex: 1;
+  }
+
+  .ns-resolve-result {
+    margin-top: 6px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    display: none;
+  }
+
+  .ns-resolve-result.ok {
+    background: rgba(35,134,54,0.1);
+    border: 1px solid rgba(63,185,80,0.25);
+    color: var(--success-fg);
+    display: block;
+  }
+
+  .ns-resolve-result.err {
+    background: rgba(218,54,51,0.1);
+    border: 1px solid rgba(248,81,73,0.25);
+    color: var(--danger-fg);
+    display: block;
+  }
+
+  /* Operator slot card */
+  .ns-operator-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+
+  .ns-operator-card-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Range slider */
+  .ns-range-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .ns-range-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--link-color);
+  }
+
+  .ns-range-val {
+    min-width: 42px;
+    text-align: right;
+    font-size: 13px;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 3px 6px;
+  }
+
+  /* Toggle switch */
+  .ns-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .ns-toggle {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  .ns-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .ns-toggle-track {
+    position: absolute;
+    inset: 0;
+    background: var(--text-muted);
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .ns-toggle-track::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+
+  .ns-toggle input:checked + .ns-toggle-track {
+    background: var(--success-color);
+  }
+
+  .ns-toggle input:checked + .ns-toggle-track::after {
+    transform: translateX(16px);
+  }
+
+  /* Profile card grid */
+  .ns-profile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .ns-profile-card {
+    background: var(--bg-elevated);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 14px 14px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .ns-profile-card:hover {
+    border-color: var(--link-color);
+    background: rgba(88,166,255,0.04);
+  }
+
+  .ns-profile-card.selected {
+    border-color: var(--link-color);
+    background: rgba(88,166,255,0.08);
+  }
+
+  .ns-profile-card-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  .ns-profile-card-id {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    margin-bottom: 6px;
+  }
+
+  .ns-profile-card-port {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  /* Terminal output */
+  .ns-terminal {
+    background: #0a0e13;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    height: 280px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: #c9d1d9;
+  }
+
+  .ns-terminal .t-info  { color: #58a6ff; }
+  .ns-terminal .t-ok    { color: #3fb950; }
+  .ns-terminal .t-warn  { color: #d29922; }
+  .ns-terminal .t-err   { color: #f85149; }
+  .ns-terminal .t-dim   { color: #484f58; }
+  .ns-terminal .t-bold  { font-weight: 700; }
+
+  /* Step 7 — Report card */
+  .ns-report-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 18px 20px;
+    margin-bottom: 14px;
+  }
+
+  .ns-report-card h4 {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+  }
+
+  .ns-kv-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+
+  .ns-kv-row .ns-key {
+    color: var(--text-muted);
+    min-width: 160px;
+    flex-shrink: 0;
+  }
+
+  .ns-kv-row .ns-val {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    word-break: break-all;
+  }
+
+  /* Bottom nav bar */
+  .ns-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+    background: var(--bg-surface);
+  }
+
+  .ns-footer-left,
+  .ns-footer-right {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .ns-footer-mid {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* Section separator */
+  .ns-section {
+    margin-bottom: 24px;
+  }
+
+  .ns-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 6px;
+    margin-bottom: 14px;
+  }
+
+  /* Alert banner */
+  .ns-alert {
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    margin-bottom: 14px;
+    display: none;
+  }
+
+  .ns-alert.info {
+    background: rgba(31,111,235,0.1);
+    border: 1px solid rgba(31,111,235,0.3);
+    color: #79b8ff;
+    display: block;
+  }
+
+  .ns-alert.warn {
+    background: rgba(210,153,34,0.1);
+    border: 1px solid rgba(210,153,34,0.3);
+    color: var(--warning-fg);
+    display: block;
+  }
+
+  .ns-alert.ok {
+    background: rgba(35,134,54,0.1);
+    border: 1px solid rgba(63,185,80,0.25);
+    color: var(--success-fg);
+    display: block;
+  }
+
+  .ns-alert.err {
+    background: rgba(218,54,51,0.1);
+    border: 1px solid rgba(248,81,73,0.25);
+    color: var(--danger-fg);
+    display: block;
+  }
+
+  /* Progress bar for step 5 */
+  .ns-progress-bar-wrap {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 99px;
+    height: 8px;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+
+  .ns-progress-bar-fill {
+    height: 100%;
+    background: var(--link-color);
+    width: 0%;
+    transition: width 0.3s ease;
+    border-radius: 99px;
+  }
+
+  .ns-progress-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  /* Add-server CTA */
+  .ns-cta-box {
+    background: rgba(35,134,54,0.06);
+    border: 1px solid rgba(63,185,80,0.2);
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .ns-cta-box p {
+    font-size: 13px;
+    color: var(--success-fg);
+  }
+</style>
+
+<div class="ns-root">
+
+  <!-- =====================================================================
+       Step progress indicator
+       ===================================================================== -->
+  <div class="ns-stepper" id="ns-stepper">
+    <div class="ns-step active" id="ns-step-dot-1">
+      <div class="ns-step-circle">1</div>
+      <div class="ns-step-label">Profile</div>
+    </div>
+    <div class="ns-step-connector" id="ns-conn-1-2"></div>
+    <div class="ns-step" id="ns-step-dot-2">
+      <div class="ns-step-circle">2</div>
+      <div class="ns-step-label">Operators</div>
+    </div>
+    <div class="ns-step-connector" id="ns-conn-2-3"></div>
+    <div class="ns-step" id="ns-step-dot-3">
+      <div class="ns-step-circle">3</div>
+      <div class="ns-step-label">Config</div>
+    </div>
+    <div class="ns-step-connector" id="ns-conn-3-4"></div>
+    <div class="ns-step" id="ns-step-dot-4">
+      <div class="ns-step-circle">4</div>
+      <div class="ns-step-label">Target</div>
+    </div>
+    <div class="ns-step-connector" id="ns-conn-4-5"></div>
+    <div class="ns-step" id="ns-step-dot-5">
+      <div class="ns-step-circle">5</div>
+      <div class="ns-step-label">Stage Files</div>
+    </div>
+    <div class="ns-step-connector" id="ns-conn-5-6"></div>
+    <div class="ns-step" id="ns-step-dot-6">
+      <div class="ns-step-circle">6</div>
+      <div class="ns-step-label">Provision</div>
+    </div>
+    <div class="ns-step-connector" id="ns-conn-6-7"></div>
+    <div class="ns-step" id="ns-step-dot-7">
+      <div class="ns-step-circle">7</div>
+      <div class="ns-step-label">Verify</div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       Step body
+       ===================================================================== -->
+  <div class="ns-body">
+
+    <!-- ── Step 1: Game Profile ──────────────────────────────────────────── -->
+    <div class="ns-step-pane active" id="ns-pane-1">
+      <div class="ns-step-title">Select Game Profile</div>
+      <div class="ns-step-desc">
+        Choose the game server you want to deploy. GSA will use the A2ML
+        profile to configure ports, volumes, and settings automatically.
+      </div>
+
+      <div id="ns-profile-loading" style="color:var(--text-muted); font-size:13px; padding:8px 0;">
+        <span class="spinner" style="margin-right:6px;"></span> Loading profiles…
+      </div>
+
+      <div class="ns-profile-grid" id="ns-profile-grid">
+        <!-- Populated by nsLoadProfiles() -->
+      </div>
+
+      <div class="ns-alert info" id="ns-profile-hint">
+        Select a profile above to continue. CryoFall requires authenticated
+        Steam credentials (step 5) — other profiles may not need them.
+      </div>
+    </div>
+
+    <!-- ── Step 2: Steam Operator IDs ────────────────────────────────────── -->
+    <div class="ns-step-pane" id="ns-pane-2">
+      <div class="ns-step-title">Steam Operator IDs</div>
+      <div class="ns-step-desc">
+        Add the Steam accounts that will have server operator (admin) access.
+        Enter each player's Steam vanity URL (the custom name shown in their
+        profile URL) and click <strong>Resolve</strong> to look up their
+        Steam64 ID automatically via the Steam Web API.
+      </div>
+
+      <div id="ns-operators-list">
+        <!-- Operator slots rendered by nsRenderOperatorSlots() -->
+      </div>
+
+      <button class="btn btn-sm" onclick="nsAddOperatorSlot()" style="margin-top:4px;">
+        + Add Operator
+      </button>
+
+      <div class="ns-alert info" style="margin-top:16px;">
+        Operators are written to <code>Settings.xml</code> as
+        <code>&lt;Operator steamId="…"/&gt;</code> entries. You can also
+        enter a Steam64 ID directly if you already know it.
+      </div>
+    </div>
+
+    <!-- ── Step 3: Server Configuration ─────────────────────────────────── -->
+    <div class="ns-step-pane" id="ns-pane-3">
+      <div class="ns-step-title">Server Configuration</div>
+      <div class="ns-step-desc">
+        Set the server name, gameplay options, and rate multipliers.
+        All settings are written to the game's config file and tracked in
+        VeriSimDB for drift detection.
+      </div>
+
+      <!-- Identity -->
+      <div class="ns-section">
+        <div class="ns-section-title">Identity</div>
+
+        <div class="ns-field">
+          <label for="ns-cfg-server-name">Server Name</label>
+          <input type="text" id="ns-cfg-server-name" value="Jewell Family Server"
+                 placeholder="My Game Server" />
+          <div class="ns-hint">Displayed in the in-game server browser.</div>
+        </div>
+
+        <div class="ns-field">
+          <label for="ns-cfg-description">Server Description</label>
+          <input type="text" id="ns-cfg-description"
+                 value="Private CryoFall server — Jonathan and Joshua Jewell. Managed by GSA."
+                 placeholder="Short description shown in the browser listing" />
+        </div>
+
+        <div class="ns-field">
+          <label for="ns-cfg-welcome">Welcome Message</label>
+          <input type="text" id="ns-cfg-welcome"
+                 value="Welcome to the Jewell family server. Build freely — nobody will raid you here."
+                 placeholder="Shown to players on connect" />
+        </div>
+      </div>
+
+      <!-- Network -->
+      <div class="ns-section">
+        <div class="ns-section-title">Network</div>
+
+        <div class="ns-field">
+          <label for="ns-cfg-port">Game Port (UDP)</label>
+          <input type="number" id="ns-cfg-port" value="6000" min="1024" max="65535" style="width:120px;" />
+          <div class="ns-hint">Must match the firewall rule and DNS record.</div>
+        </div>
+
+        <div class="ns-field">
+          <label for="ns-cfg-max-players">Max Players</label>
+          <div class="ns-range-row">
+            <input type="range" id="ns-cfg-max-players" min="1" max="64" value="10"
+                   oninput="document.getElementById('ns-cfg-max-players-val').textContent = this.value" />
+            <span class="ns-range-val" id="ns-cfg-max-players-val">10</span>
+          </div>
+          <div class="ns-hint">Keep low on constrained VPS (3.6 GB RAM).</div>
+        </div>
+      </div>
+
+      <!-- Access -->
+      <div class="ns-section">
+        <div class="ns-section-title">Access Control</div>
+
+        <div class="ns-field">
+          <label>Private Server (hidden from public browser)</label>
+          <div class="ns-toggle-row">
+            <label class="ns-toggle">
+              <input type="checkbox" id="ns-cfg-is-private" checked />
+              <span class="ns-toggle-track"></span>
+            </label>
+            <span class="ns-hint" style="margin-top:0;">When enabled, the server is invisible to strangers.</span>
+          </div>
+        </div>
+
+        <div class="ns-field">
+          <label for="ns-cfg-password">Server Password <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <input type="password" id="ns-cfg-password" placeholder="Leave blank for no password"
+                 autocomplete="off" style="max-width:320px;" />
+        </div>
+      </div>
+
+      <!-- Gameplay -->
+      <div class="ns-section">
+        <div class="ns-section-title">Gameplay</div>
+
+        <div class="ns-field">
+          <label>PvE Mode (players cannot damage each other)</label>
+          <div class="ns-toggle-row">
+            <label class="ns-toggle">
+              <input type="checkbox" id="ns-cfg-is-pve" checked />
+              <span class="ns-toggle-track"></span>
+            </label>
+            <span class="ns-hint" style="margin-top:0;">Recommended for family/friendly servers.</span>
+          </div>
+        </div>
+
+        <div class="ns-field">
+          <label>Raids Enabled</label>
+          <div class="ns-toggle-row">
+            <label class="ns-toggle">
+              <input type="checkbox" id="ns-cfg-raids-enabled" />
+              <span class="ns-toggle-track"></span>
+            </label>
+            <span class="ns-hint" style="margin-top:0;">Only meaningful in PvP mode.</span>
+          </div>
+        </div>
+
+        <div class="ns-field">
+          <label>Wipe Period (days, 0 = never)</label>
+          <input type="number" id="ns-cfg-wipe-days" value="0" min="0" max="365"
+                 style="width:100px;" />
+        </div>
+      </div>
+
+      <!-- Rate multipliers -->
+      <div class="ns-section">
+        <div class="ns-section-title">Rate Multipliers</div>
+
+        <div class="ns-field">
+          <label>Gathering Speed</label>
+          <div class="ns-range-row">
+            <input type="range" id="ns-cfg-gather" min="0.5" max="10" step="0.5" value="2.0"
+                   oninput="document.getElementById('ns-cfg-gather-val').textContent = parseFloat(this.value).toFixed(1) + '×'" />
+            <span class="ns-range-val" id="ns-cfg-gather-val">2.0×</span>
+          </div>
+        </div>
+
+        <div class="ns-field">
+          <label>Learning Speed</label>
+          <div class="ns-range-row">
+            <input type="range" id="ns-cfg-learn" min="0.5" max="10" step="0.5" value="2.0"
+                   oninput="document.getElementById('ns-cfg-learn-val').textContent = parseFloat(this.value).toFixed(1) + '×'" />
+            <span class="ns-range-val" id="ns-cfg-learn-val">2.0×</span>
+          </div>
+        </div>
+
+        <div class="ns-field">
+          <label>Crafting Speed</label>
+          <div class="ns-range-row">
+            <input type="range" id="ns-cfg-craft" min="0.5" max="10" step="0.5" value="2.0"
+                   oninput="document.getElementById('ns-cfg-craft-val').textContent = parseFloat(this.value).toFixed(1) + '×'" />
+            <span class="ns-range-val" id="ns-cfg-craft-val">2.0×</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Step 4: Deployment Target ─────────────────────────────────────── -->
+    <div class="ns-step-pane" id="ns-pane-4">
+      <div class="ns-step-title">Deployment Target</div>
+      <div class="ns-step-desc">
+        Choose where the game server container will run. For a remote VPS
+        enter the host address; for a local machine leave the default.
+        GSA will SSH to the target host to build the container, open
+        firewall ports, and install the Quadlet unit.
+      </div>
+
+      <div class="ns-field">
+        <label>Deployment Mode</label>
+        <select id="ns-target-mode" onchange="nsTargetModeChange()">
+          <option value="local">Local (this machine)</option>
+          <option value="remote" selected>Remote VPS via SSH</option>
+        </select>
+      </div>
+
+      <div id="ns-remote-fields">
+        <div class="ns-field">
+          <label for="ns-target-host">Host / IP</label>
+          <input type="text" id="ns-target-host" value="209.42.26.106"
+                 placeholder="user@host or IP" />
+          <div class="ns-hint">
+            Verpex VPS default: <code>209.42.26.106</code> (AlmaLinux 9.7, Podman 5.6.0)
+          </div>
+        </div>
+
+        <div class="ns-field">
+          <label for="ns-target-ssh-user">SSH User</label>
+          <input type="text" id="ns-target-ssh-user" value="root" style="max-width:160px;" />
+        </div>
+
+        <div class="ns-field">
+          <label for="ns-target-ssh-key">SSH Key Path <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <input type="text" id="ns-target-ssh-key" placeholder="~/.ssh/id_ed25519"
+                 style="max-width:320px;" />
+          <div class="ns-hint">Leave blank to use the SSH agent or default key.</div>
+        </div>
+      </div>
+
+      <div class="ns-field" style="margin-top:8px;">
+        <label>Container Runtime</label>
+        <select id="ns-runtime">
+          <option value="podman" selected>Podman (recommended)</option>
+          <option value="docker">Docker</option>
+        </select>
+      </div>
+
+      <div class="ns-alert info">
+        The provisioner will run <code>scripts/provision-server.sh</code> with
+        <code>PROVISION_TARGET_HOST</code> set to the address above. Firewall
+        ports will be opened automatically via <code>firewall-cmd</code>.
+      </div>
+    </div>
+
+    <!-- ── Step 5: Stage Game Files ──────────────────────────────────────── -->
+    <div class="ns-step-pane" id="ns-pane-5">
+      <div class="ns-step-title">Stage Game Files</div>
+      <div class="ns-step-desc">
+        Download the game server files to the target host via SteamCMD.
+        This is a one-time ~3 GB download; subsequent updates use
+        <code>steamcmd +app_update</code> to sync only changed files.
+        Your Steam credentials are used only to authenticate the download
+        and are never stored in VeriSimDB.
+      </div>
+
+      <div class="ns-section">
+        <div class="ns-section-title">Steam Credentials</div>
+
+        <div class="ns-field">
+          <label for="ns-steam-user">Steam Username</label>
+          <input type="text" id="ns-steam-user" placeholder="hyperpolymath"
+                 autocomplete="username" />
+          <div class="ns-hint">The Steam account that owns the game (must own AppID 1200170).</div>
+        </div>
+
+        <div class="ns-field">
+          <label for="ns-steam-pass">Steam Password</label>
+          <input type="password" id="ns-steam-pass" placeholder="••••••••"
+                 autocomplete="current-password" />
+          <div class="ns-hint">
+            Used only for this download. Steam Guard prompts are handled
+            interactively if needed.
+          </div>
+        </div>
+
+        <div class="ns-field">
+          <label>Skip Staging (files already present on target)</label>
+          <div class="ns-toggle-row">
+            <label class="ns-toggle">
+              <input type="checkbox" id="ns-skip-stage" onchange="nsSkipStageChange()" />
+              <span class="ns-toggle-track"></span>
+            </label>
+            <span class="ns-hint" style="margin-top:0;">
+              Tick this if you have already run
+              <code>just cryofall-stage-verpex</code> manually.
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div id="ns-stage-run-section">
+        <button class="btn btn-primary" id="ns-stage-btn" onclick="nsRunStaging()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" style="margin-right:5px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Start Download
+        </button>
+
+        <div id="ns-stage-progress-section" style="display:none; margin-top:16px;">
+          <div class="ns-progress-bar-wrap">
+            <div class="ns-progress-bar-fill" id="ns-stage-progress-fill"></div>
+          </div>
+          <div class="ns-progress-label" id="ns-stage-progress-label">Connecting to Steam…</div>
+          <div class="ns-terminal" id="ns-stage-terminal"></div>
+        </div>
+      </div>
+
+      <div class="ns-alert" id="ns-stage-result"></div>
+    </div>
+
+    <!-- ── Step 6: Provision ─────────────────────────────────────────────── -->
+    <div class="ns-step-pane" id="ns-pane-6">
+      <div class="ns-step-title">Provision Server</div>
+      <div class="ns-step-desc">
+        GSA will now execute the 9-step schema-driven provisioner on the
+        target host: preflight → build image → create volumes → open firewall
+        ports → install Quadlet → start container → verify → register in
+        VeriSimDB → report.
+      </div>
+
+      <button class="btn btn-primary" id="ns-provision-btn" onclick="nsRunProvision()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" style="margin-right:5px;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        Run Provisioner
+      </button>
+
+      <div id="ns-provision-terminal-section" style="display:none; margin-top:16px;">
+        <div class="ns-terminal" id="ns-provision-terminal"></div>
+      </div>
+
+      <div class="ns-alert" id="ns-provision-result"></div>
+    </div>
+
+    <!-- ── Step 7: Verify + Report ───────────────────────────────────────── -->
+    <div class="ns-step-pane" id="ns-pane-7">
+      <div class="ns-step-title">Verify &amp; Connect</div>
+      <div class="ns-step-desc">
+        GSA will probe the newly deployed server to confirm it is reachable,
+        then register it in VeriSimDB and generate your connection details.
+      </div>
+
+      <button class="btn btn-primary" id="ns-verify-btn" onclick="nsRunVerify()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" style="margin-right:5px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22,4 12,14.01 9,11.01"/></svg>
+        Probe &amp; Verify
+      </button>
+
+      <div id="ns-verify-report" style="display:none; margin-top:20px;">
+
+        <div class="ns-report-card">
+          <h4>Connection Details</h4>
+          <div class="ns-kv-row">
+            <span class="ns-key">Host</span>
+            <span class="ns-val" id="rpt-host">—</span>
+          </div>
+          <div class="ns-kv-row">
+            <span class="ns-key">Game Port (UDP)</span>
+            <span class="ns-val" id="rpt-port">—</span>
+          </div>
+          <div class="ns-kv-row">
+            <span class="ns-key">DNS Name</span>
+            <span class="ns-val" id="rpt-dns">—</span>
+          </div>
+          <div class="ns-kv-row">
+            <span class="ns-key">Direct Connect</span>
+            <span class="ns-val" id="rpt-connect">—</span>
+          </div>
+        </div>
+
+        <div class="ns-report-card">
+          <h4>Server Identity</h4>
+          <div class="ns-kv-row">
+            <span class="ns-key">Server Name</span>
+            <span class="ns-val" id="rpt-name">—</span>
+          </div>
+          <div class="ns-kv-row">
+            <span class="ns-key">Game Profile</span>
+            <span class="ns-val" id="rpt-profile">—</span>
+          </div>
+          <div class="ns-kv-row">
+            <span class="ns-key">Mode</span>
+            <span class="ns-val" id="rpt-mode">—</span>
+          </div>
+          <div class="ns-kv-row">
+            <span class="ns-key">VeriSimDB Registered</span>
+            <span class="ns-val" id="rpt-vdb">—</span>
+          </div>
+        </div>
+
+        <div class="ns-report-card">
+          <h4>Operators</h4>
+          <div id="rpt-operators">—</div>
+        </div>
+
+        <div class="ns-alert ok" id="ns-verify-ok" style="margin-top:8px;"></div>
+        <div class="ns-alert err" id="ns-verify-err" style="margin-top:8px;"></div>
+
+        <div class="ns-cta-box" id="ns-add-server-box" style="display:none;">
+          <p>Server is live and registered in VeriSimDB. Open it in the Server Browser?</p>
+          <button class="btn btn-success" onclick="nsOpenInBrowser()">
+            Open in Server Browser
+          </button>
+        </div>
+
+        <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="nsInstallWatchdog()">
+            Install Self-Heal Watchdog
+          </button>
+          <button class="btn btn-sm" onclick="nsCopyConnectString()">
+            Copy Connect String
+          </button>
+          <button class="btn btn-sm" onclick="nsStartNewWizard()">
+            Deploy Another Server
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /ns-body -->
+
+  <!-- =====================================================================
+       Footer navigation
+       ===================================================================== -->
+  <div class="ns-footer">
+    <div class="ns-footer-left">
+      <button class="btn btn-sm" id="ns-btn-back" onclick="nsBack()" disabled>
+        &#8592; Back
+      </button>
+    </div>
+    <div class="ns-footer-mid" id="ns-footer-status"></div>
+    <div class="ns-footer-right">
+      <button class="btn btn-sm btn-primary" id="ns-btn-next" onclick="nsNext()">
+        Next &#8594;
+      </button>
+    </div>
+  </div>
+
+</div><!-- /ns-root -->
+
+<script>
+  // ===========================================================================
+  // Nexus Setup wizard — controller
+  // ===========================================================================
+
+  /**
+   * Wizard state.  Updated as the user progresses through the 7 steps.
+   */
+  var nsState = {
+    currentStep: 1,
+    totalSteps: 7,
+
+    // Step 1
+    selectedProfileId: null,
+    selectedProfileData: null,
+
+    // Step 2 — operator slots array: [{vanity, steamId, name}]
+    operators: [
+      { vanity: 'pengie5',       steamId: '76561198149527024', name: 'pengie5'       },
+      { vanity: 'hyperpolymath', steamId: '76561198141836018', name: 'hyperpolymath' }
+    ],
+
+    // Step 3 — server config
+    serverConfig: {},
+
+    // Step 4 — target
+    targetHost: '209.42.26.106',
+    targetSshUser: 'root',
+    targetSshKey: '',
+    runtime: 'podman',
+
+    // Step 5 — staging
+    steamUser: '',
+    steamPass: '',
+    skipStage: false,
+    stagingDone: false,
+
+    // Step 6 — provisioning
+    provisionDone: false,
+    provisionedServerId: null,
+
+    // Step 7 — verify
+    verifyDone: false
+  };
+
+  // ---------------------------------------------------------------------------
+  // Bootstrap: load profiles on panel activation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Called by host.html when the nexus-setup panel becomes active.
+   * Loads the profile list from the GSA FFI via IPC.
+   */
+  function refreshNexusSetup() {
+    nsLoadProfiles();
+    nsRenderOperatorSlots();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 1: Profile loading
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetch the list of game profiles via IPC and render profile cards.
+   */
+  async function nsLoadProfiles() {
+    var grid = document.getElementById('ns-profile-grid');
+    var loading = document.getElementById('ns-profile-loading');
+    if (!grid) return;
+
+    loading.style.display = 'block';
+    grid.innerHTML = '';
+
+    try {
+      var resp = await gossamerInvoke('list_profiles', {});
+      loading.style.display = 'none';
+
+      var profiles = [];
+      if (resp.ok && Array.isArray(resp.data)) {
+        profiles = resp.data;
+      } else if (resp.ok && typeof resp.data === 'string') {
+        try { profiles = JSON.parse(resp.data); } catch (_) {}
+      }
+
+      // Fallback: known profiles when FFI not wired yet
+      if (profiles.length === 0) {
+        profiles = [
+          { id: 'cryofall',   name: 'CryoFall',            game_port: 6000, discovery_port: 6001,  description: 'AtomicTorch Automaton engine' },
+          { id: 'valheim',    name: 'Valheim',              game_port: 2456, discovery_port: 2457,  description: 'Viking survival game' },
+          { id: 'minecraft',  name: 'Minecraft Java',       game_port: 25565, discovery_port: 25565, description: 'Mojang sandbox game' },
+          { id: 'terraria',   name: 'TModLoader/Terraria',  game_port: 7777, discovery_port: 7777,  description: '2D sandbox adventure' },
+          { id: 'satisfactory', name: 'Satisfactory',       game_port: 7777, discovery_port: 15000, description: 'Factory-building game' }
+        ];
+      }
+
+      profiles.forEach(function(profile) {
+        var card = document.createElement('div');
+        card.className = 'ns-profile-card' +
+          (nsState.selectedProfileId === profile.id ? ' selected' : '');
+        card.setAttribute('data-id', profile.id);
+        card.innerHTML =
+          '<div class="ns-profile-card-name">' + nsEscapeHtml(profile.name) + '</div>' +
+          '<div class="ns-profile-card-id">' + nsEscapeHtml(profile.id) + '</div>' +
+          '<div class="ns-profile-card-port">UDP ' + nsEscapeHtml(String(profile.game_port)) + '</div>';
+        card.onclick = function() { nsSelectProfile(profile); };
+        grid.appendChild(card);
+      });
+
+    } catch (err) {
+      loading.style.display = 'none';
+      grid.innerHTML =
+        '<div style="color:var(--danger-fg);font-size:13px;">Failed to load profiles: ' +
+        nsEscapeHtml(String(err)) + '</div>';
+    }
+  }
+
+  /**
+   * Select a profile card, update state, enable Next.
+   *
+   * @param {object} profile - Profile object with id, name, game_port, etc.
+   */
+  function nsSelectProfile(profile) {
+    nsState.selectedProfileId = profile.id;
+    nsState.selectedProfileData = profile;
+
+    // Highlight selected card
+    document.querySelectorAll('.ns-profile-card').forEach(function(c) {
+      c.classList.toggle('selected', c.getAttribute('data-id') === profile.id);
+    });
+
+    // Update hint and enable Next
+    var hint = document.getElementById('ns-profile-hint');
+    hint.className = 'ns-alert ok';
+    hint.textContent = profile.name + ' selected — UDP port ' + profile.game_port + '. Click Next to continue.';
+
+    nsUpdateFooter();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 2: Steam operator slots
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Render the list of operator input cards from nsState.operators.
+   * Each slot has a vanity input, a Resolve button, and an inline result.
+   */
+  function nsRenderOperatorSlots() {
+    var list = document.getElementById('ns-operators-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    nsState.operators.forEach(function(op, idx) {
+      var card = document.createElement('div');
+      card.className = 'ns-operator-card';
+      card.id = 'ns-op-card-' + idx;
+
+      var resolved = op.steamId
+        ? '<div class="ns-resolve-result ok" id="ns-op-result-' + idx + '">' +
+          '&#x2713; ' + nsEscapeHtml(op.name || op.steamId) +
+          ' — Steam64: ' + nsEscapeHtml(op.steamId) + '</div>'
+        : '<div class="ns-resolve-result" id="ns-op-result-' + idx + '"></div>';
+
+      card.innerHTML =
+        '<div class="ns-operator-card-header">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' +
+        'Operator ' + (idx + 1) +
+        (nsState.operators.length > 1
+          ? ' <button class="btn btn-sm" style="margin-left:auto;padding:1px 6px;font-size:11px;" onclick="nsRemoveOperator(' + idx + ')">Remove</button>'
+          : '') +
+        '</div>' +
+        '<div class="ns-field" style="margin-bottom:8px;">' +
+        '<label>Steam Vanity URL or Steam64 ID</label>' +
+        '<div class="ns-resolve-row">' +
+        '<input type="text" id="ns-op-vanity-' + idx + '" value="' + nsEscapeAttr(op.vanity || op.steamId || '') + '" placeholder="vanity-url or 76561198…" />' +
+        '<button class="btn btn-sm btn-primary" onclick="nsResolveOperator(' + idx + ')">Resolve</button>' +
+        '</div>' +
+        resolved +
+        '</div>';
+
+      list.appendChild(card);
+    });
+  }
+
+  /**
+   * Add a new empty operator slot.
+   */
+  function nsAddOperatorSlot() {
+    nsState.operators.push({ vanity: '', steamId: '', name: '' });
+    nsRenderOperatorSlots();
+  }
+
+  /**
+   * Remove an operator slot by index.
+   *
+   * @param {number} idx - Slot index to remove
+   */
+  function nsRemoveOperator(idx) {
+    nsState.operators.splice(idx, 1);
+    nsRenderOperatorSlots();
+  }
+
+  /**
+   * Resolve a Steam vanity URL to a Steam64 ID via IPC.
+   * Updates the slot's result element inline.
+   *
+   * @param {number} idx - Operator slot index
+   */
+  async function nsResolveOperator(idx) {
+    var input = document.getElementById('ns-op-vanity-' + idx);
+    var resultEl = document.getElementById('ns-op-result-' + idx);
+    if (!input || !resultEl) return;
+
+    var vanity = input.value.trim();
+    if (!vanity) return;
+
+    resultEl.className = 'ns-resolve-result';
+    resultEl.textContent = 'Resolving…';
+    resultEl.style.display = 'block';
+
+    // If it looks like a raw Steam64 ID (17-digit number), skip resolve
+    if (/^\d{17}$/.test(vanity)) {
+      nsState.operators[idx].steamId = vanity;
+      nsState.operators[idx].name = vanity;
+      resultEl.className = 'ns-resolve-result ok';
+      resultEl.textContent = '✓ Steam64 ID: ' + vanity;
+      return;
+    }
+
+    try {
+      var resp = await gossamerInvoke('steam_resolve_vanity', { vanity_url: vanity });
+
+      if (resp.ok && resp.data && resp.data.steam_id) {
+        var steamId = resp.data.steam_id;
+        var name    = resp.data.name || vanity;
+        nsState.operators[idx].vanity  = vanity;
+        nsState.operators[idx].steamId = steamId;
+        nsState.operators[idx].name    = name;
+        resultEl.className = 'ns-resolve-result ok';
+        resultEl.textContent = '✓ ' + nsEscapeHtml(name) + ' — Steam64: ' + nsEscapeHtml(steamId);
+      } else {
+        resultEl.className = 'ns-resolve-result err';
+        resultEl.textContent = '✗ Not found: ' + (resp.error || 'unknown error');
+      }
+    } catch (err) {
+      resultEl.className = 'ns-resolve-result err';
+      resultEl.textContent = '✗ Error: ' + nsEscapeHtml(String(err));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 4: Target mode
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Show/hide remote SSH fields depending on deployment mode selection.
+   */
+  function nsTargetModeChange() {
+    var mode = document.getElementById('ns-target-mode').value;
+    var remoteFields = document.getElementById('ns-remote-fields');
+    remoteFields.style.display = (mode === 'remote') ? 'block' : 'none';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 5: Staging
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Show/hide Steam credential fields when "skip staging" is toggled.
+   */
+  function nsSkipStageChange() {
+    var skip = document.getElementById('ns-skip-stage').checked;
+    nsState.skipStage = skip;
+    document.getElementById('ns-stage-run-section').style.display = skip ? 'none' : 'block';
+    if (skip) {
+      nsState.stagingDone = true;
+      nsUpdateFooter();
+      var result = document.getElementById('ns-stage-result');
+      result.className = 'ns-alert ok';
+      result.textContent = 'Skipping — game files assumed present on target.';
+    } else {
+      nsState.stagingDone = false;
+      nsUpdateFooter();
+      var result = document.getElementById('ns-stage-result');
+      result.className = 'ns-alert';
+    }
+  }
+
+  /**
+   * Kick off the SteamCMD staging operation via nexus_stage_files IPC.
+   * Polls for streaming log output and updates the terminal element.
+   */
+  async function nsRunStaging() {
+    var user = document.getElementById('ns-steam-user').value.trim();
+    var pass = document.getElementById('ns-steam-pass').value;
+
+    if (!user) {
+      nsShowAlert('ns-stage-result', 'err', 'Steam username is required.');
+      return;
+    }
+    if (!pass) {
+      nsShowAlert('ns-stage-result', 'err', 'Steam password is required.');
+      return;
+    }
+
+    nsState.steamUser = user;
+    nsState.steamPass = pass;
+
+    var btn = document.getElementById('ns-stage-btn');
+    btn.disabled = true;
+
+    var progSection = document.getElementById('ns-stage-progress-section');
+    progSection.style.display = 'block';
+
+    var terminal = document.getElementById('ns-stage-terminal');
+    var fill     = document.getElementById('ns-stage-progress-fill');
+    var label    = document.getElementById('ns-stage-progress-label');
+    terminal.innerHTML = '';
+
+    nsTermPrint(terminal, 'info', '[GSA] Starting SteamCMD stage for ' + nsState.selectedProfileId + '…');
+    nsTermPrint(terminal, 'dim',  '[GSA] Target: ' + nsState.targetHost);
+    label.textContent = 'Authenticating with Steam…';
+    fill.style.width = '5%';
+
+    try {
+      var resp = await gossamerInvoke('nexus_stage_files', {
+        profile_id:  nsState.selectedProfileId,
+        steam_user:  user,
+        steam_pass:  pass,
+        target_host: nsState.targetHost
+      });
+
+      if (resp.ok) {
+        fill.style.width = '100%';
+        label.textContent = 'Download complete.';
+        var bytes = resp.data && resp.data.bytes_transferred
+          ? nsFmtBytes(resp.data.bytes_transferred) : 'unknown size';
+        nsTermPrint(terminal, 'ok', '[GSA] ✓ Staging complete — ' + bytes + ' transferred.');
+        nsState.stagingDone = true;
+        nsShowAlert('ns-stage-result', 'ok', 'Game files staged successfully. Click Next to continue.');
+        nsUpdateFooter();
+      } else {
+        fill.style.width = '100%';
+        fill.style.background = 'var(--danger-color)';
+        label.textContent = 'Download failed.';
+        nsTermPrint(terminal, 'err', '[GSA] ✗ Staging failed: ' + (resp.error || 'unknown error'));
+        nsShowAlert('ns-stage-result', 'err', 'Staging failed: ' + (resp.error || 'unknown'));
+        btn.disabled = false;
+      }
+    } catch (err) {
+      nsTermPrint(terminal, 'err', '[GSA] ✗ Exception: ' + String(err));
+      nsShowAlert('ns-stage-result', 'err', 'Staging error: ' + String(err));
+      btn.disabled = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 6: Provisioning
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Collect all config state and call nexus_provision via IPC.
+   * Streams live output to the provision terminal.
+   */
+  async function nsRunProvision() {
+    var btn = document.getElementById('ns-provision-btn');
+    btn.disabled = true;
+
+    var termSection = document.getElementById('ns-provision-terminal-section');
+    termSection.style.display = 'block';
+    var terminal = document.getElementById('ns-provision-terminal');
+    terminal.innerHTML = '';
+
+    // Collect server config from step 3 fields
+    var serverConfig = nsCollectServerConfig();
+
+    // Collect operators
+    var operators = nsState.operators.filter(function(op) { return op.steamId; });
+
+    nsTermPrint(terminal, 'info', '[GSA] Starting provisioner — 9 steps…');
+    nsTermPrint(terminal, 'dim',  '[GSA] Profile:  ' + nsState.selectedProfileId);
+    nsTermPrint(terminal, 'dim',  '[GSA] Target:   ' + nsState.targetHost);
+    nsTermPrint(terminal, 'dim',  '[GSA] Operators: ' + operators.length);
+
+    try {
+      var resp = await gossamerInvoke('nexus_provision', {
+        profile_id:  nsState.selectedProfileId,
+        target_host: nsState.targetHost,
+        ssh_user:    nsState.targetSshUser,
+        ssh_key:     nsState.targetSshKey,
+        runtime:     nsState.runtime,
+        server_config: serverConfig,
+        operators:   operators
+      });
+
+      if (resp.ok) {
+        var serverId = (resp.data && resp.data.server_id) ? resp.data.server_id : nsState.selectedProfileId;
+        nsState.provisionedServerId = serverId;
+        nsState.provisionDone = true;
+        nsTermPrint(terminal, 'ok', '[GSA] ✓ Provisioning complete — server ID: ' + serverId);
+        nsShowAlert('ns-provision-result', 'ok', 'Server provisioned. Proceed to verify.');
+        nsUpdateFooter();
+      } else {
+        nsTermPrint(terminal, 'err', '[GSA] ✗ Provision failed: ' + (resp.error || 'unknown'));
+        nsShowAlert('ns-provision-result', 'err', 'Provisioning failed: ' + (resp.error || 'unknown'));
+        btn.disabled = false;
+      }
+    } catch (err) {
+      nsTermPrint(terminal, 'err', '[GSA] ✗ Exception: ' + String(err));
+      nsShowAlert('ns-provision-result', 'err', 'Provision error: ' + String(err));
+      btn.disabled = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 7: Verify
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Probe the newly deployed server and populate the connection report.
+   */
+  async function nsRunVerify() {
+    var btn = document.getElementById('ns-verify-btn');
+    btn.disabled = true;
+
+    var profile = nsState.selectedProfileData;
+    var gamePort = profile ? profile.game_port : 6000;
+
+    var okEl  = document.getElementById('ns-verify-ok');
+    var errEl = document.getElementById('ns-verify-err');
+    okEl.className = 'ns-alert';
+    errEl.className = 'ns-alert';
+
+    try {
+      var resp = await gossamerInvoke('nexus_verify', {
+        profile_id:  nsState.selectedProfileId,
+        target_host: nsState.targetHost,
+        game_port:   gamePort
+      });
+
+      // Populate report cards regardless of probe outcome
+      var serverName = document.getElementById('ns-cfg-server-name');
+      var reportDiv  = document.getElementById('ns-verify-report');
+      reportDiv.style.display = 'block';
+
+      document.getElementById('rpt-host').textContent =
+        nsState.targetHost || '—';
+      document.getElementById('rpt-port').textContent =
+        String(gamePort);
+      document.getElementById('rpt-dns').textContent =
+        (resp.ok && resp.data && resp.data.dns_name) ? resp.data.dns_name : 'cryofall.jewell.nexus';
+      document.getElementById('rpt-connect').textContent =
+        nsState.targetHost + ':' + gamePort;
+      document.getElementById('rpt-name').textContent =
+        serverName ? serverName.value : '—';
+      document.getElementById('rpt-profile').textContent =
+        nsState.selectedProfileId || '—';
+      document.getElementById('rpt-mode').textContent =
+        (document.getElementById('ns-cfg-is-pve') && document.getElementById('ns-cfg-is-pve').checked)
+          ? 'PvE' : 'PvP';
+      document.getElementById('rpt-vdb').textContent =
+        (resp.ok && resp.data && resp.data.verisimdb_registered) ? '✓ Yes' : 'Pending';
+
+      // Operators
+      var opsEl = document.getElementById('rpt-operators');
+      opsEl.innerHTML = '';
+      nsState.operators.filter(function(op) { return op.steamId; }).forEach(function(op) {
+        var row = document.createElement('div');
+        row.className = 'ns-kv-row';
+        row.innerHTML =
+          '<span class="ns-key">' + nsEscapeHtml(op.name || op.vanity || 'Unknown') + '</span>' +
+          '<span class="ns-val">' + nsEscapeHtml(op.steamId) + '</span>';
+        opsEl.appendChild(row);
+      });
+
+      if (resp.ok) {
+        nsState.verifyDone = true;
+        okEl.className = 'ns-alert ok';
+        okEl.textContent = '✓ Server is live and responding on UDP ' + gamePort + '. VeriSimDB registration complete.';
+        document.getElementById('ns-add-server-box').style.display = 'flex';
+      } else {
+        errEl.className = 'ns-alert warn';
+        errEl.textContent = 'Probe returned: ' + (resp.error || 'no response yet') +
+          '. The server may need a moment to start. You can retry verification.';
+        btn.disabled = false;
+      }
+
+      nsUpdateFooter();
+    } catch (err) {
+      document.getElementById('ns-verify-report').style.display = 'block';
+      errEl.className = 'ns-alert err';
+      errEl.textContent = 'Verify error: ' + nsEscapeHtml(String(err));
+      btn.disabled = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 7 CTAs
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Switch to the Server Browser panel with the newly provisioned server selected.
+   */
+  function nsOpenInBrowser() {
+    if (typeof switchPanel === 'function') {
+      switchPanel('server-browser');
+    }
+  }
+
+  /**
+   * Install the self-heal watchdog as a systemd service on the target host.
+   */
+  async function nsInstallWatchdog() {
+    var resp = await gossamerInvoke('server_action', {
+      server_id: nsState.provisionedServerId || nsState.selectedProfileId,
+      action: 'install_watchdog'
+    });
+    if (resp.ok) {
+      nsShowToast('Self-heal watchdog installed.', 'success');
+    } else {
+      nsShowToast('Watchdog install failed: ' + (resp.error || 'unknown'), 'error');
+    }
+  }
+
+  /**
+   * Copy the direct connection string to clipboard.
+   */
+  function nsCopyConnectString() {
+    var connectEl = document.getElementById('rpt-connect');
+    var str = connectEl ? connectEl.textContent : '';
+    if (str && navigator.clipboard) {
+      navigator.clipboard.writeText(str).then(function() {
+        nsShowToast('Connect string copied.', 'success');
+      });
+    }
+  }
+
+  /**
+   * Reset wizard to step 1 for deploying another server.
+   */
+  function nsStartNewWizard() {
+    nsState.currentStep = 1;
+    nsState.selectedProfileId = null;
+    nsState.selectedProfileData = null;
+    nsState.operators = [
+      { vanity: 'pengie5',       steamId: '76561198149527024', name: 'pengie5'       },
+      { vanity: 'hyperpolymath', steamId: '76561198141836018', name: 'hyperpolymath' }
+    ];
+    nsState.stagingDone = false;
+    nsState.provisionDone = false;
+    nsState.verifyDone = false;
+    nsState.provisionedServerId = null;
+    nsRenderStep(1);
+    nsLoadProfiles();
+    nsRenderOperatorSlots();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Navigation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Validate current step and advance to the next.
+   */
+  function nsNext() {
+    if (!nsCanAdvance(nsState.currentStep)) return;
+
+    if (nsState.currentStep < nsState.totalSteps) {
+      // Collect target fields before leaving step 4
+      if (nsState.currentStep === 4) {
+        nsCollectTargetFields();
+      }
+      nsRenderStep(nsState.currentStep + 1);
+    }
+  }
+
+  /**
+   * Return to the previous step.
+   */
+  function nsBack() {
+    if (nsState.currentStep > 1) {
+      nsRenderStep(nsState.currentStep - 1);
+    }
+  }
+
+  /**
+   * Activate a specific wizard step: show/hide panes, update stepper dots.
+   *
+   * @param {number} step - 1-based step number
+   */
+  function nsRenderStep(step) {
+    nsState.currentStep = step;
+
+    // Show correct pane
+    for (var i = 1; i <= nsState.totalSteps; i++) {
+      var pane = document.getElementById('ns-pane-' + i);
+      if (pane) pane.classList.toggle('active', i === step);
+    }
+
+    // Update stepper dots
+    for (var i = 1; i <= nsState.totalSteps; i++) {
+      var dot = document.getElementById('ns-step-dot-' + i);
+      if (!dot) continue;
+      dot.classList.remove('active', 'completed');
+      if (i < step) dot.classList.add('completed');
+      else if (i === step) dot.classList.add('active');
+
+      // Update connector before this step
+      if (i > 1) {
+        var conn = document.getElementById('ns-conn-' + (i-1) + '-' + i);
+        if (conn) conn.classList.toggle('completed', i <= step);
+      }
+
+      // Update circle text for completed steps (checkmark)
+      var circle = dot.querySelector('.ns-step-circle');
+      if (circle) {
+        circle.textContent = (i < step) ? '✓' : String(i);
+      }
+    }
+
+    nsUpdateFooter();
+  }
+
+  /**
+   * Refresh the Back/Next button states and footer status message.
+   */
+  function nsUpdateFooter() {
+    var step = nsState.currentStep;
+    var backBtn = document.getElementById('ns-btn-back');
+    var nextBtn = document.getElementById('ns-btn-next');
+    var midEl   = document.getElementById('ns-footer-status');
+
+    if (backBtn) backBtn.disabled = (step === 1);
+    if (nextBtn) {
+      var lastStep = (step === nsState.totalSteps);
+      nextBtn.style.display = lastStep ? 'none' : 'inline-flex';
+      nextBtn.disabled = !nsCanAdvance(step);
+    }
+    if (midEl) {
+      midEl.textContent = 'Step ' + step + ' of ' + nsState.totalSteps;
+    }
+  }
+
+  /**
+   * Return true if the user may advance from the given step.
+   *
+   * @param {number} step - Step to check
+   * @returns {boolean}
+   */
+  function nsCanAdvance(step) {
+    switch (step) {
+      case 1: return !!nsState.selectedProfileId;
+      case 2: return nsState.operators.some(function(op) { return !!op.steamId; });
+      case 3: return true;   // Config always valid (defaults filled)
+      case 4: return true;   // Target always valid (default filled)
+      case 5: return nsState.stagingDone || nsState.skipStage;
+      case 6: return nsState.provisionDone;
+      case 7: return true;
+      default: return true;
+    }
+  }
+
+  /**
+   * Read deployment target fields into nsState.
+   */
+  function nsCollectTargetFields() {
+    var mode    = document.getElementById('ns-target-mode');
+    var host    = document.getElementById('ns-target-host');
+    var user    = document.getElementById('ns-target-ssh-user');
+    var key     = document.getElementById('ns-target-ssh-key');
+    var runtime = document.getElementById('ns-runtime');
+
+    nsState.targetHost    = (mode && mode.value === 'remote' && host) ? host.value.trim() : 'localhost';
+    nsState.targetSshUser = user ? user.value.trim() : 'root';
+    nsState.targetSshKey  = key ? key.value.trim() : '';
+    nsState.runtime       = runtime ? runtime.value : 'podman';
+  }
+
+  /**
+   * Collect server config from step 3 form fields into a plain object.
+   *
+   * @returns {object} Key/value map of server settings
+   */
+  function nsCollectServerConfig() {
+    function val(id) {
+      var el = document.getElementById(id);
+      return el ? el.value : '';
+    }
+    function chk(id) {
+      var el = document.getElementById(id);
+      return el ? el.checked : false;
+    }
+    return {
+      ServerName:                 val('ns-cfg-server-name'),
+      ServerDescription:          val('ns-cfg-description'),
+      WelcomeMessage:             val('ns-cfg-welcome'),
+      ServerPort:                 val('ns-cfg-port'),
+      MaxPlayers:                 val('ns-cfg-max-players'),
+      IsPrivate:                  String(chk('ns-cfg-is-private')),
+      ServerPassword:             val('ns-cfg-password'),
+      IsPvE:                      String(chk('ns-cfg-is-pve')),
+      IsRaidsEnabled:             String(chk('ns-cfg-raids-enabled')),
+      WipePeriodDays:             val('ns-cfg-wipe-days'),
+      GatheringSpeedMultiplier:   val('ns-cfg-gather'),
+      LearningSpeedMultiplier:    val('ns-cfg-learn'),
+      CraftingSpeedMultiplier:    val('ns-cfg-craft')
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Append a line to a terminal element with a CSS class for colouring.
+   *
+   * @param {Element} el    - .ns-terminal element
+   * @param {string} cls    - CSS class: info|ok|warn|err|dim|bold
+   * @param {string} text   - Line text (auto-escaped)
+   */
+  function nsTermPrint(el, cls, text) {
+    if (!el) return;
+    var line = document.createElement('div');
+    line.className = 't-' + cls;
+    line.textContent = text;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  /**
+   * Show / update an alert element.
+   *
+   * @param {string} id      - Element ID
+   * @param {string} type    - ok|warn|err|info
+   * @param {string} message - Alert text
+   */
+  function nsShowAlert(id, type, message) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'ns-alert ' + type;
+    el.textContent = message;
+  }
+
+  /**
+   * Show a global toast notification (delegates to host.html's showToast).
+   *
+   * @param {string} message - Notification text
+   * @param {string} type    - success|error|info
+   */
+  function nsShowToast(message, type) {
+    if (typeof showToast === 'function') {
+      showToast(message, type);
+    }
+  }
+
+  /**
+   * Format bytes to a human-readable string.
+   *
+   * @param {number} bytes - Byte count
+   * @returns {string} e.g. "2.8 GB"
+   */
+  function nsFmtBytes(bytes) {
+    if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
+    if (bytes >= 1e6) return (bytes / 1e6).toFixed(0) + ' MB';
+    if (bytes >= 1e3) return (bytes / 1e3).toFixed(0) + ' KB';
+    return bytes + ' B';
+  }
+
+  /**
+   * Escape a string for safe HTML text content insertion.
+   *
+   * @param {string} str - Raw string
+   * @returns {string} HTML-escaped string
+   */
+  function nsEscapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /**
+   * Escape a string for use in an HTML attribute value (already inside double-quotes).
+   *
+   * @param {string} str - Raw string
+   * @returns {string} Attribute-safe string
+   */
+  function nsEscapeAttr(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Init
+  // ---------------------------------------------------------------------------
+
+  // Render step 1 and update footer on load
+  nsRenderStep(1);
+
+</script>
