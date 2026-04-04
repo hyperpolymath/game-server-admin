@@ -37,6 +37,8 @@ comptime {
     _ = &verisimdb_client.gossamer_gsa_verisimdb_drift;
     _ = &server_actions.gossamer_gsa_server_action;
     _ = &server_actions.gossamer_gsa_get_logs;
+    _ = &server_actions.gossamer_gsa_run_script;
+    _ = &server_actions.gossamer_gsa_write_server_config;
     _ = &game_profiles.gossamer_gsa_load_profiles;
     _ = &game_profiles.gossamer_gsa_list_profiles;
     _ = &game_profiles.gossamer_gsa_add_profile;
