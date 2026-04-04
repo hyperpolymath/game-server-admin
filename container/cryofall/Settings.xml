@@ -95,15 +95,9 @@
     Jonathan D.A. Jewell and Joshua Jewell are both operators.
     Find Steam IDs at: https://steamid.io/
   -->
-  <!--
-    Joshua's Steam vanity URL "thekumonkid" did not resolve on Steam Community.
-    Check the correct vanity URL at: https://steamcommunity.com/id/thekumonkid
-    If that's wrong, find it at: steamcommunity.com → profile → Edit Profile → Custom URL
-    Replace JOSHUA_STEAM64_ID_HERE with the 17-digit number once confirmed.
-  -->
   <Operators>
-    <Operator steamId="JOSHUA_STEAM64_ID_HERE"  name="thekumonkid" />
-    <Operator steamId="76561198141836018"        name="hyperpolymath" />
+    <Operator steamId="76561198149527024"  name="pengie5" />
+    <Operator steamId="76561198141836018"  name="hyperpolymath" />
   </Operators>
 
 </server-settings>
