@@ -159,6 +159,47 @@ pub fn build(b: *std.Build) void {
     smoke_step.dependOn(&run_smoke_tests.step);
 
     // ---------------------------------------------------------------
+    // Property tests — invariant / property-based tests
+    // ---------------------------------------------------------------
+    const property_mod = b.createModule(.{
+        .root_source_file = b.path("test/property_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    property_mod.addImport("gsa", src_module);
+
+    const property_tests = b.addTest(.{
+        .root_module = property_mod,
+    });
+
+    const run_property_tests = b.addRunArtifact(property_tests);
+    const property_step = b.step("test-property", "Run property/invariant tests");
+    property_step.dependOn(&run_property_tests.step);
+
+    // ---------------------------------------------------------------
+    // Benchmarks — micro-benchmark executable (prints to stderr)
+    // ---------------------------------------------------------------
+    const bench_mod = b.createModule(.{
+        .root_source_file = b.path("bench/bench_main.zig"),
+        .target = target,
+        .optimize = .ReleaseFast, // always compile benchmarks with optimisations
+        .link_libc = true,
+    });
+    bench_mod.addImport("gsa", src_module);
+
+    const bench_exe = b.addExecutable(.{
+        .name = "bench",
+        .root_module = bench_mod,
+    });
+    b.installArtifact(bench_exe);
+
+    const run_bench = b.addRunArtifact(bench_exe);
+    run_bench.step.dependOn(b.getInstallStep());
+    const bench_step = b.step("bench", "Run FFI micro-benchmarks");
+    bench_step.dependOn(&run_bench.step);
+
+    // ---------------------------------------------------------------
     // Cross-compile convenience targets
     // ---------------------------------------------------------------
     inline for (.{
