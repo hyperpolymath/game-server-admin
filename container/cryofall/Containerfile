@@ -102,8 +102,14 @@ RUN groupadd -r -g 1500 cryofall && \
 # the linux32/ runtime directory it downloads on first run.
 
 COPY --from=steamcmd-installer /opt/steamcmd /opt/steamcmd
+# Create a wrapper script rather than a symlink.
+# steamcmd.sh uses dirname/$0 to locate linux32/steamcmd relative to itself,
+# so a bare symlink into /usr/local/bin/ breaks the relative path lookup.
+# The wrapper cd's into /opt/steamcmd first, keeping all relative paths intact.
 RUN chown -R cryofall:cryofall /opt/steamcmd && \
-    ln -sf /opt/steamcmd/steamcmd.sh /usr/local/bin/steamcmd
+    printf '#!/bin/sh\ncd /opt/steamcmd && exec ./steamcmd.sh "$@"\n' \
+        > /usr/local/bin/steamcmd && \
+    chmod +x /usr/local/bin/steamcmd
 
 # ── Application files ─────────────────────────────────────────────────────
 WORKDIR /app

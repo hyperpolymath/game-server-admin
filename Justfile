@@ -437,6 +437,48 @@ game-deploy GAME="" DRY="0":
     fi
     PROVISION_DRY_RUN="{{ DRY }}" bash scripts/provision-server.sh "${GAME}"
 
+# ─── Fire-and-forget wizard ───────────────────────────────────────────────────
+# Complete end-to-end server provisioning including Steam auth and game download.
+# Set environment variables before running:
+#   STEAM_USER, STEAM_PASS, GSA_STEAM_API_KEY (optional, for ID resolution)
+#   WIZARD_TARGET_HOST (optional, for remote Verpex deployment)
+
+# Interactive wizard — prompts for all values
+wizard GAME="cryofall":
+    bash scripts/wizard.sh --game {{ GAME }}
+
+# Unattended wizard — reads all values from environment
+wizard-auto GAME="cryofall":
+    WIZARD_GAME="{{ GAME }}" bash scripts/wizard.sh --game {{ GAME }} --unattended
+
+# Stage game files from Steam onto the deployment host
+# Requires: STEAM_USER, STEAM_PASS
+cryofall-stage:
+    bash scripts/steam-stage.sh \
+        --app-id 1200170 \
+        --target-volume cryofall-game-data
+
+# Stage game files to Verpex VPS (set WIZARD_TARGET_HOST or uses default)
+cryofall-stage-verpex:
+    bash scripts/steam-stage.sh \
+        --app-id 1200170 \
+        --target-volume cryofall-game-data \
+        --target-host root@209.42.26.106
+
+# Resolve a Steam vanity URL to a Steam64 ID
+# Usage: just steam-resolve VANITY=hyperpolymath API_KEY=<your-key>
+steam-resolve VANITY="" API_KEY="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VANITY="{{ VANITY }}"
+    KEY="{{ API_KEY }}"
+    [ -z "${KEY}" ] && KEY="${GSA_STEAM_API_KEY:-}"
+    if [ -z "${VANITY}" ]; then
+        echo "Usage: just steam-resolve VANITY=<username>"
+        exit 1
+    fi
+    GSA_STEAM_API_KEY="${KEY}" src/interface/ffi/zig-out/bin/gsa steam resolve "${VANITY}"
+
 # CryoFall shorthand — equivalent to: just game-deploy GAME=cryofall
 cryofall-deploy:
     just game-deploy GAME=cryofall
@@ -472,6 +514,39 @@ cryofall-status:
     echo ""
     echo "Systemd service:"
     systemctl --user status gsa-cryofall --no-pager 2>/dev/null | head -8 || echo "  Not installed"
+
+# Start self-healing watchdog in the foreground
+cryofall-watchdog:
+    bash scripts/self-heal.sh --container cryofall --port 6000
+
+# Install watchdog as a systemd user service (runs in background on Verpex)
+cryofall-watchdog-install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    UNIT_FILE="${HOME}/.config/systemd/user/gsa-cryofall-watchdog.service"
+    mkdir -p "$(dirname "${UNIT_FILE}")"
+    REPO="$(pwd)"
+    cat > "${UNIT_FILE}" << UNIT
+    [Unit]
+    Description=GSA CryoFall self-heal watchdog
+    After=gsa-cryofall.service
+    Requires=gsa-cryofall.service
+
+    [Service]
+    Type=simple
+    ExecStart=/usr/bin/bash ${REPO}/scripts/self-heal.sh --container cryofall --port 6000
+    Restart=always
+    RestartSec=10s
+    StandardOutput=journal
+    StandardError=journal
+
+    [Install]
+    WantedBy=default.target
+    UNIT
+    systemctl --user daemon-reload
+    systemctl --user enable --now gsa-cryofall-watchdog
+    echo "Watchdog service installed and started."
+    systemctl --user status gsa-cryofall-watchdog --no-pager | head -6
 
 # Deploy to Verpex VPS via SSH (run this from local machine)
 # Requires SSH key access: root@209.42.26.106

@@ -17,6 +17,7 @@ const gsa_core = @import("main.zig");
 const probe_mod = @import("probe.zig");
 const game_profiles = @import("game_profiles.zig");
 const verisimdb_client = @import("verisimdb_client.zig");
+const steam_client = @import("steam_client.zig");
 
 /// Check if a file exists (Zig 0.15.2 compat — no std.fs.exists).
 fn fileExists(path: []const u8) bool {
@@ -97,6 +98,39 @@ pub fn main() !void {
             const err_f = std.fs.File.stderr();
             var buf: [256]u8 = undefined;
             const msg = std.fmt.bufPrint(&buf, "Unknown config subcommand: {s}\n", .{config_cmd}) catch "Unknown config subcommand\n";
+            err_f.writeAll(msg) catch {};
+            std.process.exit(1);
+        }
+    } else if (std.mem.eql(u8, cmd, "steam")) {
+        // Steam Web API subcommands
+        // Requires GSA_STEAM_API_KEY environment variable.
+        if (args.len < 3) {
+            const err_f = std.fs.File.stderr();
+            err_f.writeAll("Usage: gsa steam <subcommand>\n") catch {};
+            err_f.writeAll("Subcommands:\n") catch {};
+            err_f.writeAll("  resolve <vanity-url>          Resolve Steam vanity URL to Steam64 ID\n") catch {};
+            err_f.writeAll("  player  <steam64-id>          Fetch player display name and profile\n") catch {};
+            std.process.exit(1);
+        }
+        const steam_cmd = args[2];
+        if (std.mem.eql(u8, steam_cmd, "resolve")) {
+            if (args.len < 4) {
+                const err_f = std.fs.File.stderr();
+                err_f.writeAll("Usage: gsa steam resolve <vanity-url>\n") catch {};
+                std.process.exit(1);
+            }
+            cmdSteamResolve(allocator, args[3], out);
+        } else if (std.mem.eql(u8, steam_cmd, "player")) {
+            if (args.len < 4) {
+                const err_f = std.fs.File.stderr();
+                err_f.writeAll("Usage: gsa steam player <steam64-id>\n") catch {};
+                std.process.exit(1);
+            }
+            cmdSteamPlayer(allocator, args[3], out);
+        } else {
+            const err_f = std.fs.File.stderr();
+            var buf: [256]u8 = undefined;
+            const msg = std.fmt.bufPrint(&buf, "Unknown steam subcommand: {s}\n", .{steam_cmd}) catch "Unknown subcommand\n";
             err_f.writeAll(msg) catch {};
             std.process.exit(1);
         }
@@ -477,6 +511,82 @@ fn writeWithFavorite(existing: []const u8, name: []const u8, host: []const u8, p
     ) catch return error.InvalidParam;
     _ = try out_file.write(entry);
     _ = try out_file.write(existing[fav_end..]);
+}
+
+// ── Steam subcommands ────────────────────────────────────────────────────────
+
+/// Resolve a Steam vanity URL to a Steam64 ID.
+/// Reads GSA_STEAM_API_KEY from the environment.
+fn cmdSteamResolve(allocator: std.mem.Allocator, vanity_url: []const u8, out: std.fs.File) void {
+    const api_key = std.posix.getenv("GSA_STEAM_API_KEY") orelse {
+        const err_f = std.fs.File.stderr();
+        err_f.writeAll("GSA_STEAM_API_KEY is not set.\n") catch {};
+        err_f.writeAll("Get a free Steam Web API key at: https://steamcommunity.com/dev/apikey\n") catch {};
+        std.process.exit(1);
+    };
+
+    var client = steam_client.SteamClient.init(allocator, api_key);
+    defer client.deinit();
+
+    const result = client.resolveVanityUrl(vanity_url) catch |err| {
+        const err_f = std.fs.File.stderr();
+        var buf: [256]u8 = undefined;
+        const msg = switch (err) {
+            error.VanityNotFound => std.fmt.bufPrint(&buf,
+                "Steam vanity URL not found: '{s}'\n" ++
+                "Check the URL at: https://steamcommunity.com/id/{s}\n",
+                .{ vanity_url, vanity_url }) catch "Vanity URL not found\n",
+            error.HTTPError => std.fmt.bufPrint(&buf,
+                "Steam API request failed — check network connectivity\n", .{}) catch "HTTP error\n",
+            else => std.fmt.bufPrint(&buf,
+                "Steam resolve error: {}\n", .{err}) catch "Error\n",
+        };
+        err_f.writeAll(msg) catch {};
+        std.process.exit(1);
+    };
+
+    // Print Steam64 ID to stdout (plain, for scripting)
+    out.writeAll(result.idSlice()) catch {};
+    out.writeAll("\n") catch {};
+}
+
+/// Fetch and display player summary information for a Steam64 ID.
+fn cmdSteamPlayer(allocator: std.mem.Allocator, steam_id: []const u8, out: std.fs.File) void {
+    const api_key = std.posix.getenv("GSA_STEAM_API_KEY") orelse {
+        const err_f = std.fs.File.stderr();
+        err_f.writeAll("GSA_STEAM_API_KEY is not set.\n") catch {};
+        std.process.exit(1);
+    };
+
+    var client = steam_client.SteamClient.init(allocator, api_key);
+    defer client.deinit();
+
+    const summary = client.getPlayerSummary(steam_id) catch |err| {
+        const err_f = std.fs.File.stderr();
+        var buf: [256]u8 = undefined;
+        const msg = switch (err) {
+            error.PlayerNotFound => std.fmt.bufPrint(&buf,
+                "No Steam player found for ID: {s}\n", .{steam_id}) catch "Player not found\n",
+            error.HTTPError => std.fmt.bufPrint(&buf,
+                "Steam API request failed\n", .{}) catch "HTTP error\n",
+            else => std.fmt.bufPrint(&buf,
+                "Steam player info error: {}\n", .{err}) catch "Error\n",
+        };
+        err_f.writeAll(msg) catch {};
+        std.process.exit(1);
+    };
+
+    var buf: [512]u8 = undefined;
+    const line = std.fmt.bufPrint(&buf,
+        "Steam64 ID:   {s}\nDisplay name: {s}\nProfile URL:  {s}\nVisibility:   {d}\n",
+        .{
+            summary.idSlice(),
+            summary.nameSlice(),
+            summary.urlSlice(),
+            summary.visibility,
+        },
+    ) catch "Steam player info\n";
+    out.writeAll(line) catch {};
 }
 
 // ── Display helpers ─────────────────────────────────────────────────────────

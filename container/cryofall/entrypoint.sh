@@ -56,13 +56,35 @@ trap cleanup TERM INT
 
 if [ ! -f "${SERVER_BINARY}" ]; then
     echo "[gsa-cryofall] CryoFall server not found at ${INSTALL_DIR}."
-    echo "[gsa-cryofall] Installing via SteamCMD (AppID ${APPID}) — this takes a few minutes (~3 GB)..."
-    "${STEAMCMD}" \
-        +force_install_dir "${INSTALL_DIR}" \
-        +login anonymous \
-        +app_update "${APPID}" validate \
-        +quit
-    echo "[gsa-cryofall] Game installation complete."
+
+    # CryoFall dedicated server (AppID 1200170) is a DLC of app 552990 and
+    # requires a Steam account that owns the game — anonymous login fails.
+    #
+    # Two routes to stage the server files:
+    #
+    # Route A — Steam credentials in environment (set STEAM_USER + STEAM_PASS):
+    if [ -n "${STEAM_USER:-}" ] && [ -n "${STEAM_PASS:-}" ]; then
+        echo "[gsa-cryofall] Installing via SteamCMD (authenticated as ${STEAM_USER})..."
+        "${STEAMCMD}" \
+            +force_install_dir "${INSTALL_DIR}" \
+            +login "${STEAM_USER}" "${STEAM_PASS}" \
+            +app_update "${APPID}" validate \
+            +quit
+        echo "[gsa-cryofall] Game installation complete."
+
+    # Route B — Files pre-staged into the volume by GSA provisioner:
+    # Run on the host (or locally) then rsync to the cryofall-game-data volume:
+    #   steamcmd +login <user> +force_install_dir ./cryofall-server \
+    #            +app_update 1200170 validate +quit
+    #   rsync -az ./cryofall-server/ root@209.42.26.106:/path/to/volume/
+    # Then restart this container — it will skip this block.
+    else
+        echo "[gsa-cryofall] ERROR: CryoFall server files not found and no Steam credentials set."
+        echo "[gsa-cryofall] Stage the server files first — see QUICKSTART-USER.adoc or:"
+        echo "[gsa-cryofall]   GSA GUI → CryoFall → Actions → 'Stage Server Files'"
+        echo "[gsa-cryofall]   Or set STEAM_USER + STEAM_PASS environment variables."
+        exit 1
+    fi
 fi
 
 # ---------------------------------------------------------------------------

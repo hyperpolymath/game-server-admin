@@ -20,6 +20,7 @@ pub const verisimdb_client = @import("verisimdb_client.zig");
 pub const server_actions = @import("server_actions.zig");
 pub const game_profiles = @import("game_profiles.zig");
 pub const groove_client = @import("groove_client.zig");
+pub const steam_client = @import("steam_client.zig");
 
 // Force the linker to include all exported functions from submodules.
 // Without these references, Zig's linker may dead-strip the `pub export fn`
@@ -43,6 +44,9 @@ comptime {
     _ = &groove_client.gossamer_gsa_groove_status;
     _ = &groove_client.gossamer_gsa_groove_alert;
     _ = &groove_client.gossamer_gsa_groove_tts_alert;
+    _ = &steam_client.gossamer_gsa_steam_resolve_vanity;
+    _ = &steam_client.gossamer_gsa_steam_player_info;
+    _ = &steam_client.gossamer_gsa_steam_get_result;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
