@@ -10,15 +10,11 @@ Terminal=false
 StartupWMClass=game-server-admin
 Keywords=gameserver;admin;monitoring;dedicated;multiplayer;gossamer;verisimdb;
 MimeType=x-scheme-handler/gsa;
-Actions=gossamer;web;stop;
+Actions=gossamer;stop;
 
 [Desktop Action gossamer]
 Name=Launch Desktop App (Gossamer)
 Exec=game-server-admin-launcher --gossamer
-
-[Desktop Action web]
-Name=Launch in Browser
-Exec=game-server-admin-launcher --web
 
 [Desktop Action stop]
 Name=Stop Server
