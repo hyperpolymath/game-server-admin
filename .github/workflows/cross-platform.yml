@@ -1,0 +1,64 @@
+# Cross-platform CI for Game Server Admin
+# Builds and tests on Linux, macOS, and Windows
+#
+# SPDX-License-Identifier: PMPL-1.0-or-later
+
+name: Cross-Platform Build & Test
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux
+            run-integration: true
+          - os: macos-latest
+            name: macOS
+            run-integration: false
+          - os: windows-latest
+            name: Windows
+            run-integration: false
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Zig 0.15.2
+        uses: goto-bus-stop/setup-zig@7ab2955eb728f5440978d7e4148f16f0e36aa02f # v2.2.1
+        with:
+          version: 0.15.2
+
+      - name: Cache Zig
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.cache/zig
+            ~/AppData/Local/zig
+          key: zig-${{ matrix.os }}-${{ hashFiles('src/interface/ffi/build.zig') }}
+
+      - name: Build
+        working-directory: src/interface/ffi
+        run: zig build
+
+      - name: Unit Tests
+        working-directory: src/interface/ffi
+        run: zig build test
+
+      - name: Integration Tests (Linux only)
+        if: matrix.run-integration
+        working-directory: src/interface/ffi
+        run: zig build test-integration

@@ -358,24 +358,16 @@ alignUpCeilIsMultiple offset alignment =
        Z   => MkMultiple q Refl
        S _ => MkMultiple (S q) Refl
 
-||| Compatibility: alignUpCeil agrees with alignUp for all inputs.
+||| Compatibility note: alignUpCeil agrees with alignUp for all inputs.
 ||| Both compute the next multiple of alignment >= offset.
-||| This cannot be proven structurally in Idris2 0.7.x due to opaque
-||| modNatNZ, but both are mathematically equivalent:
-|||   offset + padding(offset, a) = ceilDiv(offset, a) * a
 |||
-||| For layout verification we use alignUpCeil (which has a proof)
-||| and note that alignUp is its operational equivalent.
+||| Previously this was a postulate. It has been eliminated by migrating
+||| all verified layout computation to use alignUpCeil (which has a
+||| constructive proof via alignUpCeilIsMultiple) instead of alignUp.
+||| The alignUp function is retained for backwards-compatible FFI usage
+||| but is not used in any proof-carrying code paths.
 |||
-||| The postulate below asserts this equivalence. It is weaker than
-||| the original postulate (alignment property) because it reduces to
-||| an identity between two expressions computing the same value, and
-||| the alignment property of alignUpCeil is already proven above.
-public export
-postulate alignUpEquiv
-  : (offset : Nat) -> (alignment : Nat) ->
-    {auto ok : NonZero alignment} ->
-    alignUp offset alignment = alignUpCeil offset alignment
+||| Zero postulates. All proofs are constructive.
 
 --------------------------------------------------------------------------------
 -- Struct Field Descriptors
@@ -402,9 +394,10 @@ fieldEnd f = f.offset + f.size
 
 ||| Compute the offset of the field that follows this one, given the
 ||| next field's alignment requirement.
+||| Uses alignUpCeil (not alignUp) to stay on the proven code path.
 public export
 nextOffset : FieldDesc -> (nextAlign : Nat) -> {auto ok : NonZero nextAlign} -> Nat
-nextOffset f nextAlign = alignUp (fieldEnd f) nextAlign
+nextOffset f nextAlign = alignUpCeil (fieldEnd f) nextAlign
 
 --------------------------------------------------------------------------------
 -- Struct Layout Type

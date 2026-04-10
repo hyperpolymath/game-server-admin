@@ -1,0 +1,201 @@
+= Game Server Admin — Production Deployment Runbook
+:author: Jonathan D.A. Jewell (hyperpolymath)
+:revdate: 2026-04-10
+:toc:
+:sectnums:
+
+== Prerequisites
+
+* Zig 0.15.2+ (see `.tool-versions`)
+* Podman 4.x+ (container runtime)
+* VeriSimDB instance (port 8090 for main, 8091 for backups)
+* Linux x86_64 or aarch64 (primary targets)
+* Optional: Gossamer (for GUI panels)
+
+== Build from Source
+
+[source,bash]
+----
+# Clone the repository
+git clone https://github.com/hyperpolymath/game-server-admin.git
+cd game-server-admin
+
+# Build the Zig FFI layer (library + CLI)
+cd src/interface/ffi
+zig build
+
+# Verify the build
+./zig-out/bin/gsa version
+
+# Run tests
+zig build test              # Unit tests (67)
+zig build test-integration  # Integration tests (39)
+zig build test-smoke        # Smoke tests (5)
+----
+
+== Container Deployment
+
+=== Build the Container Image
+
+[source,bash]
+----
+cd container
+podman build -t gsa:latest -f Containerfile ..
+----
+
+=== Run with Podman
+
+[source,bash]
+----
+podman run -d \
+  --name gsa \
+  -p 8080:8080 \
+  -e GSA_VERISIMDB_URL=http://host.containers.internal:8090 \
+  gsa:latest
+----
+
+=== Podman Quadlet (systemd)
+
+Copy the `.container` files to `~/.config/containers/systemd/`:
+
+[source,bash]
+----
+cp container/verisimdb/gsa-verisimdb.container ~/.config/containers/systemd/
+cp container/verisimdb-backup/gsa-verisimdb-backup.container ~/.config/containers/systemd/
+systemctl --user daemon-reload
+systemctl --user start gsa-verisimdb
+----
+
+== VeriSimDB Setup
+
+=== Main Instance (Port 8090)
+
+Stores server configurations, probe data, and octad records.
+
+[source,bash]
+----
+# Build VeriSimDB container
+cd container/verisimdb
+podman build -t gsa-verisimdb:latest .
+
+# Run
+podman run -d --name gsa-verisimdb -p 8090:8090 gsa-verisimdb:latest
+
+# Health check
+curl -s http://localhost:8090/health
+----
+
+=== Backup Instance (Port 8091)
+
+Stores game save metadata, snapshots, and restore points.
+
+[source,bash]
+----
+cd container/verisimdb-backup
+podman build -t gsa-verisimdb-backup:latest .
+podman run -d --name gsa-verisimdb-backup -p 8091:8091 gsa-verisimdb-backup:latest
+----
+
+== Configuration
+
+=== Environment Variables
+
+[cols="1,1,1", options="header"]
+|===
+| Variable | Default | Description
+| `GSA_VERISIMDB_URL` | `http://localhost:8090` | Main VeriSimDB endpoint
+| `GSA_BACKUP_VERISIMDB_URL` | `http://localhost:8091` | Backup VeriSimDB endpoint
+| `GSA_LOG_LEVEL` | `info` | Log verbosity (debug, info, warn, error)
+|===
+
+=== User Configuration (Nickel)
+
+User preferences are stored in `.ncl` files. Initialize with:
+
+[source,bash]
+----
+gsa config init
+gsa config set-default valheim
+gsa config add-favorite "my-server:27015"
+----
+
+== Health Checks
+
+[source,bash]
+----
+# GSA status (includes VeriSimDB health)
+gsa status
+
+# VeriSimDB direct health check
+curl -sf http://localhost:8090/health || echo "VeriSimDB DOWN"
+curl -sf http://localhost:8091/health || echo "Backup VeriSimDB DOWN"
+
+# Probe a game server
+gsa probe 192.168.1.100 27015
+----
+
+== Backup and Restore
+
+=== Backup
+
+[source,bash]
+----
+# VeriSimDB exports
+curl -s http://localhost:8090/export > verisimdb-main-backup.json
+curl -s http://localhost:8091/export > verisimdb-backup-backup.json
+
+# Container volume backup
+podman volume export gsa-verisimdb-data > verisimdb-volume.tar
+----
+
+=== Restore
+
+[source,bash]
+----
+curl -X POST -d @verisimdb-main-backup.json http://localhost:8090/import
+----
+
+== Troubleshooting
+
+=== Probe Failures
+
+* **Connection refused**: Game server is down or port is blocked by firewall
+* **Timeout**: Server is behind NAT or RCON is disabled
+* **Unknown protocol**: Game not in profile registry — check `gsa profiles`
+
+=== VeriSimDB Connection Errors
+
+* Verify the URL: `curl http://localhost:8090/health`
+* Check container status: `podman ps -a | grep verisimdb`
+* Check logs: `podman logs gsa-verisimdb`
+
+=== Container Issues
+
+* **Build fails**: Ensure Zig 0.15.2 is available in the build context
+* **Port conflict**: Another service on 8090/8091 — use `-p NEW:8090`
+* **Permission denied**: Run with `--userns=keep-id` for rootless Podman
+
+== Upgrading
+
+[source,bash]
+----
+# Pull latest
+git pull origin main
+
+# Rebuild
+cd src/interface/ffi && zig build
+
+# Rebuild containers
+cd container && podman build -t gsa:latest -f Containerfile ..
+
+# Restart services
+podman restart gsa gsa-verisimdb gsa-verisimdb-backup
+----
+
+== Security Considerations
+
+* All FFI functions validate inputs before processing
+* Secrets are redacted as `[REDACTED]` in A2ML output and logs
+* SSH connections use argument arrays (no shell interpretation)
+* Container images use Chainguard Wolfi base (minimal attack surface)
+* Run `panic-attack assail .` before each release to scan for vulnerabilities
