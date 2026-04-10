@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# game-server-admin.launcher.a2ml — per-app launcher config for GSA.
+
+[project]
+name         = "game-server-admin"
+display      = "Game Server Admin"
+description  = "Game Server Admin — multi-game server orchestration UI"
+categories   = ["Game", "Network", "System"]
+version      = "1.0.0"
+license      = "PMPL-1.0-or-later"
+
+[repo]
+path = "/var/mnt/eclipse/repos/game-server-admin"
+
+[runtime]
+kind    = "process"
+command = ["/home/hyper/.local/bin/game-server-admin-launcher", "--gossamer"]
+pid-file = "/tmp/game-server-admin.pid"
+log-file = "/tmp/game-server-admin.log"
+
+[icon]
+source = "{repo-dir}/assets/icon-256.png"
