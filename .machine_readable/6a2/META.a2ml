@@ -9,7 +9,7 @@ version = "0.1.0"
 last-updated = "2026-03-22"
 
 [project-info]
-type = "{{PROJECT_TYPE}}"  # library | binary | monorepo | service | website
+type = "library"  # TODO: update type (library|binary|service|website|monorepo)  # library | binary | monorepo | service | website
 languages = []             # e.g. ["rust", "zig", "idris2"]
 license = "AGPL-3.0-or-later"
 author = "Jonathan D.A. Jewell (hyperpolymath)"
