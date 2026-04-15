@@ -510,7 +510,7 @@ cryofall-logs:
 cryofall-status:
     #!/usr/bin/env bash
     echo "CryoFall container:"
-    podman inspect --format "  Status: {{.State.Status}}  Health: {{.State.Health.Status}}" cryofall 2>/dev/null || echo "  Not running"
+    podman inspect --format "  Status: {{{{.State.Status}}}}  Health: {{{{.State.Health.Status}}}}" cryofall 2>/dev/null || echo "  Not running"
     echo ""
     echo "Systemd service:"
     systemctl --user status gsa-cryofall --no-pager 2>/dev/null | head -8 || echo "  Not installed"
