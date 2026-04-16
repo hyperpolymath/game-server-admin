@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Game Server Admin - Typed-WASM Probe Module
+// Uses striated layout for optimal server data processing
+
+// Define server data region with striated layout for cache efficiency
+region ServerData[1024] striated {
+    host: string where len > 0;      // Non-empty host string
+    port: u16 where port > 0 && port <= 65535; // Valid port range
+    status: bool;                   // Server online/offline
+    latency: u32;                   // Response time in ms
+    last_probe: u64;                // Timestamp of last probe
+    
+    align 8; // 8-byte alignment for efficiency
+    
+    invariant {
+        // All servers must have valid configuration
+        forall i in 0..1024: 
+            host[i].len > 0 && 
+            port[i] > 0 && port[i] <= 65535
+    }
+}
+
+// Probe function using striated access (projection-only)
+export function probeServer(index: u32): bool {
+    // Striated access: we can only access individual fields, not whole records
+    const host = ServerData.host[index];
+    const port = ServerData.port[index];
+    
+    // TypeLL ensures host and port are valid due to region constraints
+    // Actual network probe would go here
+    
+    // Update status and latency (striated writes)
+    ServerData.status[index] = true;
+    ServerData.latency[index] = 42; // placeholder
+    ServerData.last_probe[index] = currentTime();
+    
+    return true;
+}
+
+// Batch probe function - benefits from SoA cache locality
+export function probeBatch(start: u32, count: u32): u32 {
+    var successful = 0u32;
+    
+    // Striated layout makes this loop cache-friendly
+    for var i = start; i < start + count; i++ {
+        if (probeServer(i)) {
+            successful++;
+        }
+    }
+    
+    return successful;
+}
+
+// Configuration validation using typed-WASM constraints
+export function validateConfig(configJson: string): bool {
+    // Parse JSON and validate using region constraints
+    // Returns true if all server configurations are valid
+    return parseAndValidate(configJson);
+}
+
+// Memory management functions for typed-WASM
+export function allocServerSlot(): u32 {
+    // Find first available slot in striated region
+    for var i = 0u32; i < 1024; i++ {
+        if (ServerData.host[i].len == 0) {
+            return i;
+        }
+    }
+    return 0xFFFFFFFF; // No slots available
+}
+
+export function freeServerSlot(index: u32): void {
+    // Clear striated fields individually
+    ServerData.host[index] = "";
+    ServerData.port[index] = 0;
+    ServerData.status[index] = false;
+    ServerData.latency[index] = 0;
+    ServerData.last_probe[index] = 0;
+}

@@ -14,7 +14,7 @@
 ||| @see GSA.ABI.Foreign for FFI declarations using these types
 ||| @see GSA.ABI.Layout for memory layout proofs of these types
 
-module GSA.ABI.Types
+module Types
 
 import Data.List
 import Data.List.Elem

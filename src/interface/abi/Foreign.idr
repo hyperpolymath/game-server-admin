@@ -21,7 +21,7 @@
 ||| @see GSA.ABI.Types for all type definitions
 ||| @see GSA.ABI.Layout for memory layout proofs
 
-module GSA.ABI.Foreign
+module Foreign
 
 import GSA.ABI.Types
 import GSA.ABI.Layout

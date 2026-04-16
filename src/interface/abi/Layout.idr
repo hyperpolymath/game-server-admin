@@ -18,7 +18,7 @@
 ||| @see GSA.ABI.Types for the type definitions being verified
 ||| @see GSA.ABI.Foreign for the FFI functions that use these layouts
 
-module GSA.ABI.Layout
+module Layout
 
 import GSA.ABI.Types
 

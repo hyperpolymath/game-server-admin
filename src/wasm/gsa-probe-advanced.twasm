@@ -1,0 +1,223 @@
+// DEPENDENT TYPES: Server data with refinement constraints
+// ============================================================================
+=======
+// ============================================================================
+// IMMUTABLE TYPES: Constants and frozen data
+// ============================================================================
+
+// Immutable configuration constants
+const MAX_SERVERS: u32 = 1024;
+const MAX_HOSTNAME_LEN: u32 = 255;
+const DEFAULT_TIMEOUT: u32 = 2000;
+const MAX_RETRIES: u8 = 3;
+
+// Frozen protocol state (immutable at runtime)
+const PROTOCOL_VERSION: u8 = 1;
+const MAGIC_NUMBER: u32 = 0x47534150; // "GSAP"
+
+// ============================================================================
+// STRING UTILITIES: UTF-8 handling for hostnames
+// ============================================================================
+
+// String length calculation for UTF-8 buffers
+fn string_len(buffer: u8[256]) -> u32
+    effects { Read }
+{
+    var len = 0u32;
+    while len < 256 && buffer[len] != 0 {
+        len++;
+    }
+    return len;
+}
+
+// String comparison for hostnames
+fn string_eq(a: u8[256], b: u8[256]) -> bool
+    effects { Read }
+{
+    var i = 0u32;
+    while i < 256 && a[i] == b[i] && a[i] != 0 {
+        i++;
+    }
+    return a[i] == b[i];
+}
+
+// ============================================================================
+// DEPENDENT TYPES: Server data with refinement constraints
+// ============================================================================SPDX-License-Identifier: PMPL-1.0-or-later
+// Game Server Admin - Advanced Typed-WASM Probe Module
+// Uses dependent types, tropical cost-tracking, and striated layout
+
+// ============================================================================
+// DEPENDENT TYPES: Server data with refinement constraints
+// ============================================================================
+
+// Server configuration with dependent type constraints
+// Strings represented as fixed-size UTF-8 buffers (your typed-WASM pattern)
+region ServerConfig[1024] striated {
+    host: u8[256] where len > 0 && len <= 255;  // Fixed-size UTF-8 hostname buffer
+    port: u16 where port >= 1024 && port <= 65535; // Valid service port range
+    timeout_ms: u32 where timeout_ms >= 100 && timeout_ms <= 10000; // Reasonable timeout
+    retries: u8 where retries <= 5; // Max 5 retries
+    
+    align 8;
+    
+    invariant {
+        // All servers must have valid network configuration
+        // Note: host.len refers to the actual string length in the UTF-8 buffer
+        forall i in 0..1024: 
+            string_len(host[i]) > 0 && string_len(host[i]) <= 255 &&
+            port[i] >= 1024 && port[i] <= 65535 &&
+            timeout_ms[i] >= 100 && timeout_ms[i] <= 10000 &&
+            retries[i] <= 5
+    }
+}
+
+// ============================================================================
+// TROPICAL COST-TRACKING: Performance-bounded probing
+// ============================================================================
+
+// Single server probe with cost tracking
+fn probeServer(index: u32) -> bool
+    effects { ReadRegion(ServerConfig) }
+    cost_bound { bound: 50; strategy: min_plus; }  // Max 50 cost units
+{
+    // Striated access: cost 1 per field (cache-friendly)
+    region.get $ServerConfig[index] .host @cost(1) -> host_buffer;
+    region.get $ServerConfig[index] .port @cost(1) -> port;
+    region.get $ServerConfig[index] .timeout_ms @cost(1) -> timeout;
+    
+    // Calculate actual string length for validation
+    let host_len = string_len(host_buffer) @cost(2);
+    
+    // Validate hostname length (dependent type constraint)
+    if host_len == 0 || host_len > MAX_HOSTNAME_LEN {
+        return false;
+    }
+    
+    // Network probe would go here
+    // Cost 45 for network operation (simulated)
+    let success = networkProbe(host_buffer, host_len, port, timeout) @cost(45);
+    
+    return success;
+}
+
+// Batch probe with optimized cost
+fn probeBatch(start: u32, count: u32) -> u32
+    effects { ReadRegion(ServerConfig) }
+    cost_bound { bound: 5000; strategy: min_plus; }  // 100 servers * 50 cost
+{
+    var successful = 0u32;
+    
+    // Striated layout makes this cache-friendly
+    // Cost 50 per server, total bounded by 5000
+    for var i = start; i < start + count; i++ {
+        if (probeServer(i) @cost(50)) {
+            successful++;
+        }
+    }
+    
+    return successful;
+}
+
+// ============================================================================
+// PHANTOM TYPES: Type-safe resource management
+// ============================================================================
+
+// Connection handle with phantom type for state tracking
+region ConnectionHandle[256] {
+    server_index: u32;
+    state: u8 where state <= 3; // 0=closed, 1=connecting, 2=connected, 3=error
+    socket_fd: i32 where socket_fd >= 0; // Valid file descriptor
+    
+    invariant {
+        forall i in 0..256: 
+            (state[i] == 0 || state[i] == 3) => socket_fd[i] == -1
+    }
+}
+
+// State transition with linearity
+fn connectServer(config: &region<ServerConfig>, index: u32) -> own region<ConnectionHandle>
+    effects { ReadRegion(ServerConfig), Alloc }
+    cost_bound { bound: 100; strategy: min_plus; }
+{
+    // Allocate connection handle
+    let handle = allocConnectionHandle() @cost(5);
+    
+    // Set initial state
+    region.set handle .server_index, index @cost(1);
+    region.set handle .state, 1 @cost(1); // connecting
+    
+    // Network connect would go here
+    region.set handle .socket_fd, openSocket() @cost(90);
+    region.set handle .state, 2 @cost(1); // connected
+    
+    return handle;
+}
+
+// ============================================================================
+// CHOREOGRAPHIC TYPES: Multi-agent coordination
+// ============================================================================
+
+// Probe choreography: client-server protocol
+choreography ProbeProtocol {
+    composes: L13 + L14 + L15;
+    
+    state Idle;
+    state Connecting;
+    state Probing;
+    state Completed;
+    
+    transition consume Idle -> yield Connecting 
+        via connect(client: Client, server: Server);
+    
+    transition consume Connecting -> yield Probing 
+        via handshake(client: Client, server: Server);
+    
+    transition consume Probing -> yield Completed 
+        via results(client: Client, server: Server);
+}
+
+agent_role Client : ProbeClient;
+agent_role Server : ProbeServer;
+
+message ConnectMsg : Client -> Server, u32;  // Server index
+message HandshakeMsg : Server -> Client, bool; // Connection success
+message ResultsMsg : Client -> Server, f32; // Latency measurement
+
+// ============================================================================
+// MEMORY MANAGEMENT: Striated allocation
+// ============================================================================
+
+fn allocServerSlot() -> u32
+    effects { ReadRegion(ServerConfig), WriteRegion(ServerConfig) }
+{
+    for var i = 0u32; i < 1024; i++ {
+        region.get $ServerConfig[i] .host -> host;
+        if (host.len == 0) {
+            return i;
+        }
+    }
+    return 0xFFFFFFFF;
+}
+
+fn freeServerSlot(index: u32)
+    effects { WriteRegion(ServerConfig) }
+{
+    region.set $ServerConfig[index] .host, "" @cost(1);
+    region.set $ServerConfig[index] .port, 0 @cost(1);
+    region.set $ServerConfig[index] .timeout_ms, 100 @cost(1);
+    region.set $ServerConfig[index] .retries, 0 @cost(1);
+}
+
+// ============================================================================
+// STATIC PROOFS: Compile-time verification
+// ============================================================================
+
+// Prove that probeServer stays within cost bound
+static_assert cost_bounded(probeServer, 50);
+
+// Prove that batch probing is safe
+static_assert cost_bounded(probeBatch, 5000);
+
+// Prove that server slots are properly bounded
+static_assert bounds_proof(ServerConfig, 1024);

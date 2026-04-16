@@ -1,0 +1,173 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// Game Server Admin (GSA) GUI — AffineScript TEA Interface
+// Underpinned by Cadre Router (Affine Stack Implementation)
+//
+// Purpose: Provide a formally verified, resource-safe interface for the
+// Universal game server probe, configuration management, and administration.
+
+// ── Types ─────────────────────────────────────────────────────────────────
+
+enum Panel {
+  ServerBrowser,
+  ConfigEditor,
+  ServerActions,
+  LiveLogs,
+  HealthDashboard,
+  ConfigHistory,
+  CrossSearch
+}
+
+enum ServerStatus {
+  Running,
+  Stopped,
+  Starting,
+  Stopping,
+  Updating,
+  Error(String)
+}
+
+struct GameServer {
+  id: String,
+  display_name: String,
+  game_id: String,
+  host: String,
+  port: Int,
+  status: ServerStatus
+}
+
+// ── Model ───────────────────────────────────────────────────────────────────
+
+struct Model {
+  current_panel: Panel,
+  managed_servers: List(GameServer),
+  selected_server_id: String,
+  search_query: String,
+  is_loading: Bool,
+  history_depth: Int
+}
+
+// ── Msg ──────────────────────────────────────────────────────────────────────
+
+enum Msg {
+  Navigate(Panel),
+  SelectServer(String),
+  UpdateSearch(String),
+  ServerAction(String, String), // server_id, action
+  RefreshServers,
+  PopState
+}
+
+// ── TEA Logic ────────────────────────────────────────────────────────────────
+
+fn gsa_init() -> Model {
+  {
+    current_panel: Panel::ServerBrowser,
+    managed_servers: [],
+    selected_server_id: "",
+    search_query: "",
+    is_loading: false,
+    history_depth: 0
+  }
+}
+
+fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
+  match model {
+    { current_panel: p, managed_servers: s, selected_server_id: id, search_query: q, is_loading: l, history_depth: h } => {
+      match msg {
+        Navigate(new_panel) => {
+          {
+            current_panel: new_panel,
+            managed_servers: s,
+            selected_server_id: id,
+            search_query: q,
+            is_loading: false,
+            history_depth: h + 1
+          }
+        }
+
+        SelectServer(new_id) => {
+          {
+            current_panel: p,
+            managed_servers: s,
+            selected_server_id: new_id,
+            search_query: q,
+            is_loading: l,
+            history_depth: h
+          }
+        }
+
+        UpdateSearch(new_query) => {
+          {
+            current_panel: p,
+            managed_servers: s,
+            selected_server_id: id,
+            search_query: new_query,
+            is_loading: l,
+            history_depth: h
+          }
+        }
+
+        ServerAction(sid, action) => {
+          // This would trigger an FFI call via Command in a full impl
+          {
+            current_panel: p,
+            managed_servers: s,
+            selected_server_id: sid,
+            search_query: q,
+            is_loading: true,
+            history_depth: h
+          }
+        }
+
+        RefreshServers => {
+          {
+            current_panel: p,
+            managed_servers: s,
+            selected_server_id: id,
+            search_query: q,
+            is_loading: true,
+            history_depth: h
+          }
+        }
+
+        PopState => {
+          if h > 0 {
+            {
+              current_panel: Panel::ServerBrowser,
+              managed_servers: s,
+              selected_server_id: "",
+              search_query: q,
+              is_loading: false,
+              history_depth: h - 1
+            }
+          } else {
+            {
+              current_panel: p,
+              managed_servers: s,
+              selected_server_id: id,
+              search_query: q,
+              is_loading: l,
+              history_depth: 0
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn gsa_view(model: Model) -> String {
+  match model.current_panel {
+    ServerBrowser   => "GAME HUB: Discovery & Lifecycle",
+    ConfigEditor    => "CONFIG EDITOR: " + model.selected_server_id,
+    ServerActions   => "SERVER ACTIONS: " + model.selected_server_id,
+    LiveLogs        => "LIVE LOGS: " + model.selected_server_id,
+    HealthDashboard => "HEALTH DASHBOARD",
+    ConfigHistory   => "CONFIG HISTORY: " + model.selected_server_id,
+    CrossSearch     => "CROSS-SERVER SEARCH"
+  }
+}
+
+fn gsa_subs(model: Model) -> String {
+  "None"
+}
