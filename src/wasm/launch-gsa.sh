@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # Configuration
-GSA_DIR="/var/mnt/eclipse/repos/game-server-admin"
+GSA_DIR="/var/mnt/eclipse/repos/fleet-ecosystem/game-server-admin"
 WASM_DIR="$GSA_DIR/src/wasm"
 CLI_BIN="$GSA_DIR/src/interface/ffi/zig-out/bin/gsa"
 WASM_OUTPUT="$WASM_DIR/wasm-output"
@@ -30,7 +30,7 @@ error_exit() {
 echo "🔍 Checking VeriSimDB..."
 if ! curl -sf http://localhost:8090/health >/dev/null 2>&1; then
     echo "${YELLOW}⚠️  VeriSimDB not running. Starting it now...${NC}"
-    cd /var/mnt/eclipse/repos/nextgen-databases/verisimdb
+    cd /var/mnt/eclipse/repos/developer-ecosystem/nextgen-databases/verisimdb
     VERISIM_PORT=8090 nohup ./target/release/verisim-api > /tmp/verisimdb.log 2>&1 &
     sleep 2
     
