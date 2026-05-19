@@ -7,6 +7,14 @@
 # as a FALLBACK for contributors who use Nix instead of Guix. The .envrc checks
 # for Guix first, then falls back to Nix.
 #
+# Retained per standards#102 rule 3 (KEEP+DEP). guix.scm has real build
+# phases (Zig build + install) but declares empty (native-inputs (list))
+# / (inputs (list)) — `zig` is explicitly commented as "uncomment when
+# available in Guix". This flake's devShell is therefore the SOLE
+# source of the language layer (zig, zls, idris2) and the common
+# RSR-template dev tools (git, just, nickel, curl, bash, coreutils).
+# Remove only once those packages are available via Guix.
+#
 # Usage:
 #   nix develop          # Enter development shell
 #   nix build            # Build the project
