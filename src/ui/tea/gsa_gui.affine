@@ -39,7 +39,7 @@ struct GameServer {
 
 struct Model {
   current_panel: Panel,
-  managed_servers: List(GameServer),
+  managed_servers: [GameServer],
   selected_server_id: String,
   search_query: String,
   is_loading: Bool,
@@ -60,7 +60,7 @@ enum Msg {
 // ── TEA Logic ────────────────────────────────────────────────────────────────
 
 fn gsa_init() -> Model {
-  {
+  #{
     current_panel: Panel::ServerBrowser,
     managed_servers: [],
     selected_server_id: "",
@@ -75,7 +75,7 @@ fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
     { current_panel: p, managed_servers: s, selected_server_id: id, search_query: q, is_loading: l, history_depth: h } => {
       match msg {
         Navigate(new_panel) => {
-          {
+          #{
             current_panel: new_panel,
             managed_servers: s,
             selected_server_id: id,
@@ -86,7 +86,7 @@ fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
         }
 
         SelectServer(new_id) => {
-          {
+          #{
             current_panel: p,
             managed_servers: s,
             selected_server_id: new_id,
@@ -97,7 +97,7 @@ fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
         }
 
         UpdateSearch(new_query) => {
-          {
+          #{
             current_panel: p,
             managed_servers: s,
             selected_server_id: id,
@@ -109,7 +109,7 @@ fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
 
         ServerAction(sid, action) => {
           // This would trigger an FFI call via Command in a full impl
-          {
+          #{
             current_panel: p,
             managed_servers: s,
             selected_server_id: sid,
@@ -120,7 +120,7 @@ fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
         }
 
         RefreshServers => {
-          {
+          #{
             current_panel: p,
             managed_servers: s,
             selected_server_id: id,
@@ -132,7 +132,7 @@ fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
 
         PopState => {
           if h > 0 {
-            {
+            #{
               current_panel: Panel::ServerBrowser,
               managed_servers: s,
               selected_server_id: "",
@@ -141,7 +141,7 @@ fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
               history_depth: h - 1
             }
           } else {
-            {
+            #{
               current_panel: p,
               managed_servers: s,
               selected_server_id: id,
@@ -159,11 +159,11 @@ fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
 fn gsa_view(model: Model) -> String {
   match model.current_panel {
     ServerBrowser   => "GAME HUB: Discovery & Lifecycle",
-    ConfigEditor    => "CONFIG EDITOR: " + model.selected_server_id,
-    ServerActions   => "SERVER ACTIONS: " + model.selected_server_id,
-    LiveLogs        => "LIVE LOGS: " + model.selected_server_id,
+    ConfigEditor    => "CONFIG EDITOR: " ++ model.selected_server_id,
+    ServerActions   => "SERVER ACTIONS: " ++ model.selected_server_id,
+    LiveLogs        => "LIVE LOGS: " ++ model.selected_server_id,
     HealthDashboard => "HEALTH DASHBOARD",
-    ConfigHistory   => "CONFIG HISTORY: " + model.selected_server_id,
+    ConfigHistory   => "CONFIG HISTORY: " ++ model.selected_server_id,
     CrossSearch     => "CROSS-SERVER SEARCH"
   }
 }
