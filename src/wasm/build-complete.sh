@@ -38,7 +38,7 @@ echo "   ✅ WASM module: $(wc -c < "$OUTPUT_DIR/gsa-probe.wasm") bytes"
 echo "🔗 Step 2/4: Generating Zig FFI bindings..."
 cat > "$OUTPUT_DIR/gsa_wasm.zig" << 'EOF'
 // Auto-generated Zig bindings for typed-WASM probe module
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 
 const std = @import("std");
 

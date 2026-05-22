@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # game-server-admin Container Image
 #
 # Builds libgsa.so (Zig FFI) and packages it with game profiles,

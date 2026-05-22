@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath)
 //
 // run.js — Homoiconic, fault-tolerant, platform-independent run script
@@ -17,7 +17,7 @@ const REGISTRY = {
     name:    "game-server-admin",
     display: "Game Server Admin (GSA)",
     version: "0.3.0",
-    license: "PMPL-1.0-or-later",
+    license: "MPL-2.0",
     repo:    "https://github.com/hyperpolymath/game-server-admin",
   },
   launchers: {

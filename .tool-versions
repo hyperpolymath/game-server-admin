@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # asdf tool versions for game-server-admin
 #
 # Active tools: rust (nightly), zig, idris2, just

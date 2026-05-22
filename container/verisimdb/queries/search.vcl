@@ -1,4 +1,4 @@
--- SPDX-License-Identifier: PMPL-1.0-or-later
+-- SPDX-License-Identifier: MPL-2.0
 -- Full-text search across all server configs
 -- Replace SEARCH_TERM with the desired query
 

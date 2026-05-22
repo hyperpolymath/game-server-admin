@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
 #
 # Generate panel clade definitions from game profiles.
@@ -16,7 +16,7 @@ for profile in profiles/*.a2ml; do
   mkdir -p "$clade_dir"
 
   cat > "$clade_dir/GsaGame${id}.a2ml" << CLADE_EOF
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # Auto-generated from profiles/${id}.a2ml
 
 [clade-metadata]

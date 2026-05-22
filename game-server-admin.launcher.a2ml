@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
 # game-server-admin.launcher.a2ml — per-app launcher config for GSA.
@@ -9,7 +9,7 @@ display      = "Game Server Admin"
 description  = "Game Server Admin — multi-game server orchestration UI"
 categories   = ["Game", "Network", "System"]
 version      = "1.0.0"
-license      = "PMPL-1.0-or-later"
+license      = "MPL-2.0"
 
 [repo]
 path = "/var/mnt/eclipse/repos/fleet-ecosystem/game-server-admin"

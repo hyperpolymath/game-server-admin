@@ -43,7 +43,7 @@ fn string_eq(a: u8[256], b: u8[256]) -> bool
 
 // ============================================================================
 // DEPENDENT TYPES: Server data with refinement constraints
-// ============================================================================SPDX-License-Identifier: PMPL-1.0-or-later
+// ============================================================================SPDX-License-Identifier: MPL-2.0
 // Game Server Admin - Advanced Typed-WASM Probe Module
 // Uses dependent types, tropical cost-tracking, and striated layout
 

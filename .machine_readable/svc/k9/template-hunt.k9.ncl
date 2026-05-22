@@ -1,5 +1,5 @@
 K9!
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # K9 Hunt-level contractile: Game Server Admin full deployment
 # Security Level: Hunt (full system access)
 # ⚠️ SIGNATURE REQUIRED - Review carefully before use

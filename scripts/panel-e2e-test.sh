@@ -10,7 +10,7 @@
 #
 # Exit 0 if all pass, 1 if any fail.
 #
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 
 set -uo pipefail
 
