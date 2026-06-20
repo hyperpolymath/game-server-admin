@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MPL-2.0
-# Cross-platform CI for Game Server Admin
-# Linux gates (build + integration tests). macOS and Windows are
-# non-blocking build legs until full cross-platform support lands —
-# the FFI is currently POSIX-only (fcntl sockets, posix.getenv).
+# CI for Game Server Admin — Linux only for now.
+# macOS and Windows are deferred to the dedicated cross-platform effort:
+# the FFI is currently POSIX-only (fcntl sockets, posix.getenv) and does
+# not compile on Windows. Re-add the matrix legs there.
 
 name: Cross-Platform Build & Test
 
@@ -21,27 +21,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux is the gating target. macOS/Windows still build for early
-          # signal but do not gate (continue-on-error) — full cross-platform
-          # support is deferred to a later effort.
+          # Linux only for now; macOS/Windows deferred to the cross-platform
+          # effort. Kept as a matrix so re-adding os/name there is trivial.
           - os: ubuntu-latest
             name: Linux
             run-integration: true
-            continue-on-error: false
-          - os: macos-latest
-            name: macOS
-            run-integration: false
-            continue-on-error: true
-          - os: windows-latest
-            name: Windows
-            run-integration: false
-            continue-on-error: true
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    # Linux gates; macOS/Windows are non-blocking (see matrix include).
-    continue-on-error: ${{ matrix.continue-on-error }}
 
     steps:
       - name: Checkout
