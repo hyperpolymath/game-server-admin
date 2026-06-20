@@ -22,8 +22,8 @@
 ;     understand a MUST, read INTENT first.
 ;   - TRUST: The "ask-before-touching" section in INTENT maps directly
 ;     to TRUST.trust-deny for the most sensitive areas.
-;   - ADJUST: INTENT's anti-purpose should include "this software is
-;     NOT only for users with perfect vision/hearing/mobility."
+;   - ADJUST: INTENT's anti-purpose includes "this software is NOT only
+;     for users with perfect vision/hearing/mobility."
 ;   - DUST: When INTENT changes (repo pivots), related DUST entries
 ;     should be created for the abandoned direction.
 ;
@@ -35,38 +35,38 @@
 
   ; === Purpose (what this repo IS) ===
   (purpose
-    "{{ONE_PARAGRAPH_PURPOSE}}"
+    "game-server-admin (GSA) is a universal game-server probe, configuration-management, and administration tool. It fingerprints running game servers across 8 wire protocols, extracts their on-disk configuration out of 8 formats (XML/INI/JSON/ENV/YAML/TOML/Lua/KV) into provenance-tracked A2ML, stores probe data and config octads in a dedicated VeriSimDB instance, and drives lifecycle actions (start/stop/restart/logs, schema-driven provisioning, Steam file staging) through a Zig FFI core. That core is exposed both to a Gossamer webview GUI (Ephapax .eph panels) and a standalone gsa CLI. An Idris2 ABI layer formally specifies the C-ABI seam — memory layout and the 13 result codes — that the GUI and CLI depend on."
   )
 
   ; === Anti-Purpose (what this repo is NOT — prevents scope creep) ===
   (anti-purpose
-    "{{ONE_PARAGRAPH_ANTI_PURPOSE}}"
-    ; Examples:
-    ; "This is NOT a general-purpose database — it solves one specific problem."
-    ; "This is NOT a framework — it is a library with a focused API."
-    ; "This does NOT handle authentication — that is delegated to [other repo]."
+    "GSA is NOT a game client, game launcher, or matchmaking/lobby service — it administers servers, it does not play or broker games. It is NOT a general-purpose configuration database (persistence is delegated to VeriSimDB), NOT a general TTS/notification platform (voice alerting is delegated to Groove via .well-known), and NOT a GUI toolkit (the webview shell is Gossamer). It does not ship its own storage engine, auth system, or container runtime — those are external dependencies. It is NOT only for sighted, able-bodied operators on modern hardware: every surface (GUI, CLI, docs) must satisfy ADJUST / WCAG-2.2-AA."
   )
 
   ; === Key Architectural Decisions That Must Not Be Reversed ===
   (architectural-invariants
-    ; *REMINDER: List the foundational decisions*
-    ; ("Idris2 for ABI definitions — dependent types prove interface correctness")
-    ; ("Zig for FFI — zero-cost C ABI compatibility")
-    ; ("Elixir for supervision — OTP fault tolerance")
+    ("Idris2 for the ABI — dependent types specify and prove the C-ABI layout and result-code contract; no believe_me / assert_total")
+    ("Zig for the FFI bridge — zero-cost C ABI; every export is prefixed gossamer_gsa_ and uses pub export fn ... callconv(.c)")
+    ("The 13 result codes are contractual — the Zig FFI MUST match src/interface/abi/Types.idr")
+    ("Config is emitted as A2ML with full provenance; secrets are redacted as [REDACTED] in A2ML output and octad JSON")
+    ("Backing store is VeriSimDB on dedicated instances — main on 8090 (config/probe/octads), backup on 8091 (save metadata); never co-located with the VeriSimDB source repo")
+    ("GUI is a Gossamer webview driven by Ephapax .eph; the CLI is the standalone gsa binary — both call the same FFI exports")
+    ("Containers use Chainguard Wolfi base, Podman, Containerfile, and selur-compose — never Docker / docker-compose")
   )
 
   ; === Sensitive Areas (if in doubt, ask) ===
   (ask-before-touching
-    ; *REMINDER: List areas where LLMs should check before modifying*
-    ; "src/abi/ — formal proofs, changes require re-verification"
-    ; "ffi/zig/ — C ABI boundary, changes affect all language bindings"
-    ; ".machine_readable/ — checkpoint files, format is specified"
+    "src/interface/abi/ — Idris2 formal proofs (e.g. alignUpCeil / alignUpCeilIsMultiple); changes require re-verification"
+    "the gossamer_gsa_ C-ABI surface and the 13 result codes — changes ripple to the GUI, the CLI, and every binding"
+    "src/interface/ffi/src/server_actions.zig — command construction; argv-slice + -- discipline prevents shell injection"
+    "LICENSE and per-file SPDX headers — AGPL-3.0-or-later for code; legal implications"
+    ".machine_readable/ — checkpoint, contractile, and policy files; canonical and format-specified"
   )
 
   ; === Ecosystem Position ===
   (ecosystem
-    (belongs-to "{{MONOREPO_OR_STANDALONE}}")
-    (depends-on ("{{DEP1}}" "{{DEP2}}"))
-    (depended-on-by ("{{CONSUMER1}}" "{{CONSUMER2}}"))
+    (belongs-to "standalone repo within the hyperpolymath ecosystem")
+    (depends-on ("Gossamer (webview GUI runtime)" "VeriSimDB (backing store)" "Idris2 0.7.0 (ABI)" "Zig 0.15.2 (FFI)" "Groove (voice alerting)" "Podman + Chainguard Wolfi (containers)"))
+    (depended-on-by ("game-server operators (humans, via GUI and CLI)" "Groove alert consumers"))
   )
 )

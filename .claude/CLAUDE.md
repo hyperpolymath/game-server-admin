@@ -74,11 +74,11 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
   - **Backup** (port 8091, `GSA_BACKUP_VERISIMDB_URL`): game save metadata, snapshots, restore points
 - **Container images** use Chainguard Wolfi base, Podman, `Containerfile` (never Docker/Dockerfile)
 
-## Current State (2026-04-03)
+## Current State (2026-06-20)
 
-- **Completion**: 100% (all 15 phases complete)
+- **Completion**: 93% (15 phases built; v1.0.0 gates still open — see Remaining)
 - **Zig version**: 0.15.2 (see `.tool-versions`)
-- **Exported FFI symbols**: 24 (comptime linker hints in main.zig)
+- **Exported FFI symbols**: 27 (comptime linker hints in main.zig)
 - **Tests**: 111 Zig tests across 3 suites (unit: 67, integration: 39, smoke: 5). All passing.
   - Security tests for command injection in server_actions
   - Config parser edge cases for all 8 formats
@@ -91,7 +91,7 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 - **Release CI**: release.yml builds Zig, packages tarball, uploads artifacts
 - **Groove**: Full manifest with probe/config/drift/alert capabilities
 - **Icon**: SVG + 256px PNG in assets/
-- **Remaining**: Bitbucket mirror (SSH key -- manual step)
+- **Remaining (v1.0.0 gates)**: Ephapax parser gaps (`;`, zero-arg calls, lambda blocks → 2 failing Gossamer chain tests, 23/25); CryoFall game-file staging (blocker B4, manual SteamCMD); Bitbucket mirror (SSH key -- manual step); OpenSSF badge; full docs pass
 
 ## Lint / Quality
 

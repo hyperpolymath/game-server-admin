@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 = Game Server Admin (GSA) Roadmap
 :author: Jonathan D.A. Jewell
-:revdate: 2026-03-29
+:revdate: 2026-06-20
 
 == Current State
 
@@ -10,8 +10,8 @@ GSA is a universal game server probe, config management, and administration tool
 
 Key capabilities delivered:
 
-* 22 exported FFI symbols (Zig 0.15.2, libgsa.so)
-* 8 FFI modules: lifecycle, probe, config_extract, a2ml_emit, verisimdb_client, server_actions, game_profiles, groove_client
+* 27 exported FFI symbols (Zig 0.15.2, libgsa.so)
+* 10 FFI modules: lifecycle, probe, config_extract, a2ml_emit, verisimdb_client, server_actions, game_profiles, groove_client, steam_client, cli
 * Protocol fingerprinting (8 protocols, 20+ known ports)
 * Config parsing (8 formats: XML, INI, JSON, ENV, YAML, TOML, Lua, KV)
 * 17 game profiles (A2ML files in profiles/)
@@ -24,6 +24,9 @@ Key capabilities delivered:
 * Chainguard Wolfi containers with quadlets
 * Idris2 ABI with 13 result codes
 * Desktop entry and icon assets (SVG + PNG)
+* Steam Web API client (vanity->Steam64 resolution, player summary, ownership check)
+* Nexus Setup GUI -- 7-step provisioning wizard (profile -> Steam resolve -> config -> SSH target -> file staging -> provision -> verify)
+* CryoFall container stack (Containerfile, Quadlet, schema-driven provisioner, self-heal watchdog)
 
 Test suites:
 * Zig unit tests: passing
