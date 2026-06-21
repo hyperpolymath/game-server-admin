@@ -104,7 +104,7 @@ Run this pass at the end of a corrective/adaptive/perfective cycle:
   - single navigation entry point in root (`NAVIGATION.adoc` or equivalent)
   - no duplicate conflicting docs for same purpose (for example both `.md` and `.adoc` in root unless intentionally required)
 - [ ] Enforce ABI/FFI purity where the policy applies:
-  - ABI definitions in Idris2 (`src/abi/*.idr`)
+  - ABI definitions in Idris2 (`src/interface/abi/*.idr`)
   - FFI implementations in Zig (`ffi/**/*.zig`)
 - [ ] Ensure quality gate includes: formatting, lint, unit/integration tests, p2p/e2e checks, benchmark smoke, docs checks, security scan.
 
