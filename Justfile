@@ -671,8 +671,10 @@ lint:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Launch GSA (platform-detect, self-heal, git cycle)
+# Scoped Deno permissions (read source/stat, run subprocesses, read env) —
+# run.js needs no network or write capability of its own.
 run:
-    deno run --allow-all run.js
+    deno run --allow-read --allow-run --allow-env run.js
 
 # Run the GSA binary directly (status probe, config, etc.)
 run-admin *args: build-ffi
