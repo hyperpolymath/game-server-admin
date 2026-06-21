@@ -12,8 +12,14 @@
 // using the very same offsets it proved. The round-trip tests below stand in for
 // the Idris reader and assert the two agree.
 //
-// Memory: every emitter returns a single `malloc`-ed block (struct header
-// followed by its string bytes), so one `gossamer_gsa_free(ptr)` releases it.
+// Conventions (matching the rest of the FFI — zero unchecked pointer/alignment
+// casts):
+//   * Readers reinterpret memory through `@ptrFromInt` + `@memcpy` (which are
+//     alignment-agnostic); emitters build a typed view of a byte block with
+//     `std.mem.bytesAsValue` / `bytesAsSlice`.
+//   * Every emitter returns one `c_allocator` block (struct header followed by
+//     its string bytes), released by a single `gossamer_gsa_free(ptr)`
+//     (`std.c.free`, since `c_allocator` is malloc-backed at these alignments).
 
 const std = @import("std");
 const main = @import("main.zig");
@@ -43,15 +49,13 @@ pub fn serializeDriftReport(
     overall_score: f64,
 ) ?*abi.DriftReport {
     const header = @sizeOf(abi.DriftReport);
-    const total = header + server_id.len + 1;
-    const block: [*]u8 = @ptrCast(std.c.malloc(total) orelse return null);
-    const sid_dst = block + header;
-    @memcpy(sid_dst[0..server_id.len], server_id);
-    sid_dst[server_id.len] = 0;
+    const block = std.heap.c_allocator.alignedAlloc(u8, .of(abi.DriftReport), header + server_id.len + 1) catch return null;
+    @memcpy(block[header..][0..server_id.len], server_id);
+    block[header + server_id.len] = 0;
 
-    const dr: *abi.DriftReport = @ptrCast(@alignCast(block));
+    const dr = std.mem.bytesAsValue(abi.DriftReport, block[0..header]);
     dr.* = .{
-        .serverId = @ptrCast(sid_dst),
+        .serverId = block[header..][0..server_id.len :0].ptr,
         .status = status,
         .configDrift = config_drift,
         .semanticDrift = semantic_drift,
@@ -71,23 +75,22 @@ pub fn serializeFingerprint(
     latency_ms: u32,
 ) ?*abi.Fingerprint {
     const header = @sizeOf(abi.Fingerprint);
-    const total = header + host.len + 1 + signature.len + 1;
-    const block: [*]u8 = @ptrCast(std.c.malloc(total) orelse return null);
+    const block = std.heap.c_allocator.alignedAlloc(u8, .of(abi.Fingerprint), header + host.len + 1 + signature.len + 1) catch return null;
 
-    const host_dst = block + header;
-    @memcpy(host_dst[0..host.len], host);
-    host_dst[host.len] = 0;
+    const host_off = header;
+    @memcpy(block[host_off..][0..host.len], host);
+    block[host_off + host.len] = 0;
 
-    const sig_dst = block + header + host.len + 1;
-    @memcpy(sig_dst[0..signature.len], signature);
-    sig_dst[signature.len] = 0;
+    const sig_off = host_off + host.len + 1;
+    @memcpy(block[sig_off..][0..signature.len], signature);
+    block[sig_off + signature.len] = 0;
 
-    const fp: *abi.Fingerprint = @ptrCast(@alignCast(block));
+    const fp = std.mem.bytesAsValue(abi.Fingerprint, block[0..header]);
     fp.* = .{
-        .host = @ptrCast(host_dst),
+        .host = block[host_off..][0..host.len :0].ptr,
         .port = port,
         .protocol = protocol,
-        .responseSignature = @ptrCast(sig_dst),
+        .responseSignature = block[sig_off..][0..signature.len :0].ptr,
         .latencyMs = latency_ms,
     };
     return fp;
@@ -95,25 +98,24 @@ pub fn serializeFingerprint(
 
 /// Serialise a list of strings into the array wire format. Returns null on OOM.
 pub fn serializeStringArray(items: []const []const u8) ?*anyopaque {
-    const ptr_bytes = items.len * @sizeOf(abi.CStr);
+    const ptr_region = items.len * @sizeOf(abi.CStr);
     var str_bytes: usize = 0;
     for (items) |s| str_bytes += s.len + 1;
-    const total = @sizeOf(ArrayHeader) + ptr_bytes + str_bytes;
 
-    const block: [*]u8 = @ptrCast(std.c.malloc(total) orelse return null);
-    const hdr: *ArrayHeader = @ptrCast(@alignCast(block));
+    // Align to CStr (8) so both the header (4) and the pointer slots fit.
+    const block = std.heap.c_allocator.alignedAlloc(u8, .of(abi.CStr), @sizeOf(ArrayHeader) + ptr_region + str_bytes) catch return null;
+    const hdr = std.mem.bytesAsValue(ArrayHeader, block[0..@sizeOf(ArrayHeader)]);
     hdr.* = .{ .count = @intCast(items.len) };
 
-    const items_base: [*]abi.CStr = @ptrCast(@alignCast(block + @sizeOf(ArrayHeader)));
-    var cursor: usize = @sizeOf(ArrayHeader) + ptr_bytes;
+    const slots = std.mem.bytesAsSlice(abi.CStr, block[@sizeOf(ArrayHeader)..][0..ptr_region]);
+    var cursor: usize = @sizeOf(ArrayHeader) + ptr_region;
     for (items, 0..) |s, i| {
-        const dst = block + cursor;
-        @memcpy(dst[0..s.len], s);
-        dst[s.len] = 0;
-        items_base[i] = @ptrCast(dst);
+        @memcpy(block[cursor..][0..s.len], s);
+        block[cursor + s.len] = 0;
+        slots[i] = block[cursor..][0..s.len :0].ptr;
         cursor += s.len + 1;
     }
-    return @ptrCast(block);
+    return &block[0];
 }
 
 // ── Exported C ABI: offset readers (Layout.idr becomes a live contract) ──────
@@ -148,6 +150,7 @@ pub export fn gossamer_gsa_read_ptr(ptr: ?*const anyopaque, offset: i32) callcon
     const src: [*]const u8 = @ptrFromInt(@intFromPtr(base) + @as(usize, @intCast(offset)));
     var v: usize = 0;
     @memcpy(std.mem.asBytes(&v), src[0..@sizeOf(usize)]);
+    if (v == 0) return null;
     return @ptrFromInt(v);
 }
 
@@ -155,23 +158,33 @@ pub export fn gossamer_gsa_read_ptr(ptr: ?*const anyopaque, offset: i32) callcon
 /// for string results and struct `CStr` fields). Returns "" for NULL.
 pub export fn gossamer_gsa_read_string(ptr: ?*const anyopaque) callconv(.c) [*:0]const u8 {
     const p = ptr orelse return empty_cstr;
-    return @ptrCast(p);
+    return @ptrFromInt(@intFromPtr(p));
 }
 
 /// Number of elements in a serialised string array (0 for NULL).
 pub export fn gossamer_gsa_array_len(ptr: ?*const anyopaque) callconv(.c) i32 {
     const base = ptr orelse return 0;
-    const hdr: *const ArrayHeader = @ptrCast(@alignCast(base));
-    return @intCast(hdr.count);
+    const src: [*]const u8 = @ptrFromInt(@intFromPtr(base));
+    var count: u32 = 0;
+    @memcpy(std.mem.asBytes(&count), src[0..@sizeOf(u32)]);
+    return @intCast(count);
 }
 
 /// The `index`-th string in a serialised string array ("" if out of range/NULL).
 pub export fn gossamer_gsa_array_get_string(ptr: ?*const anyopaque, index: i32) callconv(.c) [*:0]const u8 {
     const base = ptr orelse return empty_cstr;
-    const hdr: *const ArrayHeader = @ptrCast(@alignCast(base));
-    if (index < 0 or @as(u32, @intCast(index)) >= hdr.count) return empty_cstr;
-    const items: [*]const abi.CStr = @ptrFromInt(@intFromPtr(base) + @sizeOf(ArrayHeader));
-    return items[@intCast(index)] orelse empty_cstr;
+    if (index < 0) return empty_cstr;
+    const src: [*]const u8 = @ptrFromInt(@intFromPtr(base));
+    var count: u32 = 0;
+    @memcpy(std.mem.asBytes(&count), src[0..@sizeOf(u32)]);
+    if (@as(u32, @intCast(index)) >= count) return empty_cstr;
+
+    const slot_addr = @intFromPtr(base) + @sizeOf(ArrayHeader) + @as(usize, @intCast(index)) * @sizeOf(abi.CStr);
+    const slot: [*]const u8 = @ptrFromInt(slot_addr);
+    var elem: usize = 0;
+    @memcpy(std.mem.asBytes(&elem), slot[0..@sizeOf(usize)]);
+    if (elem == 0) return empty_cstr;
+    return @ptrFromInt(elem);
 }
 
 /// 1 if the pointer is NULL, else 0.
@@ -185,20 +198,20 @@ pub export fn gossamer_gsa_free(ptr: ?*anyopaque) callconv(.c) void {
 }
 
 /// Validate and accept a serialised A2MLConfig (binary wire struct).
-/// Reads are at the proven Layout.idr offsets; persistence to disk is delegated
-/// to `gossamer_gsa_write_server_config`.
+/// `serverId` (the first field, offset 0) is read via the same offset-reader the
+/// Idris side uses; persistence to disk is delegated to
+/// `gossamer_gsa_write_server_config`.
 pub export fn gossamer_gsa_apply_config(handle: c_int, config: ?*const anyopaque) callconv(.c) c_int {
     _ = handle;
-    const cfg = config orelse {
+    if (config == null) {
         main.setErrorStr("null config");
         return @intFromEnum(main.GsaResult.null_pointer);
-    };
+    }
     if (main.getGlobalHandle() == null) {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);
     }
-    const a2ml: *const abi.A2MLConfig = @ptrCast(@alignCast(cfg));
-    if (a2ml.serverId == null) {
+    if (gossamer_gsa_read_ptr(config, 0) == null) {
         main.setErrorStr("config missing serverId");
         return @intFromEnum(main.GsaResult.invalid_param);
     }
@@ -263,7 +276,7 @@ test "DriftReport round-trips through the live offset contract" {
     try std.testing.expectEqual(@as(f64, 0.75), gossamer_gsa_read_double(dr, off(E, "temporalConsistency")));
     try std.testing.expectEqual(@as(f64, 0.9), gossamer_gsa_read_double(dr, off(E, "overallScore")));
     // serverId is a char* field: read the pointer at its offset, then the string —
-    // exactly the read_ptr∘read_string path the Idris reader uses.
+    // exactly the read_ptr then read_string path the Idris reader uses.
     try std.testing.expectEqualStrings("srv-1", std.mem.span(gossamer_gsa_read_string(gossamer_gsa_read_ptr(dr, off(E, "serverId")))));
 
     // Guard: the offsets actually exercised are the machine-checked ones.

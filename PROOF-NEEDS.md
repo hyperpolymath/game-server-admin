@@ -64,7 +64,7 @@ now checks that model against reality and makes it a live runtime contract.
   declared as a Zig `extern struct` (`abi_layout.zig`). A comptime block asserts
   `@offsetOf` / `@sizeOf` / `@alignOf` of every field equals the proven Idris
   constant — lifted verbatim from `Layout.idr` into `abi_layout_expected.zig` by
-  `scripts/gen_abi_expected.py`. Any divergence is a **compile error**, so the
+  `scripts/gen_abi_expected.zig`. Any divergence is a **compile error**, so the
   library cannot build against a layout the proofs do not describe. A negative
   test (perturbing one offset) confirms the guard bites; the check also runs
   under `zig build test`.
@@ -82,7 +82,7 @@ now checks that model against reality and makes it a live runtime contract.
   `0/4/12/20/28`), via `prim__driftStruct` + `prim__readPtr`/`readInt`/`readDouble`.
 
 > Regenerate the expected table whenever `Layout.idr` changes:
-> `python3 scripts/gen_abi_expected.py` (then the Zig cross-check re-validates).
+> `zig run scripts/gen_abi_expected.zig` (then the Zig cross-check re-validates).
 
 ## What still needs proving
 

@@ -65,7 +65,7 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 | `cli.zig` | Standalone CLI executable (status, probe, profiles, version) |
 
 `abi_layout_expected.zig` is generated from `Layout.idr` by
-`scripts/gen_abi_expected.py` (regenerate when `Layout.idr` changes).
+`scripts/gen_abi_expected.zig` (`zig run`; regenerate when `Layout.idr` changes).
 
 ## Key Conventions
 
