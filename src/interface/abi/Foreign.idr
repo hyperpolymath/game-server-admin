@@ -23,8 +23,8 @@
 
 module Foreign
 
-import GSA.ABI.Types
-import GSA.ABI.Layout
+import Types
+import Layout
 
 import Data.List
 import Data.Maybe
@@ -233,12 +233,12 @@ readStringArray ptr = do
   where
     covering
     go : Int -> Int -> List String -> IO (List String)
-    go idx total acc =
-      if idx >= total
+    go idx tot acc =
+      if idx >= tot
         then pure (reverse acc)
         else do
           s <- primIO (prim__arrayGetString ptr idx)
-          go (idx + 1) total (s :: acc)
+          go (idx + 1) tot (s :: acc)
 
 --------------------------------------------------------------------------------
 -- Safe Wrappers: Server Lifecycle
@@ -302,10 +302,10 @@ fingerprint host ports = do
 export
 covering
 extractConfig : (1 handle : ServerHandle) -> GameProfile -> IO (Either Result A2MLConfig, ServerHandle)
-extractConfig handle profile = do
-  ptr <- primIO (prim__extractConfig handle.rawPtr profile.id)
+extractConfig (MkServerHandle p sid v) profile = do
+  ptr <- primIO (prim__extractConfig p profile.id)
   case prim__isNull ptr /= 0 of
-    True => pure (Left NullPointer, handle)
+    True => pure (Left NullPointer, MkServerHandle p sid v)
     False => do
       -- Deserialise the A2MLConfig from the returned pointer
       serverId <- primIO (prim__readString ptr)
@@ -314,7 +314,7 @@ extractConfig handle profile = do
       configPath <- primIO (prim__arrayGetString ptr 3)
       primIO (prim__free ptr)
       let format = fromMaybe KeyValue (parseConfigFormat formatCode)
-      pure (Right (MkA2MLConfig serverId gameId format configPath []), handle)
+      pure (Right (MkA2MLConfig serverId gameId format configPath []), MkServerHandle p sid v)
   where
     parseConfigFormat : Int -> Maybe ConfigFormat
     parseConfigFormat 0 = Just XML
@@ -337,15 +337,15 @@ extractConfig handle profile = do
 export
 covering
 applyConfig : (1 handle : ServerHandle) -> A2MLConfig -> IO (Either Result (), ServerHandle)
-applyConfig handle config = do
+applyConfig (MkServerHandle p sid v) config = do
   -- The Zig layer accepts a serialised config struct.
   -- For now we pass the config path and let the Zig layer handle serialisation.
   -- A proper implementation would use prim__applyConfig with a packed struct.
-  result <- primIO (prim__serverAction handle.rawPtr ("apply:" ++ config.configPath))
+  result <- primIO (prim__serverAction p ("apply:" ++ config.configPath))
   let parsed = if result == 0
                  then Right ()
                  else Left (fromMaybe Error (resultFromInt (negate result)))
-  pure (parsed, handle)
+  pure (parsed, MkServerHandle p sid v)
 
 ||| Send a named action to the server (start, stop, restart, status, etc.),
 ||| BORROWING the handle. The action string must match one of the actions
@@ -357,11 +357,11 @@ applyConfig handle config = do
 export
 covering
 serverAction : (1 handle : ServerHandle) -> String -> IO (Either Result String, ServerHandle)
-serverAction handle action = do
-  result <- primIO (prim__serverAction handle.rawPtr action)
+serverAction (MkServerHandle p sid v) action = do
+  result <- primIO (prim__serverAction p action)
   if result >= 0
-    then pure (Right ("Action '" ++ action ++ "' completed (code " ++ show result ++ ")"), handle)
-    else pure (Left (fromMaybe Error (resultFromInt (negate result))), handle)
+    then pure (Right ("Action '" ++ action ++ "' completed (code " ++ show result ++ ")"), MkServerHandle p sid v)
+    else pure (Left (fromMaybe Error (resultFromInt (negate result))), MkServerHandle p sid v)
 
 ||| Retrieve the last N lines of server log output, BORROWING the handle.
 ||| Log lines are returned in chronological order (oldest first).
@@ -372,14 +372,14 @@ serverAction handle action = do
 export
 covering
 getLogs : (1 handle : ServerHandle) -> Nat -> IO (Either Result (List String), ServerHandle)
-getLogs handle lineCount = do
-  ptr <- primIO (prim__getLogs handle.rawPtr (cast lineCount))
+getLogs (MkServerHandle p sid v) lineCount = do
+  ptr <- primIO (prim__getLogs p (cast lineCount))
   case prim__isNull ptr /= 0 of
-    True => pure (Left NullPointer, handle)
+    True => pure (Left NullPointer, MkServerHandle p sid v)
     False => do
       lines <- readStringArray ptr
       primIO (prim__free ptr)
-      pure (Right lines, handle)
+      pure (Right lines, MkServerHandle p sid v)
 
 ||| Close and release a server handle, CONSUMING it.
 ||| After this call, the handle is no longer valid. The linear type system
@@ -391,8 +391,8 @@ getLogs handle lineCount = do
 export
 covering
 closeHandle : (1 handle : ServerHandle) -> IO Result
-closeHandle handle = do
-  result <- primIO (prim__closeHandle handle.rawPtr)
+closeHandle (MkServerHandle p _ _) = do
+  result <- primIO (prim__closeHandle p)
   pure (fromMaybe Error (resultFromInt result))
 
 --------------------------------------------------------------------------------

@@ -194,12 +194,12 @@ fn udpExchange(
     );
     defer posix.close(sock);
 
-    // set receive timeout
-    const timeout_sec: i64 = @intCast(timeout_ms / 1000);
-    const timeout_usec: i64 = @intCast(@as(u64, timeout_ms % 1000) * 1000);
+    // set receive timeout — cast into the timeval field types, whose width
+    // varies by platform: sec/usec are i64 on Linux, c_long (i32) on Windows,
+    // and i64/i32 (time_t/suseconds_t) on macOS. @intCast adapts to each.
     const tv = posix.timeval{
-        .sec = timeout_sec,
-        .usec = timeout_usec,
+        .sec = @intCast(timeout_ms / 1000),
+        .usec = @intCast(@as(u64, timeout_ms % 1000) * 1000),
     };
     try posix.setsockopt(sock, posix.SOL.SOCKET, posix.SO.RCVTIMEO, std.mem.asBytes(&tv));
 

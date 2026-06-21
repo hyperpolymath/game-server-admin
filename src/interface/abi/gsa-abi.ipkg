@@ -1,0 +1,8 @@
+package gsa-abi
+version = 0.1.0
+authors = "Jonathan D.A. Jewell (hyperpolymath)"
+license = "AGPL-3.0-or-later"
+sourcedir = "."
+modules = Types
+        , Layout
+        , Foreign
