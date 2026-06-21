@@ -192,6 +192,23 @@ export
 %foreign "C:gossamer_gsa_array_get_string, libgossamer_gsa"
 prim__arrayGetString : AnyPtr -> Int -> PrimIO String
 
+||| Read a pointer field at a byte offset from a serialised struct. Combined
+||| with prim__readString this decodes char* fields at their proven offsets:
+||| readString (readPtr struct (offsetOf "serverId" layout)).
+|||
+||| C signature: void* gossamer_gsa_read_ptr(void* ptr, int32_t offset)
+export
+%foreign "C:gossamer_gsa_read_ptr, libgossamer_gsa"
+prim__readPtr : AnyPtr -> Int -> PrimIO AnyPtr
+
+||| Emit a binary DriftReport wire struct (canonical Layout.idr layout) for a
+||| tracked server. The returned pointer must be released with prim__free.
+|||
+||| C signature: void* gossamer_gsa_drift_struct(const char* server_id)
+export
+%foreign "C:gossamer_gsa_drift_struct, libgossamer_gsa"
+prim__driftStruct : String -> PrimIO AnyPtr
+
 --------------------------------------------------------------------------------
 -- Internal Helpers
 -- Utility functions used by the safe wrappers to convert between C
@@ -457,9 +474,18 @@ checkHealth = do
            Just status => pure (Right status)
            Nothing     => pure (Left Error)
 
-||| Get a drift report for a specific server.
-||| Compares the server's current VeriSimDB octad against its historical
-||| baseline across all modalities (config, semantic, temporal).
+||| Get a drift report for a specific server, decoded from the binary
+||| DriftReport wire struct emitted by gossamer_gsa_drift_struct.
+|||
+||| Every field is read at the offset *proven* in GSA.ABI.Layout
+||| (driftReportLayout): the char* field serverId via prim__readPtr, the scalars
+||| via prim__readInt / prim__readDouble. These are the same offsets the Zig
+||| layer is compile-time-checked against (abi_layout.zig), so this is the live
+||| cross-language ABI contract rather than hand-tuned constants.
+|||
+||| status reflects the tracked liveness; the configDrift / semanticDrift /
+||| temporalConsistency / overallScore metrics are 0.0 until VeriSimDB scoring
+||| is wired into the emitter.
 |||
 ||| @param serverId The server identifier to check
 ||| @return Left Result on failure, Right DriftReport on success
@@ -467,20 +493,21 @@ export
 covering
 getDrift : String -> IO (Either Result DriftReport)
 getDrift serverId = do
-  ptr <- primIO (prim__verisimdbDrift serverId)
+  ptr <- primIO (prim__driftStruct serverId)
   case prim__isNull ptr /= 0 of
-    True => pure (Left VeriSimDBUnavailable)
+    True => pure (Left Error)
     False => do
-      -- Deserialise the DriftReport from the returned pointer.
-      -- Field offsets match the Zig struct layout (see Layout.idr).
-      statusCode    <- primIO (prim__readInt ptr 0)
-      configDrift   <- primIO (prim__readDouble ptr 4)
-      semanticDrift <- primIO (prim__readDouble ptr 12)
-      temporalCons  <- primIO (prim__readDouble ptr 20)
-      overallScore  <- primIO (prim__readDouble ptr 28)
+      let o = \name => the Int (cast (fromMaybe 0 (Layout.offsetOf name Layout.driftReportLayout)))
+      sidPtr        <- primIO (prim__readPtr ptr (o "serverId"))
+      sid           <- primIO (prim__readString sidPtr)
+      statusCode    <- primIO (prim__readInt ptr (o "status"))
+      configDrift   <- primIO (prim__readDouble ptr (o "configDrift"))
+      semanticDrift <- primIO (prim__readDouble ptr (o "semanticDrift"))
+      temporalCons  <- primIO (prim__readDouble ptr (o "temporalConsistency"))
+      overallScore  <- primIO (prim__readDouble ptr (o "overallScore"))
       primIO (prim__free ptr)
       let status = fromMaybe Warning (healthStatusFromInt statusCode)
-      pure (Right (MkDriftReport serverId status configDrift semanticDrift temporalCons overallScore))
+      pure (Right (MkDriftReport sid status configDrift semanticDrift temporalCons overallScore))
 
 --------------------------------------------------------------------------------
 -- Safe Wrappers: Profile Management

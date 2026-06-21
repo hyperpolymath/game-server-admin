@@ -21,6 +21,8 @@ pub const server_actions = @import("server_actions.zig");
 pub const game_profiles = @import("game_profiles.zig");
 pub const groove_client = @import("groove_client.zig");
 pub const steam_client = @import("steam_client.zig");
+pub const abi_layout = @import("abi_layout.zig"); // canonical wire structs + Zig↔Idris cross-check
+pub const abi_serde = @import("abi_serde.zig"); // binary ABI emitters + offset readers
 
 // Force the linker to include all exported functions from submodules.
 // Without these references, Zig's linker may dead-strip the `pub export fn`
@@ -49,6 +51,18 @@ comptime {
     _ = &steam_client.gossamer_gsa_steam_resolve_vanity;
     _ = &steam_client.gossamer_gsa_steam_player_info;
     _ = &steam_client.gossamer_gsa_steam_get_result;
+    // Binary ABI: offset readers + array/pointer helpers consumed by GSA.ABI.Foreign.
+    _ = &abi_serde.gossamer_gsa_read_int;
+    _ = &abi_serde.gossamer_gsa_read_double;
+    _ = &abi_serde.gossamer_gsa_read_ptr;
+    _ = &abi_serde.gossamer_gsa_read_string;
+    _ = &abi_serde.gossamer_gsa_array_len;
+    _ = &abi_serde.gossamer_gsa_array_get_string;
+    _ = &abi_serde.gossamer_gsa_is_null;
+    _ = &abi_serde.gossamer_gsa_free;
+    _ = &abi_serde.gossamer_gsa_apply_config;
+    _ = &abi_serde.gossamer_gsa_close_handle;
+    _ = &abi_serde.gossamer_gsa_drift_struct;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
