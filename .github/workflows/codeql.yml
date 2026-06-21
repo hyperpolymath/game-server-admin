@@ -33,6 +33,10 @@ jobs:
         include:
           - language: javascript-typescript
             build-mode: none
+          # Scan the GitHub Actions workflows themselves (CodeQL `actions`
+          # language). (Hypatia workflow_audit: codeql_missing_actions_language)
+          - language: actions
+            build-mode: none
 
     steps:
       - name: Checkout

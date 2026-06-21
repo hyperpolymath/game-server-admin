@@ -5,9 +5,9 @@
 // for Game Server Admin (GSA)
 //
 // Usage:
-//   deno run --allow-all run.js          # auto-detect and launch
-//   deno run --allow-all run.js --help   # show usage
-//   deno run --allow-all run.js --reflect
+//   deno run --allow-read --allow-run --allow-env run.js          # auto-detect and launch
+//   deno run --allow-read --allow-run --allow-env run.js --help   # show usage
+//   deno run --allow-read --allow-run --allow-env run.js --reflect
 
 // ─────────────────────────────────────────────────────────────────────────────
 // REGISTRY — homoiconic data; the script reads this at runtime via reflect()
@@ -248,7 +248,7 @@ if (import.meta.main) {
 ${c.bold}${REGISTRY.identity.display} — run.js${c.reset}
 ${REGISTRY.identity.license} | ${REGISTRY.identity.repo}
 
-Usage: deno run --allow-all run.js [OPTIONS]
+Usage: deno run --allow-read --allow-run --allow-env run.js [OPTIONS]
 
 Options:
   --help, -h       Show this help

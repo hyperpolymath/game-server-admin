@@ -216,8 +216,9 @@
       + 'border:1px solid var(--link-color,#58a6ff);border-radius:4px;outline:none;'
       + 'box-shadow:0 0 0 2px rgba(88,166,255,0.2);';
 
-    // Replace content with input
-    element.innerHTML = '';
+    // Replace content with input (replaceChildren clears without an
+    // innerHTML re-parse — no markup interpretation, no injection surface).
+    element.replaceChildren();
     element.appendChild(input);
     input.focus();
     if (input.select) input.select();
