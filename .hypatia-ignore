@@ -12,10 +12,13 @@
 
 # --- Test-fixture "secrets" (not credentials) ---------------------------------
 # gitleaks, trufflehog, rust-secrets and shell-secrets all pass clean on these.
-#   fuzz_config.zig:58 — fuzzer seed string ("PASSWORD='quoted'\nAPI_KEY=...")
-#     exercising the ENV config parser; literal test input.
-#   .envrc:24 — commented-out placeholder (# export API_KEY="..."); real
-#     secrets live in the gitignored .env loaded via dotenv_if_exists.
+#   fuzz_config.zig:58 — a fuzzer seed string of fake credential-style key/value
+#     lines exercising the ENV config parser; literal test input, not a secret.
+#   .envrc:24 — a commented-out example line; real secrets live in the
+#     gitignored .env loaded via dotenv_if_exists.
+# This file necessarily names secret-detection rules and paths, so it also
+# exempts itself: its own comments are documentation, not leaked credentials.
+security_errors/secret_detected:.hypatia-ignore
 security_errors/secret_detected:src/interface/ffi/src/fuzz_config.zig
 security_errors/secret_detected:.envrc
 
