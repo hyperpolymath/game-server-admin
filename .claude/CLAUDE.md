@@ -41,7 +41,7 @@ panic-attack assail .
 ```
 Gossamer GUI (Ephapax .eph)        -- src/core/, src/gui/panels/
     |  IPC (gossamer:// protocol)
-Zig FFI (libgsa.so + gsa CLI)     -- src/interface/ffi/src/ (9 modules)
+Zig FFI (libgsa.so + gsa CLI)     -- src/interface/ffi/src/ (11 modules)
     |  C ABI (13 result codes)
 Idris2 ABI (Types/Foreign/Layout)  -- src/interface/abi/
     |  REST (port 8090)
@@ -60,7 +60,12 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 | `server_actions.zig` | Start/stop/restart/logs via Podman/Docker/systemd |
 | `game_profiles.zig` | A2ML profile registry + parser |
 | `groove_client.zig` | .well-known Groove voice alerting |
+| `abi_layout.zig` | Canonical C-ABI `extern struct`s + comptime Zig↔Idris layout cross-check |
+| `abi_serde.zig` | Binary ABI emitters + offset readers (`read_int`/`read_ptr`/…) — makes `Layout.idr` offsets a live contract |
 | `cli.zig` | Standalone CLI executable (status, probe, profiles, version) |
+
+`abi_layout_expected.zig` is generated from `Layout.idr` by
+`scripts/gen_abi_expected.zig` (`zig run`; regenerate when `Layout.idr` changes).
 
 ## Key Conventions
 
@@ -78,13 +83,15 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 
 - **Completion**: 93% (15 phases built; v1.0.0 gates still open — see Remaining)
 - **Zig version**: 0.15.2 (see `.tool-versions`)
-- **Exported FFI symbols**: 27 (comptime linker hints in main.zig)
-- **Tests**: 111 Zig tests across 3 suites (unit: 67, integration: 39, smoke: 5). All passing.
+- **Exported FFI symbols**: 38 (comptime linker hints in main.zig)
+- **Tests**: 124 Zig tests across 3 suites (unit: 80, integration: 39, smoke: 5). All passing.
   - Security tests for command injection in server_actions
   - Config parser edge cases for all 8 formats
   - A2ML round-trip, diff, and secret redaction tests
   - Groove target registry overflow and buffer truncation tests
+  - ABI layout cross-check + binary ABI round-trip (read at proven `Layout.idr` offsets)
 - **Idris2 ABI**: Alignment postulate replaced with constructive proof (`alignUpCeil` + `alignUpCeilIsMultiple`)
+- **Cross-language ABI**: `abi_layout.zig` asserts (at compile time + `zig build test`) that the 8 `extern struct`s match the proven `Layout.idr` offsets/sizes; `abi_serde.zig` implements the offset readers/emitters so those offsets are a live runtime contract (was the open HIGH proof item)
 - **VeriSimDB**: Main on 8090 (built, running), backup on 8091 (game saves)
 - **Container**: Containerfile wired with real Zig build, entrypoint.sh execs gsa
 - **Nix/Guix**: Both flake.nix and guix.scm have real build/install phases
