@@ -1,0 +1,80 @@
+= Game Server Admin — Documentation Index
+:revdate: 2026-06-21
+
+Audience-segmented map of the GSA documentation. Start here, then pick your role.
+
+[NOTE]
+====
+Status legend: *live* = written and current; *thin* = exists but covers only
+setup/basic-run; *planned* = a known gap, scoped below, tracked for the v1.0.0
+documentation pass. See `ROADMAP.adoc` for release gates and `.claude/CLAUDE.md`
+for the codebase quick-context.
+====
+
+== End users
+_You run and administer game servers via the Gossamer GUI and the `gsa` CLI._
+
+[cols="2,1,4"]
+|===
+| Document | Status | Covers
+
+| `README.adoc` | live | Overview, quick-start, `gsa` CLI reference, supported games
+| `USER-CONFIG.md` | live | Nickel config: defaults, favourites, troubleshooting
+| `docs/QUICKSTART.adoc` | thin | One-liner pointer — not a real getting-started
+| GUI panel guide | *planned* | One section per panel (8: server-browser, config-editor, server-actions, live-logs, health-dashboard, config-history, cross-search, nexus-setup). **`nexus-setup`, the 7-step provisioning wizard, is entirely undocumented.**
+| Game-profile selection | *planned* | Which game → which of the 18 profiles; port/protocol table
+| Admin workflows | *planned* | Add a server; manage config across servers; roll back via config history
+|===
+
+== Developers
+_You build GSA, extend it, or contribute code across the Gossamer GUI → Zig FFI → Idris2 ABI → VeriSimDB stack._
+
+[cols="2,1,4"]
+|===
+| Document | Status | Covers
+
+| `README.adoc` | live | Architecture diagram, module map, "Adding a Game Profile" snippet
+| `docs/developer/ABI-FFI-README.adoc` | live | Idris2 ABI + Zig FFI standard; C/Idris2/Rust/Julia examples (strong)
+| `TOPOLOGY.md` | live | System architecture + data flow
+| `docs/decisions/` | live | Architecture decision records (RSR adoption)
+| FFI module reference | *planned* | Per-module docs for the 11 FFI modules (signatures, the 13 result codes, examples)
+| Panel extension guide | *planned* | The PanLL clade system; registering a new panel; inheriting base clades
+| Game-profile authoring | *thin* | Expand the README snippet: field types, validation, port/protocol, debugging
+| Config-format guide | *planned* | How to add a parser to the 8-format `config_extract`
+| Architecture rationale | *planned* | Why Ephapax / Idris2 / Zig / VeriSimDB; when to touch each layer
+|===
+
+== Maintainers
+_You release, run CI/CD, operate containers, and manage governance + security scanning._
+
+[cols="2,1,4"]
+|===
+| Document | Status | Covers
+
+| `docs/governance/MAINTENANCE-CHECKLIST.adoc` | live | Three-axis model, hygiene, ABI purity, panic-attack (strong)
+| `docs/architecture/THREAT-MODEL.adoc` | live | STRIDE, assets, trust boundaries, mitigations
+| `docs/DEPLOYMENT-RUNBOOK.adoc` | live | Build, container, VeriSimDB main+backup, health, backup/restore
+| `SECURITY.md` | live | Vulnerability reporting
+| Release checklist | *planned* | v1.0.0 must/should/could + sign-off criteria
+| CI/CD guide | *planned* | `.github/workflows/` structure, standards-estate reusables (pins `4ddc926`), staleness check, adding a check
+| Security-scanning runbook | *planned* | Running/interpreting Hypatia + panic-attack + Scorecard; the `.hypatia-ignore` suppression mechanism (NOT `.hypatia-baseline.json` — see `NEUROSYM.a2ml`)
+| Container/quadlet ops | *thin* | Expand the runbook: `.container` format, systemd user units, day-to-day ops
+|===
+
+== Machine-readable layer
+_For AI agents and tooling. Read `0-AI-MANIFEST.a2ml` FIRST._
+
+* `0-AI-MANIFEST.a2ml` — canonical entry point, invariants, startup checklist.
+* `.machine_readable/6a2/` — `STATE.a2ml` (status, blockers, session history), `META`, `ECOSYSTEM`, `AGENTIC`, `NEUROSYM` (Hypatia config + `.hypatia-ignore` scope), `PLAYBOOK`.
+* `.machine_readable/` contractiles — `INTENT`/`MUST`/`TRUST`/`DUST` (purpose, hard CI rules, trust boundaries, cleanup).
+* `.hypatia-ignore` — reviewed false-positive suppressions (the active mechanism).
+* `.claude/CLAUDE.md` — human-friendly codebase guide.
+
+== Wiki status
+`docs/wikis/` is a stub that declares an intent to sync to a forge-hosted wiki but
+is **unpopulated**. The `docs/` tree also carries several empty placeholder
+subtrees (`theory/`, `reports/`, parts of `practice/`).
+
+*Decision pending:* either populate `docs/wikis/` and sync it, **or** (recommended)
+consolidate all narrative under `docs/` using the three audience paths above and
+prune the empty scaffolding. Until then, this index is the single navigation point.

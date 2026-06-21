@@ -79,11 +79,12 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
   - **Backup** (port 8091, `GSA_BACKUP_VERISIMDB_URL`): game save metadata, snapshots, restore points
 - **Container images** use Chainguard Wolfi base, Podman, `Containerfile` (never Docker/Dockerfile)
 
-## Current State (2026-06-20)
+## Current State (2026-06-21)
 
 - **Completion**: 93% (15 phases built; v1.0.0 gates still open — see Remaining)
+- **CI/Governance (2026-06-21, PRs #41–#45)**: workflows hardened (Scorecard wrapper job perms, presence-gated instant-sync, CodeQL `actions`, scoped `deno` perms); standards reusable pins at `4ddc926`; Hypatia false positives suppressed via `.hypatia-ignore` (the inert `.hypatia-baseline.json` was removed — `hypatia scan` never applied it); advisory scan at critical=0/high=0. Doc map + gaps: `docs/INDEX.adoc`.
 - **Zig version**: 0.15.2 (see `.tool-versions`)
-- **Exported FFI symbols**: 38 (comptime linker hints in main.zig)
+- **Exported FFI symbols**: 40 (comptime linker hints in main.zig)
 - **Tests**: 124 Zig tests across 3 suites (unit: 80, integration: 39, smoke: 5). All passing.
   - Security tests for command injection in server_actions
   - Config parser edge cases for all 8 formats
@@ -113,8 +114,8 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 |------|-------|
 | AI manifest | `0-AI-MANIFEST.a2ml` (read FIRST) |
 | State checkpoint | `.machine_readable/6a2/STATE.a2ml` |
-| Game profiles | `profiles/*.a2ml` (17 games) |
-| GUI panels | `src/gui/panels/` (7 panels) |
+| Game profiles | `profiles/*.a2ml` (18 games) |
+| GUI panels | `src/gui/panels/` (8 panels) |
 | Panel clades | `panel-clades/` (9 base + game children) |
 | Ephapax core | `src/core/` (Shell, Bridge, Types, Capabilities) |
 | VeriSimDB (main, port 8090) | `container/verisimdb/` |

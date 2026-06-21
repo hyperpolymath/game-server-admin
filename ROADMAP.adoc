@@ -14,8 +14,8 @@ Key capabilities delivered:
 * 10 FFI modules: lifecycle, probe, config_extract, a2ml_emit, verisimdb_client, server_actions, game_profiles, groove_client, steam_client, cli
 * Protocol fingerprinting (8 protocols, 20+ known ports)
 * Config parsing (8 formats: XML, INI, JSON, ENV, YAML, TOML, Lua, KV)
-* 17 game profiles (A2ML files in profiles/)
-* 7 Gossamer GUI panels + 9 panel clades
+* 18 game profiles (A2ML files in profiles/)
+* 8 Gossamer GUI panels + 9 panel clades
 * VeriSimDB on 2 ports (main 8090, backup 8091 for game saves)
 * A2ML serialisation, parsing, and config diff
 * Groove voice alerting via .well-known
@@ -44,7 +44,7 @@ Test suites:
 * [x] Server actions (start/stop/restart/logs)
 * [x] Game profile registry and parser
 * [x] Groove client for voice alerting
-* [x] Gossamer GUI panels (7 panels)
+* [x] Gossamer GUI panels (8 panels)
 * [x] Panel clade system (9 base + game children)
 * [x] Idris2 ABI definitions (Types, Foreign, Layout)
 * [x] VeriSimDB dual-instance deployment (main + backup)
