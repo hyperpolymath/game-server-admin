@@ -6,12 +6,19 @@
 
 [metadata]
 version = "0.1.0"
-last-updated = "2026-03-22"
+last-updated = "2026-06-21"
 
 [hypatia-config]
 scan-enabled = true
 scan-depth = "standard"  # quick | standard | deep
 report-format = "logtalk"
+# Active suppression mechanism (PR #43-#44). NOTE: `.hypatia-baseline.json` is
+# NOT honoured by `hypatia scan` — it only excludes the file itself from being
+# scanned. The working mechanism is the repo-root `.hypatia-ignore`, consulted
+# by Hypatia.ScannerSuppression (code_safety + secret-detection paths).
+# Standards reusable pins: 4ddc926 (PR #45).
+suppression-file = ".hypatia-ignore"
+suppression-scope = "7 reviewed false positives: 2 test-fixture secrets (fuzz_config.zig, .envrc), 3 escaped-markup innerHTML sinks (src/gui/fli/*.js), 1 loopback HTTP URL (template-hunt.k9.ncl), 1 syscall bitCast (probe.zig); plus a self-exemption so the file's own docs are not re-flagged"
 
 [symbolic-rules]
 # Custom symbolic rules for this project

@@ -24,7 +24,7 @@ GSA can attach to _any_ game server, fingerprint it via protocol probing, extrac
 ----
 ┌─────────────────────────────────────────────────┐
 │  Gossamer GUI (Ephapax + HTML/JS)               │
-│  7 panels, each a Clade citizen with inheritance │
+│  8 panels, each a Clade citizen with inheritance │
 └────────────────────┬────────────────────────────┘
                      │ IPC (gossamer:// bridge)
 ┌────────────────────┴────────────────────────────┐
@@ -69,7 +69,7 @@ just verisimdb-up
 # Build and run the CLI
 just run status              # system status, VeriSimDB health, loaded profiles
 just run probe <host> [port] # fingerprint a game server (default port 27015)
-just run profiles            # list all 17 supported game profiles
+just run profiles            # list all 18 supported game profiles
 
 # Or build and launch the GUI
 just build && just gui
