@@ -1,0 +1,39 @@
+# .hypatia-ignore — scoped suppressions for reviewed Hypatia false positives.
+#
+# Format (one per line; `#` starts a comment):
+#   <rule_module>/<rule_type>:<repo-relative-path-fragment>
+# The path is matched as a substring of the finding's repo-relative path
+# (Hypatia.ScannerSuppression). Each entry below is a documented false
+# positive — see the PR that added this file for the full rationale.
+#
+# NOTE: this is the mechanism `hypatia scan` actually honours. `.hypatia-baseline.json`
+# is only applied by the external apply-baseline.sh post-filter, which this
+# estate's CI does not run, so it does not suppress anything here.
+
+# --- Test-fixture "secrets" (not credentials) ---------------------------------
+# gitleaks, trufflehog, rust-secrets and shell-secrets all pass clean on these.
+#   fuzz_config.zig:58 — fuzzer seed string ("PASSWORD='quoted'\nAPI_KEY=...")
+#     exercising the ENV config parser; literal test input.
+#   .envrc:24 — commented-out placeholder (# export API_KEY="..."); real
+#     secrets live in the gitignored .env loaded via dotenv_if_exists.
+security_errors/secret_detected:src/interface/ffi/src/fuzz_config.zig
+security_errors/secret_detected:.envrc
+
+# --- Escaped-markup innerHTML sinks (CWE-79 false positives) -------------------
+# All interpolated text is escaped (escapeHtml / escapeTermHtml / escapeXml)
+# and the assigned value is markup (ANSI-styled spans, SVG) that textContent
+# cannot express. The sink is intentional; the inputs are escaped.
+code_safety/js_innerhtml:src/gui/fli/fli-tooltip.js
+code_safety/js_innerhtml:src/gui/fli/fli-terminal.js
+code_safety/js_innerhtml:src/gui/fli/fli-gauge.js
+
+# --- Loopback HTTP URL (CWE-319 false positive) -------------------------------
+# http://[::1]:8090 is IPv6 loopback to a local VeriSimDB that serves plain
+# HTTP; https would break the health check. CWE-319 concerns cleartext over a
+# network — loopback is not network transit.
+code_safety/ncl_http_url:.machine_readable/svc/k9/template-hunt.k9.ncl
+
+# --- Required syscall @bitCast (CWE-704 false positive) -----------------------
+# Flips O_NONBLOCK on the std.posix.O packed struct for the fcntl syscall
+# (Zig 0.15). Behaviour-preserving; rewriting would break non-blocking connect.
+code_safety/zig_bit_cast:src/interface/ffi/src/probe.zig
