@@ -14,12 +14,15 @@ jobs:
   analysis:
     # Explicit least-privilege permissions for the reusable Scorecard call:
     # contents:read to check out, security-events:write to upload the SARIF,
-    # id-token:write to publish results to the OpenSSF API. Matches the scopes
-    # declared by scorecard-reusable.yml@5a93d9d5.
+    # id-token:write to publish results to the OpenSSF API — exactly the
+    # scopes the pinned reusable Scorecard workflow declares.
     # (Hypatia workflow_audit: scorecard_wrapper_missing_job_permissions)
+    # NOTE: do not write the reusable's "<name>.yml@<sha>" string in a comment
+    # here — the estate staleness check greps every line for that token and a
+    # second match would break its single-pin SHA comparison.
     permissions:
       contents: read
       security-events: write
       id-token: write
-    uses: hyperpolymath/standards/.github/workflows/scorecard-reusable.yml@5a93d9d57cc04de4002d6d0ecd336fc7a8698910
+    uses: hyperpolymath/standards/.github/workflows/scorecard-reusable.yml@d72fe5a14e841ac6d78514b53624b6173038ee20
     secrets: inherit
