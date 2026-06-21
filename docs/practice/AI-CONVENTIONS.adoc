@@ -66,7 +66,7 @@ MAINTENANCE-CHECKLIST.a2ml, or SOFTWARE-DEVELOPMENT-APPROACH.a2ml in the reposit
 
 ## ABI/FFI Standard
 
-- ABI definitions: **Idris2** with dependent types (`src/abi/`).
+- ABI definitions: **Idris2** with dependent types (`src/interface/abi/`).
 - FFI implementation: **Zig** with C ABI compatibility (`ffi/zig/`).
 - Generated C headers: `generated/abi/`.
 

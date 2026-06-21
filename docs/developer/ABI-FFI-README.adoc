@@ -17,7 +17,7 @@ This library follows the **Hyperpolymath RSR Standard** for ABI and FFI design:
 ```
 ┌─────────────────────────────────────────────┐
 │  ABI Definitions (Idris2)                   │
-│  src/abi/                                   │
+│  src/interface/abi/                         │
 │  - Types.idr      (Type definitions)        │
 │  - Layout.idr     (Memory layout proofs)    │
 │  - Foreign.idr    (FFI declarations)        │
@@ -349,14 +349,14 @@ main = do
 
 When modifying the ABI/FFI:
 
-1. **Update ABI first** (`src/abi/*.idr`)
+1. **Update ABI first** (`src/interface/abi/*.idr`)
    - Modify type definitions
    - Update proofs
    - Ensure backward compatibility
 
 2. **Generate C header**
    ```bash
-   idris2 --cg c-header src/abi/Types.idr -o generated/abi/game-server-admin.h
+   idris2 --cg c-header src/interface/abi/Types.idr -o generated/abi/game-server-admin.h
    ```
 
 3. **Update FFI implementation** (`ffi/zig/src/main.zig`)
