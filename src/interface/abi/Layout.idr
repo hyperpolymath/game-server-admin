@@ -20,7 +20,7 @@
 
 module Layout
 
-import GSA.ABI.Types
+import Types
 
 import Data.Nat
 import Data.List
@@ -329,14 +329,18 @@ alignUp offset alignment = offset + padding offset alignment
 |||
 ||| The result is always `k * a` for some natural `k`, so
 ||| `modNatNZ (k * a) a = 0` holds by definition.
+||| Ceiling division: the number of `a`-sized blocks needed to cover `n`.
+||| Total and in-module so it reduces at the type level for the proof below.
+public export
+ceilDiv : (n : Nat) -> (a : Nat) -> {auto ok : NonZero a} -> Nat
+ceilDiv n a =
+  case modNatNZ n a ok of
+    Z   => divNatNZ n a ok
+    S _ => S (divNatNZ n a ok)
+
 public export
 alignUpCeil : (offset : Nat) -> (alignment : Nat) -> {auto ok : NonZero alignment} -> Nat
-alignUpCeil offset alignment =
-  let q = divNatNZ offset alignment ok
-      r = modNatNZ offset alignment ok
-  in case r of
-       Z   => q * alignment
-       S _ => (S q) * alignment
+alignUpCeil offset alignment = ceilDiv offset alignment * alignment
 
 ||| Proof that alignUpCeil always produces a value expressible as k * alignment.
 ||| This is a constructive witness — no postulate needed.
@@ -351,12 +355,7 @@ public export
 alignUpCeilIsMultiple : (offset : Nat) -> (alignment : Nat) ->
                         {auto ok : NonZero alignment} ->
                         IsMultipleOf (alignUpCeil offset alignment) alignment
-alignUpCeilIsMultiple offset alignment =
-  let q = divNatNZ offset alignment ok
-      r = modNatNZ offset alignment ok
-  in case r of
-       Z   => MkMultiple q Refl
-       S _ => MkMultiple (S q) Refl
+alignUpCeilIsMultiple offset alignment = MkMultiple (ceilDiv offset alignment) Refl
 
 ||| Compatibility note: alignUpCeil agrees with alignUp for all inputs.
 ||| Both compute the next multiple of alignment >= offset.
@@ -678,6 +677,35 @@ driftReportAlignment = Refl
 -- Struct Layout Verification
 --------------------------------------------------------------------------------
 
+||| True iff field f's offset is a multiple of its alignment.
+public export
+fieldAligned : FieldDesc -> Bool
+fieldAligned f = case f.alignment of
+                   Z   => False
+                   S k => modNatNZ f.offset (S k) SIsNonZero == 0
+
+||| True iff the struct's total size is a multiple of its alignment.
+public export
+layoutSizeAligned : StructLayout -> Bool
+layoutSizeAligned l = case l.structAlign of
+                        Z   => False
+                        S k => modNatNZ l.totalSize (S k) SIsNonZero == 0
+
+||| IsYes d is inhabited exactly when d computes to Yes.
+public export
+IsYes : Dec p -> Type
+IsYes (Yes _) = Unit
+IsYes (No _)  = Void
+
+||| Extract the proof from a decision that reduces to Yes. For the concrete
+||| layouts below the Dec reduces, so the {auto} witness is found by search;
+||| were a layout malformed the Dec would reduce to No, IsYes would be Void,
+||| and the call would fail to compile.
+public export
+getYes : (d : Dec p) -> {auto prf : IsYes d} -> p
+getYes (Yes x) = x
+getYes (No _) {prf} = absurd prf
+
 ||| Verify that fields in a layout do not overlap.
 ||| Two fields overlap if one's [offset, offset+size) range intersects another's.
 public export
@@ -702,7 +730,7 @@ data AllFieldsAligned : List FieldDesc -> Type where
   EmptyAligned : AllFieldsAligned []
   ||| Each field must have offset divisible by its alignment
   ConsAligned : {f : FieldDesc} -> {rest : List FieldDesc} ->
-                (modNatNZ f.offset f.alignment SIsNonZero = 0) ->
+                So (fieldAligned f) ->
                 AllFieldsAligned rest ->
                 AllFieldsAligned (f :: rest)
 
@@ -711,7 +739,7 @@ data AllFieldsAligned : List FieldDesc -> Type where
 public export
 data SizeAligned : StructLayout -> Type where
   MkSizeAligned : {layout : StructLayout} ->
-                  (modNatNZ layout.totalSize layout.structAlign SIsNonZero = 0) ->
+                  So (layoutSizeAligned layout) ->
                   SizeAligned layout
 
 ||| Proof that the total size equals or exceeds the sum of all field sizes.
@@ -721,6 +749,174 @@ data SizeCoversFields : StructLayout -> Type where
   MkSizeCoversFields : {layout : StructLayout} ->
                        LTE (foldl (\acc, f => acc + f.size) 0 layout.fields) layout.totalSize ->
                        SizeCoversFields layout
+
+--------------------------------------------------------------------------------
+-- Layout Property Decision Procedures
+--------------------------------------------------------------------------------
+
+||| Decide So b. Defined in-module (unlike Data.So.choose) so it reduces at
+||| compile time, which is what lets the proofs below discharge by getYes.
+public export
+decideSo : (b : Bool) -> Dec (So b)
+decideSo True  = Yes Oh
+decideSo False = No absurd
+
+||| Decide non-overlap of a field list by checking each adjacent pair.
+public export
+decNoOverlap : (fs : List FieldDesc) -> Dec (NoOverlap fs)
+decNoOverlap [] = Yes EmptyNoOverlap
+decNoOverlap (f :: []) = Yes SingleNoOverlap
+decNoOverlap (f :: g :: rest) =
+  case isLTE (f.offset + f.size) g.offset of
+    Yes prf => case decNoOverlap (g :: rest) of
+                 Yes rprf => Yes (ConsNoOverlap prf rprf)
+                 No ncon  => No (\(ConsNoOverlap _ r) => ncon r)
+    No ncon => No (\(ConsNoOverlap l _) => ncon l)
+
+||| Decide that every field offset is a multiple of its alignment.
+public export
+decAllAligned : (fs : List FieldDesc) -> Dec (AllFieldsAligned fs)
+decAllAligned [] = Yes EmptyAligned
+decAllAligned (f :: rest) =
+  case decideSo (fieldAligned f) of
+    Yes so => case decAllAligned rest of
+                Yes r => Yes (ConsAligned so r)
+                No nr => No (\(ConsAligned _ rr) => nr rr)
+    No nso => No (\(ConsAligned so _) => nso so)
+
+||| Decide that the total size is a multiple of the struct alignment.
+public export
+decSizeAligned : (l : StructLayout) -> Dec (SizeAligned l)
+decSizeAligned l =
+  case decideSo (layoutSizeAligned l) of
+    Yes so => Yes (MkSizeAligned so)
+    No nso => No (\(MkSizeAligned so) => nso so)
+
+||| Decide that the total size covers the sum of field sizes.
+public export
+decSizeCovers : (l : StructLayout) -> Dec (SizeCoversFields l)
+decSizeCovers l =
+  case isLTE (foldl (\acc, f => acc + f.size) 0 l.fields) l.totalSize of
+    Yes prf => Yes (MkSizeCoversFields prf)
+    No ncon => No (\(MkSizeCoversFields p) => ncon p)
+
+--------------------------------------------------------------------------------
+-- Machine-checked layout properties (ServerHandle)
+--------------------------------------------------------------------------------
+
+export
+serverHandleNoOverlap : NoOverlap (Layout.serverHandleLayout.fields)
+serverHandleNoOverlap = getYes (decNoOverlap Layout.serverHandleLayout.fields)
+
+export
+serverHandleFieldsAligned : AllFieldsAligned (Layout.serverHandleLayout.fields)
+serverHandleFieldsAligned = getYes (decAllAligned Layout.serverHandleLayout.fields)
+
+export
+serverHandleSizeIsAligned : SizeAligned Layout.serverHandleLayout
+serverHandleSizeIsAligned = getYes (decSizeAligned Layout.serverHandleLayout)
+
+export
+serverHandleSizeCovers : SizeCoversFields Layout.serverHandleLayout
+serverHandleSizeCovers = getYes (decSizeCovers Layout.serverHandleLayout)
+
+-- ProbeResult
+export
+probeResultNoOverlap : NoOverlap (Layout.probeResultLayout.fields)
+probeResultNoOverlap = getYes (decNoOverlap Layout.probeResultLayout.fields)
+export
+probeResultFieldsAligned : AllFieldsAligned (Layout.probeResultLayout.fields)
+probeResultFieldsAligned = getYes (decAllAligned Layout.probeResultLayout.fields)
+export
+probeResultSizeIsAligned : SizeAligned Layout.probeResultLayout
+probeResultSizeIsAligned = getYes (decSizeAligned Layout.probeResultLayout)
+export
+probeResultSizeCovers : SizeCoversFields Layout.probeResultLayout
+probeResultSizeCovers = getYes (decSizeCovers Layout.probeResultLayout)
+
+-- ConfigField
+export
+configFieldNoOverlap : NoOverlap (Layout.configFieldLayout.fields)
+configFieldNoOverlap = getYes (decNoOverlap Layout.configFieldLayout.fields)
+export
+configFieldFieldsAligned : AllFieldsAligned (Layout.configFieldLayout.fields)
+configFieldFieldsAligned = getYes (decAllAligned Layout.configFieldLayout.fields)
+export
+configFieldSizeIsAligned : SizeAligned Layout.configFieldLayout
+configFieldSizeIsAligned = getYes (decSizeAligned Layout.configFieldLayout)
+export
+configFieldSizeCovers : SizeCoversFields Layout.configFieldLayout
+configFieldSizeCovers = getYes (decSizeCovers Layout.configFieldLayout)
+
+-- A2MLConfig
+export
+a2mlConfigNoOverlap : NoOverlap (Layout.a2mlConfigLayout.fields)
+a2mlConfigNoOverlap = getYes (decNoOverlap Layout.a2mlConfigLayout.fields)
+export
+a2mlConfigFieldsAligned : AllFieldsAligned (Layout.a2mlConfigLayout.fields)
+a2mlConfigFieldsAligned = getYes (decAllAligned Layout.a2mlConfigLayout.fields)
+export
+a2mlConfigSizeIsAligned : SizeAligned Layout.a2mlConfigLayout
+a2mlConfigSizeIsAligned = getYes (decSizeAligned Layout.a2mlConfigLayout)
+export
+a2mlConfigSizeCovers : SizeCoversFields Layout.a2mlConfigLayout
+a2mlConfigSizeCovers = getYes (decSizeCovers Layout.a2mlConfigLayout)
+
+-- GameProfile
+export
+gameProfileNoOverlap : NoOverlap (Layout.gameProfileLayout.fields)
+gameProfileNoOverlap = getYes (decNoOverlap Layout.gameProfileLayout.fields)
+export
+gameProfileFieldsAligned : AllFieldsAligned (Layout.gameProfileLayout.fields)
+gameProfileFieldsAligned = getYes (decAllAligned Layout.gameProfileLayout.fields)
+export
+gameProfileSizeIsAligned : SizeAligned Layout.gameProfileLayout
+gameProfileSizeIsAligned = getYes (decSizeAligned Layout.gameProfileLayout)
+export
+gameProfileSizeCovers : SizeCoversFields Layout.gameProfileLayout
+gameProfileSizeCovers = getYes (decSizeCovers Layout.gameProfileLayout)
+
+-- ServerOctad
+export
+serverOctadNoOverlap : NoOverlap (Layout.serverOctadLayout.fields)
+serverOctadNoOverlap = getYes (decNoOverlap Layout.serverOctadLayout.fields)
+export
+serverOctadFieldsAligned : AllFieldsAligned (Layout.serverOctadLayout.fields)
+serverOctadFieldsAligned = getYes (decAllAligned Layout.serverOctadLayout.fields)
+export
+serverOctadSizeIsAligned : SizeAligned Layout.serverOctadLayout
+serverOctadSizeIsAligned = getYes (decSizeAligned Layout.serverOctadLayout)
+export
+serverOctadSizeCovers : SizeCoversFields Layout.serverOctadLayout
+serverOctadSizeCovers = getYes (decSizeCovers Layout.serverOctadLayout)
+
+-- Fingerprint
+export
+fingerprintNoOverlap : NoOverlap (Layout.fingerprintLayout.fields)
+fingerprintNoOverlap = getYes (decNoOverlap Layout.fingerprintLayout.fields)
+export
+fingerprintFieldsAligned : AllFieldsAligned (Layout.fingerprintLayout.fields)
+fingerprintFieldsAligned = getYes (decAllAligned Layout.fingerprintLayout.fields)
+export
+fingerprintSizeIsAligned : SizeAligned Layout.fingerprintLayout
+fingerprintSizeIsAligned = getYes (decSizeAligned Layout.fingerprintLayout)
+export
+fingerprintSizeCovers : SizeCoversFields Layout.fingerprintLayout
+fingerprintSizeCovers = getYes (decSizeCovers Layout.fingerprintLayout)
+
+-- DriftReport
+export
+driftReportNoOverlap : NoOverlap (Layout.driftReportLayout.fields)
+driftReportNoOverlap = getYes (decNoOverlap Layout.driftReportLayout.fields)
+export
+driftReportFieldsAligned : AllFieldsAligned (Layout.driftReportLayout.fields)
+driftReportFieldsAligned = getYes (decAllAligned Layout.driftReportLayout.fields)
+export
+driftReportSizeIsAligned : SizeAligned Layout.driftReportLayout
+driftReportSizeIsAligned = getYes (decSizeAligned Layout.driftReportLayout)
+export
+driftReportSizeCovers : SizeCoversFields Layout.driftReportLayout
+driftReportSizeCovers = getYes (decSizeCovers Layout.driftReportLayout)
 
 --------------------------------------------------------------------------------
 -- Cross-Platform Layout Equivalence

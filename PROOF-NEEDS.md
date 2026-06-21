@@ -1,46 +1,72 @@
 # Proof Requirements
 
-## Current State (2026-04-03 blitz)
+## Current State (2026-06-21 — verified with Idris2 0.7.0)
 
-- ABI exists in `src/interface/abi/Layout.idr`
-- **RESOLVED**: `postulate alignUpProducesAligned` replaced with constructive proof
-- Remaining: one weaker equivalence postulate (`alignUpEquiv`)
+The ABI package typechecks end-to-end (all modules `%default total`, no
+`postulate` / `believe_me` / `assert_total`):
 
-## What Was Done
+```bash
+cd src/interface/abi && idris2 --typecheck gsa-abi.ipkg
+# 1/3: Building Types (Types.idr)
+# 2/3: Building Layout (Layout.idr)
+# 3/3: Building Foreign (Foreign.idr)
+```
 
-### Alignment Proof (CLOSED)
+Toolchain: Idris2 0.7.0, Chez backend (`.tool-versions` pins `idris2 0.7.0`).
 
-The original `postulate alignUpProducesAligned` asserted that `alignUp` produces
-aligned results but could not be proven because Idris2 0.7.x's `modNatNZ` lacks
-composition lemmas.
+## What is proven (machine-checked)
 
-**Solution**: Introduced `alignUpCeil` — an alternative alignment function that
-computes the next multiple via ceiling division. The result is `k * alignment`
-by construction, so the alignment property is trivially witnessed:
+### Memory layout (`Layout.idr`)
+For every one of the 8 ABI structs — ServerHandle, ProbeResult, ConfigField,
+A2MLConfig, GameProfile, ServerOctad, Fingerprint, DriftReport — all four
+layout properties are proven:
 
-- `alignUpCeil` : computes next multiple via `ceilDiv(n, a) * a`
-- `alignUpCeilIsMultiple` : constructive proof returning `MkMultiple k Refl`
+| Property | Meaning |
+|----------|---------|
+| `NoOverlap` | no two fields' `[offset, offset+size)` ranges overlap |
+| `AllFieldsAligned` | every field offset is a multiple of its alignment |
+| `SizeAligned` | total struct size is a multiple of the struct alignment |
+| `SizeCoversFields` | total size ≥ sum of field sizes (padding accounted) |
 
-No postulates, no `believe_me`. Both cases (`remainder = 0` and `remainder > 0`)
-return a direct `Refl` witness.
+Discharged by decision procedures (`decNoOverlap`, `decAllAligned`,
+`decSizeAligned`, `decSizeCovers`) extracted via `getYes`; each proof
+typechecks only because its `Dec` reduces to `Yes` for that concrete layout —
+i.e. a malformed layout would fail to compile.
 
-**Remaining postulate**: `alignUpEquiv` asserts that `alignUp` and `alignUpCeil`
-produce the same result. This is mathematically trivial but opaque `modNatNZ`
-prevents structural proof. Strictly weaker than the original postulate.
+Also still proven: the per-type size/alignment `Refl` proofs, the
+`SizeOf`↔layout agreement (`LayoutMatchesSizeOf`), and cross-platform
+x86_64 ≡ aarch64 equivalence.
 
-## What Still Needs Proving
+### Alignment (`Layout.idr`)
+- `alignUpCeil offset a = ceilDiv offset a * a` (via an in-module total
+  `ceilDiv`).
+- `alignUpCeilIsMultiple` — constructive `Refl` proof that the result is
+  `k * a`.
 
-- **Server probe safety**: Prove that probes do not cause side effects on targets
-- **Configuration drift detection**: Prove drift dashboard identifies all deviations
-- **Access control for admin panels**: Prove panel-level authorization
+> Correction to the prior version of this file: the earlier
+> `alignUpCeilIsMultiple` did **not** typecheck (the `case` form left the
+> goal stuck). It was rewritten via `ceilDiv` so the witness is a direct
+> `Refl`. There is no remaining `alignUpEquiv` postulate — the proven path
+> uses `alignUpCeil`/`ceilDiv` directly, so that obligation is moot.
 
-## When alignUpEquiv Can Be Closed
+### Domain validators (`Types.idr`)
+Decidable `portInRange`, `nonEmptyId`, `configFieldCountPositive`,
+`allPortsValid`, the `Valid*` smart constructors, and the linear
+`ServerHandle` with its erased non-null witness.
 
-When Idris2 stdlib gains either:
-- `modNatNZ_zero : modNatNZ (k * d) d ok = 0`
-- `modNatNZ_spec : n = divNatNZ n d ok * d + modNatNZ n d ok`
+## What still needs proving
 
-## Priority
-- **DONE** — Alignment proof is constructive
-- **MEDIUM** — Server probe safety (production concern)
-- **LOW** — Drift detection, access control (need richer specifications)
+- **Zig ↔ Idris layout cross-check (HIGH).** `Layout.idr` proves the Idris
+  model is internally consistent, but nothing yet checks the hand-written
+  field offsets/sizes against Zig's `@sizeOf`/`@offsetOf`. A generated test
+  emitting Zig's numbers and comparing them to the `Layout` constants would
+  close the actual cross-language ABI guarantee.
+- **Server probe safety (MEDIUM).** Prove probes cause no side effects on
+  targets. Needs a specification first.
+- **Configuration drift-detection completeness (LOW).** Needs a richer spec.
+- **Access control for admin panels (LOW).** Needs a specification.
+
+## Notes
+- `Foreign.idr`'s linear `ServerHandle` wrappers now typecheck: each handle is
+  consumed by a pattern match and rebuilt for the borrow-return, so linearity
+  is respected (previously they used the handle twice and did not compile).

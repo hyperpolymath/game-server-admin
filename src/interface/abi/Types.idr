@@ -23,6 +23,10 @@ import Data.Nat
 import Data.So
 import Data.Vect
 
+-- The ABI defines its own NonEmpty (over char lists); hide the stdlib one
+-- so references are unambiguous.
+%hide Data.List.NonEmpty
+
 %default total
 
 --------------------------------------------------------------------------------
@@ -633,10 +637,9 @@ Uninhabited (NonEmpty []) where
 ||| @return Yes (proof of non-emptiness) or No (proof it's empty)
 public export
 nonEmptyId : (s : String) -> Dec (NonEmpty (unpack s))
-nonEmptyId s =
-  case unpack s of
-    []        => No absurd
-    (x :: xs) => Yes IsNonEmpty
+nonEmptyId s with (unpack s)
+  nonEmptyId s | []        = No absurd
+  nonEmptyId s | (x :: xs) = Yes IsNonEmpty
 
 ||| Type-level evidence that a configuration has at least one field.
 ||| An A2MLConfig with zero fields is invalid — there's nothing to configure.
@@ -731,13 +734,13 @@ data AllPortsValid : List (String, Nat) -> Type where
   NoPorts : AllPortsValid []
   ||| A non-empty port list is valid if the head port is in range
   ||| and all remaining ports are valid
-  ConsPort : (LTE 1 p, LTE p 65535) -> AllPortsValid rest -> AllPortsValid ((name, p) :: rest)
+  ConsPort : (LTE 1 p, LTE p 65535) -> AllPortsValid rest -> AllPortsValid ((lbl, p) :: rest)
 
 ||| Decide whether all ports in a list are valid.
 public export
 allPortsValid : (ports : List (String, Nat)) -> Dec (AllPortsValid ports)
 allPortsValid [] = Yes NoPorts
-allPortsValid ((name, p) :: rest) =
+allPortsValid ((lbl, p) :: rest) =
   case portInRange p of
     Yes prf =>
       case allPortsValid rest of
