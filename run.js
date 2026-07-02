@@ -16,7 +16,7 @@ const REGISTRY = {
   identity: {
     name:    "game-server-admin",
     display: "Game Server Admin (GSA)",
-    version: "0.3.0",
+    version: "0.1.0",
     license: "MPL-2.0",
     repo:    "https://github.com/hyperpolymath/game-server-admin",
   },

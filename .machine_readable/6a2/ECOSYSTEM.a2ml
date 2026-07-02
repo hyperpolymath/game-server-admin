@@ -6,21 +6,31 @@
 
 [metadata]
 version = "0.1.0"
-last-updated = "2026-03-22"
+last-updated = "2026-07-02"
 
 [project]
 name = "game-server-admin"
-purpose = ""  # TODO: describe project purpose
-role = ""  # TODO: describe project role  # e.g. ffi-infrastructure, cli-tool, library, service
+purpose = "Universal game server probe, configuration management, and administration via Gossamer webview + VeriSimDB backing store. Extracts config into A2ML format with full provenance tracking. The client half of a multi-repo ecosystem."
+role = "ffi-infrastructure"
 
 [position-in-ecosystem]
 tier = "infrastructure"  # 1 | 2 | infrastructure
 
 [related-projects]
 # relationship types: sibling-standard, dependency, dependent, inspiration, potential-consumer
-# - { name = "language-bridges", relationship = "sibling-standard" }
-# - { name = "hypatia", relationship = "potential-consumer" }
+related = [
+  { name = "gossamer", relationship = "dependency" },        # webview shell; loads libgsa via dlopen
+  { name = "ephapax", relationship = "dependency" },          # .eph GUI/bridge source language
+  { name = "verisimdb", relationship = "dependency" },        # 8-modality backing store (REST :8090)
+  { name = "groove", relationship = "potential-consumer" },   # voice/text alerting over .well-known
+  { name = "standards", relationship = "sibling-standard" },  # org reusable CI workflows
+]
 
 [integration-points]
 # External systems this project connects to
-# - { system = "gitbot-fleet", direction = "outbound", protocol = "repository_dispatch" }
+integrations = [
+  { system = "verisimdb", direction = "outbound", protocol = "REST" },
+  { system = "steam-web-api", direction = "outbound", protocol = "HTTPS" },
+  { system = "groove", direction = "outbound", protocol = "HTTP" },
+  { system = "podman", direction = "outbound", protocol = "cli-exec" },
+]
