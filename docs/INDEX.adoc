@@ -40,7 +40,7 @@ _You build GSA, extend it, or contribute code across the Gossamer GUI → Zig FF
 | FFI module reference | *planned* | Per-module docs for the 11 FFI modules (signatures, the 18 result codes, examples)
 | Panel extension guide | *planned* | The PanLL clade system; registering a new panel; inheriting base clades
 | Game-profile authoring | *thin* | Expand the README snippet: field types, validation, port/protocol, debugging
-| Config-format guide | *planned* | How to add a parser to the 8-format `config_extract`
+| `docs/developer/CONFIG-FORMATS.adoc` | live | The 8 formats, detection order, `addField` invariants, YAML scope, and how to add a parser
 | Architecture rationale | *planned* | Why Ephapax / Idris2 / Zig / VeriSimDB; when to touch each layer
 |===
 
@@ -55,7 +55,7 @@ _You release, run CI/CD, operate containers, and manage governance + security sc
 | `docs/architecture/THREAT-MODEL.adoc` | live | STRIDE, assets, trust boundaries, mitigations
 | `docs/DEPLOYMENT-RUNBOOK.adoc` | live | Build, container, VeriSimDB main+backup, health, backup/restore
 | `SECURITY.md` | live | Vulnerability reporting
-| Release checklist | *planned* | v1.0.0 must/should/could + sign-off criteria
+| `docs/maintainer/RELEASE-CHECKLIST.adoc` | live | CI gates (6 suites + ABI contract), version/license/docs gates, manual gates, tag steps
 | CI/CD guide | *planned* | `.github/workflows/` structure, standards-estate reusables (pins `4ddc926`), staleness check, adding a check
 | Security-scanning runbook | *planned* | Running/interpreting Hypatia + panic-attack + Scorecard; the `.hypatia-ignore` suppression mechanism (NOT `.hypatia-baseline.json` — see `NEUROSYM.a2ml`)
 | Container/quadlet ops | *thin* | Expand the runbook: `.container` format, systemd user units, day-to-day ops
@@ -78,3 +78,11 @@ subtrees (`theory/`, `reports/`, parts of `practice/`).
 *Decision pending:* either populate `docs/wikis/` and sync it, **or** (recommended)
 consolidate all narrative under `docs/` using the three audience paths above and
 prune the empty scaffolding. Until then, this index is the single navigation point.
+
+NOTE: a mechanical prune is **not** clean — `verification/`, `docs/theory/`,
+`docs/reports/`, and `docs/wikis/` are referenced by the governance layer
+(`.machine_readable/anchors/ANCHOR.a2ml`, `docs/governance/MAINTENANCE-CHECKLIST`,
+`features/panic-attacker/`). Deleting the trees without updating those references
+risks breaking governance/CI expectations, so the prune is deferred to a
+dedicated, reviewed change that updates the references in lockstep rather than
+bundled into an automated docs pass.
