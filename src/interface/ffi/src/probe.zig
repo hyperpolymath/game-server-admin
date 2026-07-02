@@ -142,12 +142,27 @@ pub const KNOWN_PORTS: []const KnownPort = &.{
 // Network helpers
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/// Resolve `host` to a socket address. Accepts IPv4/IPv6 literals directly
+/// (no allocation) and falls back to DNS (libc getaddrinfo via
+/// net.getAddressList) for hostnames, returning the first address. Replaces the
+/// old IPv4-literal-only path that failed on every hostname and IPv6 address.
+fn resolveAddress(host: []const u8, port: u16) !net.Address {
+    if (net.Address.parseIp(host, port)) |a| {
+        return a;
+    } else |_| {}
+    const list = net.getAddressList(std.heap.c_allocator, host, port) catch
+        return error.NameResolutionFailed;
+    defer list.deinit();
+    if (list.addrs.len == 0) return error.NameResolutionFailed;
+    return list.addrs[0];
+}
+
 /// Open a TCP connection to host:port with a timeout in milliseconds.
 /// Returns the connected stream or an error.
 fn tcpConnect(host: []const u8, port: u16, timeout_ms: u32) !net.Stream {
-    const addr = try net.Address.parseIp4(host, port);
+    const addr = try resolveAddress(host, port);
     const sock = try posix.socket(
-        posix.AF.INET,
+        @as(u32, addr.any.family),
         posix.SOCK.STREAM | posix.SOCK.NONBLOCK,
         0,
     );
@@ -186,9 +201,9 @@ fn udpExchange(
     response_buf: []u8,
     timeout_ms: u32,
 ) !usize {
-    const addr = try net.Address.parseIp4(host, port);
+    const addr = try resolveAddress(host, port);
     const sock = try posix.socket(
-        posix.AF.INET,
+        @as(u32, addr.any.family),
         posix.SOCK.DGRAM,
         0,
     );
@@ -214,6 +229,23 @@ fn udpExchange(
     return n;
 }
 
+/// A decoded Minecraft-protocol VarInt: its value and how many bytes it spans.
+const VarIntDecode = struct { value: usize, bytes: usize };
+
+/// Decode a leading Minecraft VarInt (LEB128, 7 data bits/byte, MSB = continue,
+/// max 5 bytes) from `buf`. Returns null if `buf` does not yet contain a
+/// complete VarInt — used to know when a framed read has enough header bytes.
+fn decodeVarInt(buf: []const u8) ?VarIntDecode {
+    var value: u32 = 0;
+    var i: usize = 0;
+    while (i < buf.len and i < 5) : (i += 1) {
+        const b = buf[i];
+        value |= @as(u32, b & 0x7F) << @intCast(i * 7);
+        if (b & 0x80 == 0) return .{ .value = value, .bytes = i + 1 };
+    }
+    return null;
+}
+
 /// Measure time between send and first byte of response, returning nanoseconds.
 fn measureLatencyNs(start: std.time.Instant) u64 {
     const now = std.time.Instant.now() catch return 0;
@@ -228,23 +260,39 @@ fn measureLatencyNs(start: std.time.Instant) u64 {
 /// the Source Engine response header to extract game name and version.
 ///
 /// Reference: https://developer.valvesoftware.com/wiki/Server_queries#A2S_INFO
-pub fn trySteamQuery(host: []const u8, port: u16) !?ProbeResult {
+pub fn trySteamQuery(host: []const u8, port: u16, timeout_ms: u32) !?ProbeResult {
     // A2S_INFO challenge: FF FF FF FF 54 "Source Engine Query\x00"
     const challenge = "\xff\xff\xff\xff\x54Source Engine Query\x00";
     var response_buf: [1400]u8 = undefined;
 
     const start = std.time.Instant.now() catch return null;
-    const n = udpExchange(host, port, challenge, &response_buf, 3000) catch return null;
+    var n = udpExchange(host, port, challenge, &response_buf, timeout_ms) catch return null;
     const latency_ns = measureLatencyNs(start);
 
-    if (n < 6) return null;
+    if (n < 5) return null;
+    // Validate header: FF FF FF FF
+    if (response_buf[0] != 0xFF or response_buf[1] != 0xFF or
+        response_buf[2] != 0xFF or response_buf[3] != 0xFF) return null;
+
+    // A2S challenge handshake: most modern Source servers first reply with
+    // 0x41 + a 4-byte challenge token; the real A2S_INFO (0x49) is only sent
+    // after we re-send the query with that token appended. Without this the
+    // probe silently failed against nearly all current Source servers.
+    // One retry only — a malicious server can't loop us.
+    if (response_buf[4] == 0x41) {
+        if (n < 9) return null;
+        var q2: [challenge.len + 4]u8 = undefined;
+        @memcpy(q2[0..challenge.len], challenge);
+        @memcpy(q2[challenge.len..], response_buf[5..9]);
+        n = udpExchange(host, port, &q2, &response_buf, timeout_ms) catch return null;
+        if (n < 5) return null;
+        if (response_buf[0] != 0xFF or response_buf[1] != 0xFF or
+            response_buf[2] != 0xFF or response_buf[3] != 0xFF) return null;
+    }
+
     const data = response_buf[0..n];
 
-    // Validate header: FF FF FF FF 49 (type 'I' = 0x49)
-    if (data[0] != 0xFF or data[1] != 0xFF or data[2] != 0xFF or data[3] != 0xFF)
-        return null;
-
-    // Response type: 0x49 (A2S_INFO), 0x41 (challenge — need to re-query)
+    // Response type must now be 0x49 (A2S_INFO)
     if (data[4] != 0x49) return null;
 
     // Parse: protocol(1) | name(NUL) | map(NUL) | folder(NUL) | game(NUL) | ...
@@ -310,8 +358,8 @@ pub fn trySteamQuery(host: []const u8, port: u16) !?ProbeResult {
 ///
 /// Performs the modern (1.7+) handshake + status request to retrieve
 /// the server description, version, and player count.
-pub fn tryMinecraftQuery(host: []const u8, port: u16) !?ProbeResult {
-    var stream = tcpConnect(host, port, 3000) catch return null;
+pub fn tryMinecraftQuery(host: []const u8, port: u16, timeout_ms: u32) !?ProbeResult {
+    var stream = tcpConnect(host, port, timeout_ms) catch return null;
     defer stream.close();
 
     const start = std.time.Instant.now() catch return null;
@@ -364,9 +412,26 @@ pub fn tryMinecraftQuery(host: []const u8, port: u16) !?ProbeResult {
     // Send status request: length=1, packet_id=0x00
     _ = stream.write(&[_]u8{ 0x01, 0x00 }) catch return null;
 
-    // Read response
-    var read_buf: [4096]u8 = undefined;
-    const bytes_read = stream.read(&read_buf) catch return null;
+    // Read the full framed response. A single read() truncates any MOTD large
+    // enough to span multiple TCP segments (common with plugin lists / MiniMessage
+    // formatting), corrupting the JSON. Loop until we have the whole
+    // VarInt-length-prefixed packet, or the buffer/connection is exhausted.
+    var read_buf: [16384]u8 = undefined;
+    var bytes_read: usize = 0;
+    var frame_total: ?usize = null; // length-varint bytes + declared packet length
+    while (bytes_read < read_buf.len) {
+        const got = stream.read(read_buf[bytes_read..]) catch break;
+        if (got == 0) break; // EOF
+        bytes_read += got;
+        if (frame_total == null) {
+            if (decodeVarInt(read_buf[0..bytes_read])) |dv| {
+                frame_total = dv.value + dv.bytes;
+            }
+        }
+        if (frame_total) |need| {
+            if (bytes_read >= need) break;
+        }
+    }
     if (bytes_read < 5) return null;
 
     const latency_ns = measureLatencyNs(start);
@@ -419,8 +484,8 @@ pub fn tryMinecraftQuery(host: []const u8, port: u16) !?ProbeResult {
 /// Sends an RCON authentication packet with an empty password; a valid
 /// RCON server will respond with an auth-response packet (even if auth
 /// fails), which confirms the protocol.
-pub fn tryRCON(host: []const u8, port: u16) !?ProbeResult {
-    var stream = tcpConnect(host, port, 3000) catch return null;
+pub fn tryRCON(host: []const u8, port: u16, timeout_ms: u32) !?ProbeResult {
+    var stream = tcpConnect(host, port, timeout_ms) catch return null;
     defer stream.close();
 
     const start = std.time.Instant.now() catch return null;
@@ -463,8 +528,8 @@ pub fn tryRCON(host: []const u8, port: u16) !?ProbeResult {
 
 /// HTTP probe — send a GET / and inspect the response for game-specific
 /// indicators in headers or body content.
-pub fn tryHTTPProbe(host: []const u8, port: u16) !?ProbeResult {
-    var stream = tcpConnect(host, port, 3000) catch return null;
+pub fn tryHTTPProbe(host: []const u8, port: u16, timeout_ms: u32) !?ProbeResult {
+    var stream = tcpConnect(host, port, timeout_ms) catch return null;
     defer stream.close();
 
     const start = std.time.Instant.now() catch return null;
@@ -510,8 +575,8 @@ pub fn tryHTTPProbe(host: []const u8, port: u16) !?ProbeResult {
 
 /// Raw TCP banner grab — connect and read whatever the server sends
 /// within the first 1024 bytes, then match against known patterns.
-pub fn tryTCPBanner(host: []const u8, port: u16) !?ProbeResult {
-    var stream = tcpConnect(host, port, 3000) catch return null;
+pub fn tryTCPBanner(host: []const u8, port: u16, timeout_ms: u32) !?ProbeResult {
+    var stream = tcpConnect(host, port, timeout_ms) catch return null;
     defer stream.close();
 
     const start = std.time.Instant.now() catch return null;
@@ -561,22 +626,20 @@ pub fn tryTCPBanner(host: []const u8, port: u16) !?ProbeResult {
 ///   4. HTTP (TCP)
 ///   5. TCP banner grab
 pub fn probeSingle(host: []const u8, port: u16, timeout_ms: u32) !ProbeResult {
-    _ = timeout_ms; // individual probes use their own timeouts
-
     // Try Steam A2S_INFO first — widest coverage
-    if (try trySteamQuery(host, port)) |r| return r;
+    if (try trySteamQuery(host, port, timeout_ms)) |r| return r;
 
     // Minecraft SLP
-    if (try tryMinecraftQuery(host, port)) |r| return r;
+    if (try tryMinecraftQuery(host, port, timeout_ms)) |r| return r;
 
     // RCON handshake
-    if (try tryRCON(host, port)) |r| return r;
+    if (try tryRCON(host, port, timeout_ms)) |r| return r;
 
     // HTTP/REST
-    if (try tryHTTPProbe(host, port)) |r| return r;
+    if (try tryHTTPProbe(host, port, timeout_ms)) |r| return r;
 
     // Raw TCP
-    if (try tryTCPBanner(host, port)) |r| return r;
+    if (try tryTCPBanner(host, port, timeout_ms)) |r| return r;
 
     return error.NoProtocolMatched;
 }
@@ -805,4 +868,33 @@ test "ProbeResult set and get" {
     try std.testing.expectEqualStrings("1.21.4", r.versionSlice());
     try std.testing.expectEqualStrings("192.168.1.5", r.hostSlice());
     try std.testing.expectEqual(@as(u16, 25565), r.port);
+}
+
+test "decodeVarInt: single, multi-byte, and incomplete" {
+    // 0x00 -> 0 in one byte
+    try std.testing.expectEqual(@as(usize, 0), decodeVarInt(&[_]u8{0x00}).?.value);
+    try std.testing.expectEqual(@as(usize, 1), decodeVarInt(&[_]u8{0x00}).?.bytes);
+    // 0x7F -> 127 in one byte
+    try std.testing.expectEqual(@as(usize, 127), decodeVarInt(&[_]u8{0x7F}).?.value);
+    // 0x80 0x01 -> 128 in two bytes (MC VarInt example)
+    const two = decodeVarInt(&[_]u8{ 0x80, 0x01 }).?;
+    try std.testing.expectEqual(@as(usize, 128), two.value);
+    try std.testing.expectEqual(@as(usize, 2), two.bytes);
+    // 0xDD 0xC7 0x01 -> 25565 in three bytes
+    const three = decodeVarInt(&[_]u8{ 0xDD, 0xC7, 0x01 }).?;
+    try std.testing.expectEqual(@as(usize, 25565), three.value);
+    try std.testing.expectEqual(@as(usize, 3), three.bytes);
+    // continuation bit set but no following byte -> incomplete
+    try std.testing.expect(decodeVarInt(&[_]u8{0x80}) == null);
+    try std.testing.expect(decodeVarInt("") == null);
+}
+
+test "resolveAddress accepts IPv4 and IPv6 literals without DNS" {
+    const v4 = try resolveAddress("127.0.0.1", 27015);
+    try std.testing.expectEqual(@as(u16, posix.AF.INET), v4.any.family);
+    try std.testing.expectEqual(@as(u16, 27015), v4.getPort());
+
+    const v6 = try resolveAddress("::1", 25565);
+    try std.testing.expectEqual(@as(u16, posix.AF.INET6), v6.any.family);
+    try std.testing.expectEqual(@as(u16, 25565), v6.getPort());
 }
