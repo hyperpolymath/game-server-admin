@@ -56,12 +56,18 @@ jobs:
     name: Idris2 model type-checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # idris2 is not packaged for Ubuntu; run inside the community-standard
+    # idris2-pack image (ships idris2 + base), pinned by digest. Refresh the
+    # digest with:
+    #   curl -sSL "https://ghcr.io/token?scope=repository:stefan-hoeck/idris2-pack:pull" \
+    #     | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' | xargs -I{} \
+    #     curl -sSI -H "Authorization: Bearer {}" \
+    #     https://ghcr.io/v2/stefan-hoeck/idris2-pack/manifests/latest | grep -i docker-content-digest
+    container:
+      image: ghcr.io/stefan-hoeck/idris2-pack@sha256:370e2ab066251cf278ac6928d9201ade0aca70c4e7ee1cc434d25bcea1669b29
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Install Idris2
-        run: sudo apt-get update && sudo apt-get install -y idris2
 
       - name: Type-check the ABI package
         working-directory: src/interface/abi
