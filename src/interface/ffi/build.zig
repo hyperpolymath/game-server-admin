@@ -178,6 +178,34 @@ pub fn build(b: *std.Build) void {
     property_step.dependOn(&run_property_tests.step);
 
     // ---------------------------------------------------------------
+    // Behavioral tests — drive real sockets / the exported C ABI against
+    // in-process mock servers (test/mock_servers.zig). No live services.
+    // ---------------------------------------------------------------
+    const mock_module = b.createModule(.{
+        .root_source_file = b.path("test/mock_servers.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
+    const behavioral_mod = b.createModule(.{
+        .root_source_file = b.path("test/behavioral_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    behavioral_mod.addImport("gsa", src_module);
+    behavioral_mod.addImport("mock_servers", mock_module);
+
+    const behavioral_tests = b.addTest(.{
+        .root_module = behavioral_mod,
+    });
+
+    const run_behavioral_tests = b.addRunArtifact(behavioral_tests);
+    const behavioral_step = b.step("test-behavioral", "Run behavioral tests against in-process mock servers");
+    behavioral_step.dependOn(&run_behavioral_tests.step);
+
+    // ---------------------------------------------------------------
     // Benchmarks — micro-benchmark executable (prints to stderr)
     // ---------------------------------------------------------------
     const bench_mod = b.createModule(.{

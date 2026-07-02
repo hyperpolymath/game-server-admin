@@ -68,3 +68,7 @@ jobs:
       - name: Property Tests
         working-directory: src/interface/ffi
         run: zig build test-property
+
+      - name: Behavioral Tests (mock servers)
+        working-directory: src/interface/ffi
+        run: zig build test-behavioral
