@@ -37,7 +37,7 @@ _You build GSA, extend it, or contribute code across the Gossamer GUI → Zig FF
 | `docs/developer/ABI-FFI-README.adoc` | live | Idris2 ABI + Zig FFI standard; C/Idris2/Rust/Julia examples (strong)
 | `TOPOLOGY.md` | live | System architecture + data flow
 | `docs/decisions/` | live | Architecture decision records (RSR adoption)
-| FFI module reference | *planned* | Per-module docs for the 11 FFI modules (signatures, the 13 result codes, examples)
+| FFI module reference | *planned* | Per-module docs for the 11 FFI modules (signatures, the 18 result codes, examples)
 | Panel extension guide | *planned* | The PanLL clade system; registering a new panel; inheriting base clades
 | Game-profile authoring | *thin* | Expand the README snippet: field types, validation, port/protocol, debugging
 | Config-format guide | *planned* | How to add a parser to the 8-format `config_extract`

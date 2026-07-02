@@ -658,8 +658,11 @@ pub fn matchToProfile(
 
 /// Probe a single host:port.
 ///
-/// Returns 0 on success (result cached in handle), or a negative GsaResult
-/// error code.
+/// Returns a linear handle id (>= main.FIRST_HANDLE_ID, i.e. >= 1000) on
+/// success, or a positive GsaResult error code (< 1000) on failure. The
+/// handle must be released with `gossamer_gsa_close_handle`; a second close
+/// reports `double_free`. The id space is disjoint from the result-code
+/// space, so callers can classify the return value by magnitude alone.
 pub export fn gossamer_gsa_probe(
     host_ptr: [*:0]const u8,
     port_c: c_int,
@@ -690,8 +693,13 @@ pub export fn gossamer_gsa_probe(
         .healthy = true,
     }) catch {};
 
+    const handle_id = handle.openHandle(result.gameIdSlice()) catch {
+        main.setErrorStr("out of memory allocating probe handle");
+        return @intFromEnum(main.GsaResult.out_of_memory);
+    };
+
     main.clearError();
-    return @intFromEnum(main.GsaResult.ok);
+    return handle_id;
 }
 
 /// Fingerprint multiple ports (given as JSON array) on a host.

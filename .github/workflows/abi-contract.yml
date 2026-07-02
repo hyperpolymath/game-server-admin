@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: MPL-2.0
+# ABI contract gate — keeps the Zig FFI and the Idris2 model in lockstep.
+#
+# Two things drift silently if unchecked (and did: result codes 5-12 once
+# encoded different concepts on each side):
+#   1. The generated expected-tables (result codes, struct layout) must match
+#      what the generators produce from Types.idr / Layout.idr right now.
+#   2. The Idris2 model itself must type-check.
+# The Zig comptime cross-checks (abi_layout.zig, the GsaResult block in
+# main.zig) turn any table drift into a compile error, so `zig build` is the
+# enforcement; this workflow regenerates first so a stale committed table
+# fails loudly instead of masking a change.
+
+name: ABI Contract
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  zig-contract:
+    name: Zig ↔ Idris tables in sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Zig 0.15.2
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.15.2
+
+      - name: Regenerate expected tables from the Idris2 model
+        run: |
+          zig run scripts/gen_abi_expected.zig
+          zig run scripts/gen_result_codes.zig
+
+      - name: Fail on drift (committed tables must match the model)
+        run: |
+          git diff --exit-code \
+            src/interface/ffi/src/abi_layout_expected.zig \
+            src/interface/ffi/src/result_codes_expected.zig \
+          || { echo "::error::Generated ABI tables are stale. Run: zig run scripts/gen_abi_expected.zig && zig run scripts/gen_result_codes.zig"; exit 1; }
+
+      - name: Build (runs the comptime GsaResult ↔ Types.idr cross-check)
+        working-directory: src/interface/ffi
+        run: zig build
+
+  idris-typecheck:
+    name: Idris2 model type-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Idris2
+        run: sudo apt-get update && sudo apt-get install -y idris2
+
+      - name: Type-check the ABI package
+        working-directory: src/interface/abi
+        run: idris2 --typecheck gsa-abi.ipkg

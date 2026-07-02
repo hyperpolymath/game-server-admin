@@ -60,3 +60,11 @@ jobs:
         if: matrix.run-integration
         working-directory: src/interface/ffi
         run: zig build test-integration
+
+      - name: Smoke Tests
+        working-directory: src/interface/ffi
+        run: zig build test-smoke
+
+      - name: Property Tests
+        working-directory: src/interface/ffi
+        run: zig build test-property
