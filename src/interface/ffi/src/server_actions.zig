@@ -39,6 +39,105 @@ pub const ActionResult = struct {
 pub const Runtime = enum { podman, docker, systemd };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Input validation — the exec/FS trust boundary
+//
+// Values that reach a command line or a filesystem path (container names,
+// hostnames, profile ids) are validated against strict allowlists BEFORE use.
+// This is the primary defence: an SSH command is ultimately re-parsed by the
+// remote login shell (ssh concatenates its remote args into one string — the
+// `--` separator only stops *ssh* from reading them as options, it does NOT
+// stop the remote shell), so the only robust guard is to ensure the values
+// carry no shell metacharacters and no path-traversal in the first place.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// A container / systemd-unit name is safe if non-empty, starts alphanumeric,
+/// and contains only `[A-Za-z0-9._@-]` — the Podman/Docker charset plus `@`
+/// for systemd template units. None of these are shell metacharacters.
+pub fn isSafeContainerName(name: []const u8) bool {
+    if (name.len == 0 or name.len > 255) return false;
+    if (!std.ascii.isAlphanumeric(name[0])) return false;
+    for (name) |c| {
+        if (!(std.ascii.isAlphanumeric(c) or c == '.' or c == '_' or c == '-' or c == '@')) return false;
+    }
+    return true;
+}
+
+/// An SSH host is safe if non-empty, does not start with '-' (which ssh would
+/// read as an option — e.g. `-oProxyCommand=…`), and contains only hostname /
+/// IP-literal characters `[A-Za-z0-9._:\[\]-]`. No shell metacharacters, no
+/// whitespace.
+pub fn isSafeHost(host: []const u8) bool {
+    if (host.len == 0 or host.len > 255) return false;
+    if (host[0] == '-') return false;
+    for (host) |c| {
+        if (!(std.ascii.isAlphanumeric(c) or c == '.' or c == '_' or
+            c == '-' or c == ':' or c == '[' or c == ']')) return false;
+    }
+    return true;
+}
+
+/// A profile id is safe (for use in a filesystem path) if non-empty and made
+/// only of `[A-Za-z0-9_-]`. Excluding '.' and '/' makes path traversal
+/// (`../`) impossible by construction.
+pub fn isSafeProfileId(id: []const u8) bool {
+    if (id.len == 0 or id.len > 128) return false;
+    for (id) |c| {
+        if (!(std.ascii.isAlphanumeric(c) or c == '_' or c == '-')) return false;
+    }
+    return true;
+}
+
+/// True if `path` contains a `..` component (splitting on both `/` and `\`).
+/// Catches traversal that a prefix check alone would miss.
+fn pathHasDotDot(path: []const u8) bool {
+    var it = std.mem.splitAny(u8, path, "/\\");
+    while (it.next()) |seg| {
+        if (std.mem.eql(u8, seg, "..")) return true;
+    }
+    return false;
+}
+
+/// Append `s` to `list` as a POSIX-shell single-quoted token: wrap in single
+/// quotes and replace each embedded `'` with `'\''`. Safe against every shell
+/// metacharacter. Used to belt-and-suspenders the remote SSH command even
+/// though callers also allowlist-validate their inputs.
+fn shellQuoteInto(list: *std.ArrayList(u8), allocator: Allocator, s: []const u8) !void {
+    try list.append(allocator, '\'');
+    for (s) |c| {
+        if (c == '\'') {
+            try list.appendSlice(allocator, "'\\''");
+        } else {
+            try list.append(allocator, c);
+        }
+    }
+    try list.append(allocator, '\'');
+}
+
+/// Append `s` to `list` with the five XML predefined entities escaped, so a
+/// value can be safely interpolated into element text or a double-quoted
+/// attribute without breaking (or injecting into) the document.
+fn xmlEscapeInto(list: *std.ArrayList(u8), allocator: Allocator, s: []const u8) !void {
+    for (s) |c| {
+        switch (c) {
+            '&' => try list.appendSlice(allocator, "&amp;"),
+            '<' => try list.appendSlice(allocator, "&lt;"),
+            '>' => try list.appendSlice(allocator, "&gt;"),
+            '"' => try list.appendSlice(allocator, "&quot;"),
+            '\'' => try list.appendSlice(allocator, "&apos;"),
+            else => try list.append(allocator, c),
+        }
+    }
+}
+
+/// XML-escape `s` into a freshly allocated, caller-owned buffer.
+fn xmlEscapeAlloc(allocator: Allocator, s: []const u8) ![]u8 {
+    var list: std.ArrayList(u8) = .empty;
+    errdefer list.deinit(allocator);
+    try xmlEscapeInto(&list, allocator, s);
+    return list.toOwnedSlice(allocator);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Action execution
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -59,21 +158,22 @@ pub fn executeAction(
         .systemd => "systemctl",
     };
 
-    // Build the command arguments
+    // Validate untrusted inputs at the trust boundary before they can reach a
+    // command line (local exec or a shell-reparsed remote SSH command).
+    if (!isSafeContainerName(container_name)) {
+        main.setErrorStr("invalid container/unit name");
+        return error.InvalidParam;
+    }
+    const remote = host.len > 0 and !isLocalhost(host);
+    if (remote and !isSafeHost(host)) {
+        main.setErrorStr("invalid host");
+        return error.InvalidParam;
+    }
+
+    // Build the container/systemd command WITHOUT any SSH prefix; dispatch()
+    // decides local-vs-remote and applies safe SSH quoting for the remote case.
     var argv_buf: [16][]const u8 = undefined;
     var argc: usize = 0;
-
-    // If remote, prefix with SSH
-    if (host.len > 0 and !isLocalhost(host)) {
-        argv_buf[argc] = "ssh";
-        argc += 1;
-        argv_buf[argc] = "-o";
-        argc += 1;
-        argv_buf[argc] = "StrictHostKeyChecking=accept-new";
-        argc += 1;
-        argv_buf[argc] = host;
-        argc += 1;
-    }
 
     switch (runtime) {
         .podman, .docker => {
@@ -187,7 +287,7 @@ pub fn executeAction(
                     argc += 1;
                     argv_buf[argc] = "--no-pager";
                     argc += 1;
-                    return runCommand(allocator, argv_buf[0..argc]);
+                    return dispatch(allocator, host, argv_buf[0..argc]);
                 },
                 else => {
                     argv_buf[argc] = "status";
@@ -200,15 +300,30 @@ pub fn executeAction(
         },
     }
 
-    return runCommand(allocator, argv_buf[0..argc]);
+    return dispatch(allocator, host, argv_buf[0..argc]);
+}
+
+/// Run `cmd_argv` either locally or, for a non-local host, over SSH. Callers
+/// build the bare command (no ssh prefix); this centralises the local-vs-remote
+/// decision so there is exactly one SSH code path. Assumes the caller has
+/// already validated `host` via `isSafeHost` when remote.
+fn dispatch(allocator: Allocator, host: []const u8, cmd_argv: []const []const u8) !ActionResult {
+    if (host.len > 0 and !isLocalhost(host)) {
+        return executeSSH(allocator, host, "", cmd_argv);
+    }
+    return runCommand(allocator, cmd_argv);
 }
 
 /// Run a command via SSH on a remote host.
 ///
-/// `argv` is passed as a separate exec argument to SSH via `ssh -- host argv[0] argv[1]...`,
-/// so each element is passed as a distinct argument to the remote process — the remote
-/// shell is bypassed entirely (SSH calls execvp directly when given an arg list, not
-/// a shell string). This prevents shell injection from user-supplied values.
+/// SSH does NOT bypass the remote shell: it concatenates the post-target
+/// arguments into a single string that the remote login shell re-parses (the
+/// `--` separator only stops *ssh itself* from reading them as options). So to
+/// prevent injection we POSIX-single-quote every element of `remote_argv`
+/// (`shellQuoteInto`), which neutralises all shell metacharacters. Callers
+/// additionally allowlist-validate the untrusted values, making this
+/// defence-in-depth. `user` may be empty, in which case the target is just
+/// `host` (ssh uses the default user).
 ///
 /// Returns the combined stdout output and exit code.
 pub fn executeSSH(
@@ -218,23 +333,32 @@ pub fn executeSSH(
     remote_argv: []const []const u8,
 ) !ActionResult {
     if (remote_argv.len == 0) return error.InvalidParam;
+    if (!isSafeHost(host)) return error.InvalidParam;
 
     var target_buf: [512]u8 = undefined;
-    const target = std.fmt.bufPrint(&target_buf, "{s}@{s}", .{ user, host }) catch return error.InvalidParam;
+    const target = if (user.len > 0)
+        std.fmt.bufPrint(&target_buf, "{s}@{s}", .{ user, host }) catch return error.InvalidParam
+    else
+        host;
 
-    // Build: ssh -o ... target -- remote_argv[0] remote_argv[1]...
-    const fixed_prefix: []const []const u8 = &.{
+    // Join the (individually shell-quoted) remote args into one command string.
+    // ssh will pass this string to the remote login shell; the quoting makes
+    // each original element a single literal token there.
+    var remote_cmd: std.ArrayList(u8) = .empty;
+    defer remote_cmd.deinit(allocator);
+    for (remote_argv, 0..) |a, i| {
+        if (i != 0) try remote_cmd.append(allocator, ' ');
+        try shellQuoteInto(&remote_cmd, allocator, a);
+    }
+
+    const full_argv: []const []const u8 = &.{
         "ssh",
         "-o", "StrictHostKeyChecking=accept-new",
         "-o", "ConnectTimeout=10",
         target,
         "--",
+        remote_cmd.items,
     };
-
-    const full_argv = try allocator.alloc([]const u8, fixed_prefix.len + remote_argv.len);
-    defer allocator.free(full_argv);
-    @memcpy(full_argv[0..fixed_prefix.len], fixed_prefix);
-    @memcpy(full_argv[fixed_prefix.len..], remote_argv);
 
     return runCommand(allocator, full_argv);
 }
@@ -253,18 +377,21 @@ pub fn streamLogs(
         .systemd => "journalctl",
     };
 
+    if (!isSafeContainerName(container_name)) {
+        main.setErrorStr("invalid container/unit name");
+        return error.InvalidParam;
+    }
+    const remote = host.len > 0 and !isLocalhost(host);
+    if (remote and !isSafeHost(host)) {
+        main.setErrorStr("invalid host");
+        return error.InvalidParam;
+    }
+
     var lines_buf: [16]u8 = undefined;
     const lines_str = std.fmt.bufPrint(&lines_buf, "{d}", .{lines}) catch "100";
 
     var argv_buf: [16][]const u8 = undefined;
     var argc: usize = 0;
-
-    if (host.len > 0 and !isLocalhost(host)) {
-        argv_buf[argc] = "ssh";
-        argc += 1;
-        argv_buf[argc] = host;
-        argc += 1;
-    }
 
     switch (runtime) {
         .podman, .docker => {
@@ -295,7 +422,7 @@ pub fn streamLogs(
         },
     }
 
-    const result = try runCommand(allocator, argv_buf[0..argc]);
+    const result = try dispatch(allocator, host, argv_buf[0..argc]);
     if (!result.success) {
         allocator.free(result.output);
         return error.LogRetrievalFailed;
@@ -312,15 +439,18 @@ pub fn getServerStatus(
     host: []const u8,
     container_name: []const u8,
 ) ![]const u8 {
+    if (!isSafeContainerName(container_name)) {
+        main.setErrorStr("invalid container/unit name");
+        return error.InvalidParam;
+    }
+    const remote = host.len > 0 and !isLocalhost(host);
+    if (remote and !isSafeHost(host)) {
+        main.setErrorStr("invalid host");
+        return error.InvalidParam;
+    }
+
     var argv_buf: [16][]const u8 = undefined;
     var argc: usize = 0;
-
-    if (host.len > 0 and !isLocalhost(host)) {
-        argv_buf[argc] = "ssh";
-        argc += 1;
-        argv_buf[argc] = host;
-        argc += 1;
-    }
 
     argv_buf[argc] = "podman";
     argc += 1;
@@ -333,7 +463,7 @@ pub fn getServerStatus(
     argv_buf[argc] = container_name;
     argc += 1;
 
-    const result = try runCommand(allocator, argv_buf[0..argc]);
+    const result = try dispatch(allocator, host, argv_buf[0..argc]);
     if (!result.success) {
         // Container might not exist — return a synthetic status
         allocator.free(result.output);
@@ -447,7 +577,13 @@ fn parseAndDispatch(allocator: Allocator, json_str: []const u8) !ActionResult {
     else
         .podman;
 
-    return executeAction(allocator, host, action, container, runtime);
+    return executeAction(allocator, host, action, container, runtime) catch |err| {
+        // Validation failures (bad container name / host) and exec errors are
+        // surfaced as a structured failure result, not a crash — the GUI shows
+        // the message via gossamer_gsa_server_action's JSON envelope.
+        const msg = try std.fmt.allocPrint(allocator, "action rejected: {s}", .{@errorName(err)});
+        return ActionResult{ .success = false, .output = msg, .exit_code = -1 };
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -582,9 +718,14 @@ pub export fn gossamer_gsa_run_script(
     const env_json_str = std.mem.span(env_json_z);
     const secret       = std.mem.span(stdin_secret_z);
 
-    // Path constraint: must start with "scripts/"
-    if (!std.mem.startsWith(u8, script_path, "scripts/")) {
-        main.setErrorStr("script path must be under scripts/");
+    // Path constraint: must be under scripts/ AND contain no traversal. A bare
+    // startsWith("scripts/") is bypassable ("scripts/../../etc/x"), so also
+    // reject any ".." path component and any absolute path.
+    if (!std.mem.startsWith(u8, script_path, "scripts/") or
+        std.fs.path.isAbsolute(script_path) or
+        pathHasDotDot(script_path))
+    {
+        main.setErrorStr("script path must be under scripts/ with no traversal");
         return @intFromEnum(main.GsaResult.permission_denied);
     }
 
@@ -720,8 +861,10 @@ pub export fn gossamer_gsa_write_server_config(
     const config_str   = std.mem.span(config_json_z);
     const ops_str      = std.mem.span(operators_json_z);
 
-    if (profile_id.len == 0) {
-        main.setErrorStr("missing profile_id");
+    // profile_id becomes a path segment (container/{profile_id}/Settings.xml),
+    // so it must be a strict allowlisted identifier — no '.', '/', or traversal.
+    if (!isSafeProfileId(profile_id)) {
+        main.setErrorStr("invalid profile_id");
         return @intFromEnum(main.GsaResult.invalid_param);
     }
 
@@ -753,21 +896,41 @@ pub export fn gossamer_gsa_write_server_config(
         }
     };
 
-    const server_name   = S.get(cfg, "ServerName",               "GSA Server");
-    const description   = S.get(cfg, "ServerDescription",        "Managed by GSA");
-    const welcome       = S.get(cfg, "WelcomeMessage",           "Welcome!");
-    const port          = S.get(cfg, "ServerPort",               "6000");
-    const max_players   = S.get(cfg, "MaxPlayers",               "10");
-    const is_private    = S.get(cfg, "IsPrivate",                "true");
-    const password      = S.get(cfg, "ServerPassword",           "");
-    const is_pve        = S.get(cfg, "IsPvE",                    "true");
-    const raids         = S.get(cfg, "IsRaidsEnabled",           "false");
-    const wipe_days     = S.get(cfg, "WipePeriodDays",           "0");
-    const gather_mult   = S.get(cfg, "GatheringSpeedMultiplier", "2.0");
-    const learn_mult    = S.get(cfg, "LearningSpeedMultiplier",  "2.0");
-    const craft_mult    = S.get(cfg, "CraftingSpeedMultiplier",  "2.0");
+    // Every value below is operator-supplied (via the Nexus Setup GUI form) and
+    // is interpolated into XML element text / attributes, so each is XML-escaped
+    // to prevent breaking or injecting into the document. Escaped copies are
+    // arena-freed together at function exit.
+    var xml_arena = std.heap.ArenaAllocator.init(allocator);
+    defer xml_arena.deinit();
+    const xa = xml_arena.allocator();
+    const esc = struct {
+        fn e(a: Allocator, obj: std.json.ObjectMap, key: []const u8, fallback: []const u8) []const u8 {
+            const raw = if (obj.get(key)) |v|
+                (switch (v) {
+                    .string => |s| s,
+                    else => fallback,
+                })
+            else
+                fallback;
+            return xmlEscapeAlloc(a, raw) catch fallback;
+        }
+    }.e;
 
-    // Build operators XML fragment
+    const server_name   = esc(xa, cfg, "ServerName",               "GSA Server");
+    const description   = esc(xa, cfg, "ServerDescription",        "Managed by GSA");
+    const welcome       = esc(xa, cfg, "WelcomeMessage",           "Welcome!");
+    const port          = esc(xa, cfg, "ServerPort",               "6000");
+    const max_players   = esc(xa, cfg, "MaxPlayers",               "10");
+    const is_private    = esc(xa, cfg, "IsPrivate",                "true");
+    const password      = esc(xa, cfg, "ServerPassword",           "");
+    const is_pve        = esc(xa, cfg, "IsPvE",                    "true");
+    const raids         = esc(xa, cfg, "IsRaidsEnabled",           "false");
+    const wipe_days     = esc(xa, cfg, "WipePeriodDays",           "0");
+    const gather_mult   = esc(xa, cfg, "GatheringSpeedMultiplier", "2.0");
+    const learn_mult    = esc(xa, cfg, "LearningSpeedMultiplier",  "2.0");
+    const craft_mult    = esc(xa, cfg, "CraftingSpeedMultiplier",  "2.0");
+
+    // Build operators XML fragment (fully XML-escaped attributes)
     var ops_xml: std.ArrayList(u8) = .empty;
     defer ops_xml.deinit(allocator);
 
@@ -778,16 +941,9 @@ pub export fn gossamer_gsa_write_server_config(
             const name     = S.get(item.object, "name",     "");
             if (steam_id.len == 0) continue;
             ops_xml.appendSlice(allocator, "    <Operator steamId=\"") catch continue;
-            // Escape steamId attribute (digits only expected, but be safe)
-            for (steam_id) |ch| {
-                if (ch == '"') ops_xml.appendSlice(allocator, "&quot;") catch {}
-                else ops_xml.append(allocator, ch) catch {};
-            }
+            xmlEscapeInto(&ops_xml, allocator, steam_id) catch {};
             ops_xml.appendSlice(allocator, "\"  name=\"") catch continue;
-            for (name) |ch| {
-                if (ch == '"') ops_xml.appendSlice(allocator, "&quot;") catch {}
-                else ops_xml.append(allocator, ch) catch {};
-            }
+            xmlEscapeInto(&ops_xml, allocator, name) catch {};
             ops_xml.appendSlice(allocator, "\" />\n") catch continue;
         }
     }
@@ -958,4 +1114,93 @@ test "executeAction: systemd logs uses journalctl" {
     try std.testing.expect(result.output.len >= 0);
     _ = result.exit_code;
     _ = result.success;
+}
+
+// ── Security: exec / FS trust boundary ───────────────────────────────────────
+
+test "isSafeContainerName rejects shell metacharacters, accepts valid" {
+    try std.testing.expect(isSafeContainerName("mc-server_1.prod"));
+    try std.testing.expect(isSafeContainerName("minecraft@main")); // systemd template unit
+    try std.testing.expect(!isSafeContainerName("foo; rm -rf /"));
+    try std.testing.expect(!isSafeContainerName("foo`whoami`"));
+    try std.testing.expect(!isSafeContainerName("foo$(id)"));
+    try std.testing.expect(!isSafeContainerName("foo bar"));
+    try std.testing.expect(!isSafeContainerName("foo|bar"));
+    try std.testing.expect(!isSafeContainerName("-startsdash"));
+    try std.testing.expect(!isSafeContainerName(""));
+}
+
+test "isSafeHost rejects ssh-option injection and metacharacters" {
+    try std.testing.expect(isSafeHost("example.com"));
+    try std.testing.expect(isSafeHost("10.0.0.5"));
+    try std.testing.expect(isSafeHost("[2001:db8::1]"));
+    try std.testing.expect(!isSafeHost("-oProxyCommand=evil")); // leading dash = ssh option
+    try std.testing.expect(!isSafeHost("host; rm -rf /"));
+    try std.testing.expect(!isSafeHost("host$(id)"));
+    try std.testing.expect(!isSafeHost(""));
+}
+
+test "isSafeProfileId forbids path traversal characters" {
+    try std.testing.expect(isSafeProfileId("cryofall"));
+    try std.testing.expect(isSafeProfileId("minecraft-java"));
+    try std.testing.expect(!isSafeProfileId("../../etc"));
+    try std.testing.expect(!isSafeProfileId("a/b"));
+    try std.testing.expect(!isSafeProfileId("a.b")); // '.' excluded to kill ".."
+    try std.testing.expect(!isSafeProfileId(""));
+}
+
+test "pathHasDotDot catches traversal a prefix check misses" {
+    try std.testing.expect(pathHasDotDot("scripts/../../etc/passwd"));
+    try std.testing.expect(pathHasDotDot("scripts/./../scripts/x"));
+    try std.testing.expect(!pathHasDotDot("scripts/steam-stage.sh"));
+    try std.testing.expect(!pathHasDotDot("scripts/sub/dir/ok.sh"));
+}
+
+test "shellQuoteInto neutralises metacharacters" {
+    const allocator = std.testing.allocator;
+    var list: std.ArrayList(u8) = .empty;
+    defer list.deinit(allocator);
+    try shellQuoteInto(&list, allocator, "foo; rm -rf /");
+    try std.testing.expectEqualStrings("'foo; rm -rf /'", list.items);
+
+    list.clearRetainingCapacity();
+    try shellQuoteInto(&list, allocator, "it's");
+    try std.testing.expectEqualStrings("'it'\\''s'", list.items);
+}
+
+test "xmlEscapeInto escapes all five predefined entities" {
+    const allocator = std.testing.allocator;
+    var list: std.ArrayList(u8) = .empty;
+    defer list.deinit(allocator);
+    try xmlEscapeInto(&list, allocator, "<a href=\"x\">Tom & 'Jerry'</a>");
+    try std.testing.expectEqualStrings(
+        "&lt;a href=&quot;x&quot;&gt;Tom &amp; &apos;Jerry&apos;&lt;/a&gt;",
+        list.items,
+    );
+}
+
+test "executeAction rejects a malicious container name before exec" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(
+        error.InvalidParam,
+        executeAction(allocator, "localhost", .Start, "mc; rm -rf /", .podman),
+    );
+}
+
+test "executeAction rejects a malicious remote host before exec" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(
+        error.InvalidParam,
+        executeAction(allocator, "-oProxyCommand=evil", .Start, "mc-1", .podman),
+    );
+}
+
+test "run_script rejects path traversal" {
+    const rc = gossamer_gsa_run_script("scripts/../../etc/passwd", "", "{}", "");
+    try std.testing.expectEqual(@intFromEnum(main.GsaResult.permission_denied), rc);
+}
+
+test "write_server_config rejects a traversal profile_id" {
+    const rc = gossamer_gsa_write_server_config("../../etc", "{}", "[]");
+    try std.testing.expectEqual(@intFromEnum(main.GsaResult.invalid_param), rc);
 }
