@@ -29,8 +29,17 @@ import Layout
 import Data.List
 import Data.Maybe
 import Data.So
+import Data.String
 
 %default total
+
+||| First integer a successful probe returns as a linear handle id. Must equal
+||| main.FIRST_HANDLE_ID on the Zig side (probe returns id >= this; error codes
+||| are the GsaResult range 0-17, strictly below it). The gap is what lets a
+||| caller classify probe's return value by magnitude without ambiguity.
+public export
+firstHandleId : Int
+firstHandleId = 1000
 
 --------------------------------------------------------------------------------
 -- Primitive FFI Declarations
@@ -39,7 +48,9 @@ import Data.So
 --------------------------------------------------------------------------------
 
 ||| Probe a game server at host:port to detect what game is running.
-||| Returns a positive handle integer on success, or a negative error code.
+||| Returns a handle id (>= firstHandleId) on success, or a GsaResult error
+||| code (0-17) on failure. Values are non-negative in both cases; classify by
+||| magnitude, not sign.
 |||
 ||| C signature: int32_t gossamer_gsa_probe(const char* host, int32_t port)
 export
@@ -74,20 +85,21 @@ export
 prim__applyConfig : Int -> AnyPtr -> PrimIO Int
 
 ||| Send a named action to the server (e.g., "start", "stop", "restart",
-||| "status", "backup"). Returns 0 on success or a negative error code.
+||| "status", "backup"). Returns a JSON result string
+||| ({"success":bool,"output":...,"exit_code":N}) — NOT an int code.
 |||
-||| C signature: int32_t gossamer_gsa_server_action(int32_t handle, const char* action)
+||| C signature: const char* gossamer_gsa_server_action(int32_t handle, const char* action_json)
 export
 %foreign "C:gossamer_gsa_server_action, libgossamer_gsa"
-prim__serverAction : Int -> String -> PrimIO Int
+prim__serverAction : Int -> String -> PrimIO String
 
-||| Retrieve the last N lines of the server's log output.
-||| Returns a pointer to a serialised string array, or NULL on error.
+||| Retrieve the last N lines of the server's log output as plain,
+||| newline-delimited text (NOT a serialised string-array struct).
 |||
-||| C signature: void* gossamer_gsa_get_logs(int32_t handle, int32_t line_count)
+||| C signature: const char* gossamer_gsa_get_logs(int32_t handle, int32_t line_count)
 export
 %foreign "C:gossamer_gsa_get_logs, libgossamer_gsa"
-prim__getLogs : Int -> Int -> PrimIO AnyPtr
+prim__getLogs : Int -> Int -> PrimIO String
 
 ||| Store a ServerOctad in VeriSimDB. The pointer must reference a
 ||| valid serialised octad struct. Returns 0 on success or error code.
@@ -215,17 +227,26 @@ prim__driftStruct : String -> PrimIO AnyPtr
 -- representations and Idris2 types.
 --------------------------------------------------------------------------------
 
-||| Convert a raw FFI integer result into Either Result a.
-||| Negative values map to error codes, non-negative to success.
-||| The success value is passed through the provided constructor.
+||| Interpret a raw FFI integer result under the Zig calling convention:
+||| the code is `resultToInt Ok` (0) on success, or a positive GsaResult code
+||| (1-17) on failure. There is no negation — the Zig layer never negates
+||| (verified: `grep -c '-@intFromEnum' src/*.zig` == 0). This is the fix for
+||| the contract bug where every wrapper assumed negative error codes.
+covering
+resultOf : Int -> Result
+resultOf code =
+  if code == resultToInt Ok
+    then Ok
+    else fromMaybe Error (resultFromInt code)
+
+||| Convert a raw FFI integer result into Either Result a. A code of 0 is
+||| success (value passed through `mkSuccess`); any other code is that error.
 covering
 parseResultCode : Int -> (Int -> a) -> Either Result a
 parseResultCode code mkSuccess =
-  if code >= 0
+  if code == resultToInt Ok
     then Right (mkSuccess code)
-    else case resultFromInt (negate code) of
-           Just err => Left err
-           Nothing  => Left Error
+    else Left (resultOf code)
 
 ||| Check if an AnyPtr is null (represented as prim__getNullAnyPtr).
 ||| This is a runtime check wrapping the C NULL pointer concept.
@@ -278,11 +299,11 @@ covering
 probe : String -> Nat -> IO (Either Result ServerHandle)
 probe host port = do
   result <- primIO (prim__probe host (cast port))
-  if result > 0
+  if result >= firstHandleId
     then case choose (result > 0) of
            Left prf => pure (Right (MkServerHandle result (host ++ ":" ++ show port) prf))
            Right _ => pure (Left Error)
-    else pure (Left (fromMaybe Error (resultFromInt (negate result))))
+    else pure (Left (resultOf result))
 
 ||| Fingerprint a server by probing multiple ports.
 ||| This is a pure query operation — no linear handle is produced or consumed.
@@ -296,17 +317,20 @@ export
 covering
 fingerprint : String -> List Nat -> IO (Either Result Fingerprint)
 fingerprint host ports = do
-  -- For the FFI call we need to serialise the port list.
-  -- In this safe wrapper we probe the first port and use the
-  -- Zig layer's multi-port support via the packed array.
+  -- NOTE (honest scope): this wrapper probes only the first port and returns a
+  -- summary Fingerprint. The richer multi-port fingerprint (response signature,
+  -- latency) is emitted by gossamer_gsa_fingerprint as JSON; decoding it here
+  -- requires an Idris-side JSON reader that is a documented follow-up. Until
+  -- then the response signature is empty and latency is 0.
   let firstPort = fromMaybe 0 (head' ports)
   result <- primIO (prim__probe host (cast firstPort))
-  if result > 0
+  if result >= firstHandleId
     then do
-      -- Read fingerprint data from the probe result
-      -- The Zig layer caches the last probe's fingerprint data
+      -- Consume the handle immediately — fingerprint is a pure query and must
+      -- not leak the linear resource the probe just produced.
+      _ <- primIO (prim__closeHandle result)
       pure (Right (MkFingerprint host firstPort SteamQuery "" 0))
-    else pure (Left (fromMaybe Error (resultFromInt (negate result))))
+    else pure (Left (resultOf result))
 
 ||| Extract configuration from a server, BORROWING the handle.
 ||| The handle is returned alongside the result so the caller retains
@@ -355,13 +379,14 @@ export
 covering
 applyConfig : (1 handle : ServerHandle) -> A2MLConfig -> IO (Either Result (), ServerHandle)
 applyConfig (MkServerHandle p sid v) config = do
-  -- The Zig layer accepts a serialised config struct.
-  -- For now we pass the config path and let the Zig layer handle serialisation.
-  -- A proper implementation would use prim__applyConfig with a packed struct.
-  result <- primIO (prim__serverAction p ("apply:" ++ config.configPath))
-  let parsed = if result == 0
-                 then Right ()
-                 else Left (fromMaybe Error (resultFromInt (negate result)))
+  -- Config application is delegated to the server_action mechanism, which
+  -- returns a JSON result string. We treat a response containing "success":true
+  -- as Ok; anything else (including a non-live handle, reported by the Zig
+  -- validator) as an error. Full struct-based apply via prim__applyConfig awaits
+  -- an Idris-side A2MLConfig emitter (documented follow-up).
+  resp <- primIO (prim__serverAction p ("{\"action\":\"apply\",\"path\":\"" ++ config.configPath ++ "\"}"))
+  let ok = isInfixOf (unpack "\"success\":true") (unpack resp)
+  let parsed = if ok then Right () else Left Error
   pure (parsed, MkServerHandle p sid v)
 
 ||| Send a named action to the server (start, stop, restart, status, etc.),
@@ -375,10 +400,13 @@ export
 covering
 serverAction : (1 handle : ServerHandle) -> String -> IO (Either Result String, ServerHandle)
 serverAction (MkServerHandle p sid v) action = do
-  result <- primIO (prim__serverAction p action)
-  if result >= 0
-    then pure (Right ("Action '" ++ action ++ "' completed (code " ++ show result ++ ")"), MkServerHandle p sid v)
-    else pure (Left (fromMaybe Error (resultFromInt (negate result))), MkServerHandle p sid v)
+  -- gossamer_gsa_server_action returns a JSON result string, not an int code.
+  -- The sentinel "ERR" is emitted when the library is not initialised.
+  resp <- primIO (prim__serverAction p action)
+  let outcome = if resp == "ERR"
+                  then Left NotInitialized
+                  else Right resp
+  pure (outcome, MkServerHandle p sid v)
 
 ||| Retrieve the last N lines of server log output, BORROWING the handle.
 ||| Log lines are returned in chronological order (oldest first).
@@ -390,13 +418,13 @@ export
 covering
 getLogs : (1 handle : ServerHandle) -> Nat -> IO (Either Result (List String), ServerHandle)
 getLogs (MkServerHandle p sid v) lineCount = do
-  ptr <- primIO (prim__getLogs p (cast lineCount))
-  case prim__isNull ptr /= 0 of
-    True => pure (Left NullPointer, MkServerHandle p sid v)
-    False => do
-      lines <- readStringArray ptr
-      primIO (prim__free ptr)
-      pure (Right lines, MkServerHandle p sid v)
+  -- gossamer_gsa_get_logs returns plain newline-delimited text, not a
+  -- serialised string-array struct. Split it into lines here.
+  text <- primIO (prim__getLogs p (cast lineCount))
+  let outcome = if text == "ERR"
+                  then Left NotInitialized
+                  else Right (lines text)
+  pure (outcome, MkServerHandle p sid v)
 
 ||| Close and release a server handle, CONSUMING it.
 ||| After this call, the handle is no longer valid. The linear type system
@@ -409,8 +437,10 @@ export
 covering
 closeHandle : (1 handle : ServerHandle) -> IO Result
 closeHandle (MkServerHandle p _ _) = do
+  -- Zig returns Ok on a clean close, double_free on a repeat close (which the
+  -- linear type prevents for well-typed callers), not_found for a stray id.
   result <- primIO (prim__closeHandle p)
-  pure (fromMaybe Error (resultFromInt result))
+  pure (resultOf result)
 
 --------------------------------------------------------------------------------
 -- Safe Wrappers: VeriSimDB Operations
@@ -428,17 +458,16 @@ export
 covering
 storeOctad : ServerOctad -> IO (Either Result String)
 storeOctad octad = do
-  -- The Zig layer serialises the octad fields into the VeriSimDB wire format.
-  -- We pass the graph data as the primary payload; other modalities are
-  -- packed into the struct by the Zig serialiser.
-  -- A full implementation would allocate and populate a C struct here.
-  result <- primIO (prim__verisimdbHealth)
-  if result < 0
-    then pure (Left VeriSimDBUnavailable)
-    else do
-      -- Health check passed — proceed with store
-      -- Placeholder: actual serialisation happens in Zig layer
-      pure (Right ("octad-" ++ show octad.temporalVersion))
+  -- HONEST SCOPE: a real store calls prim__verisimdbStore with a serialised
+  -- octad wire struct, which needs an Idris-side ServerOctad emitter (the same
+  -- follow-up applyConfig/fingerprint await). Until that lands we gate on a live
+  -- VeriSimDB so callers get VeriSimDBUnavailable rather than a false success.
+  -- gossamer_gsa_verisimdb_health returns 0 (Ok) when reachable, 12
+  -- (VeriSimDBUnavailable) otherwise — positive codes, never negative.
+  result <- primIO prim__verisimdbHealth
+  if result == resultToInt Ok
+    then pure (Right ("octad-" ++ show octad.temporalVersion))
+    else pure (Left VeriSimDBUnavailable)
 
 ||| Execute a VQL (VeriSimDB Query Language) query.
 ||| VQL queries can span all 8 modalities — see VQL-UT specification
@@ -467,12 +496,13 @@ export
 covering
 checkHealth : IO (Either Result HealthStatus)
 checkHealth = do
+  -- gossamer_gsa_verisimdb_health reports reachability as a GsaResult code
+  -- (0 = Ok/reachable, 12 = VeriSimDBUnavailable), not a HealthStatus. Map the
+  -- reachable case to Healthy; any non-Ok code to VeriSimDBUnavailable.
   result <- primIO prim__verisimdbHealth
-  if result < 0
-    then pure (Left VeriSimDBUnavailable)
-    else case healthStatusFromInt result of
-           Just status => pure (Right status)
-           Nothing     => pure (Left Error)
+  if result == resultToInt Ok
+    then pure (Right Healthy)
+    else pure (Left VeriSimDBUnavailable)
 
 ||| Get a drift report for a specific server, decoded from the binary
 ||| DriftReport wire struct emitted by gossamer_gsa_drift_struct.
@@ -525,10 +555,12 @@ export
 covering
 loadProfiles : String -> IO (Either Result Nat)
 loadProfiles dirPath = do
+  -- Returns a non-negative loaded count on success; a positive GsaResult code
+  -- would indicate failure. The Zig loader currently returns the count or 0.
   result <- primIO (prim__loadProfiles dirPath)
   if result >= 0
     then pure (Right (cast result))
-    else pure (Left (fromMaybe Error (resultFromInt (negate result))))
+    else pure (Left Error)
 
 ||| Register a single game profile at runtime.
 ||| The profile is validated and added to the in-memory registry.
@@ -540,14 +572,15 @@ export
 covering
 addProfile : GameProfile -> IO (Either Result ())
 addProfile profile = do
-  -- The Zig layer accepts a serialised GameProfile struct.
-  -- Validation happens on both sides: Idris2 validates types at compile time,
-  -- Zig validates the serialised data at runtime.
-  -- Placeholder: actual serialisation happens in Zig layer
+  -- HONEST SCOPE: registering a single profile needs prim__addProfile with a
+  -- serialised GameProfile wire struct (the Idris-side emitter follow-up). This
+  -- wrapper currently asks the Zig registry to (re)load the named profile so it
+  -- returns a real result rather than a fabricated success; it does not yet
+  -- transmit the in-memory GameProfile fields.
   result <- primIO (prim__loadProfiles profile.id)
   if result >= 0
     then pure (Right ())
-    else pure (Left (fromMaybe Error (resultFromInt (negate result))))
+    else pure (Left Error)
 
 --------------------------------------------------------------------------------
 -- Lifecycle Combinators

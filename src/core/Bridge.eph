@@ -52,7 +52,7 @@ fn handleProbeServer(payload: String, caps: &GsaCapSet) -> String =
     jsonError("Missing 'host' in probe request")
   else {
     let result = __ffi("gossamer_gsa_probe", host, port) in
-    if result < 0 then
+    if result < 1000 then
       jsonError("Probe failed: " ++ __ffi("gossamer_gsa_last_error"))
     else {
       -- Fingerprint succeeded, extract config
@@ -85,7 +85,7 @@ fn handleAddServer(payload: String, caps: &GsaCapSet) -> String =
 fn handleRemoveServer(payload: String, caps: &GsaCapSet) -> String =
   let server_id = jsonField(payload, "server_id") in
   let result = __ffi("gossamer_gsa_verisimdb_delete", server_id) in
-  if result < 0 then
+  if result != 0 then
     jsonError("Failed to remove: " ++ __ffi("gossamer_gsa_last_error"))
   else
     jsonOk("{\"server_id\":\"" ++ server_id ++ "\",\"removed\":true}")
@@ -138,7 +138,7 @@ fn handleSetConfig(payload: String, caps: &GsaCapSet) -> String =
   else {
     -- Apply changes via FFI (writes to server, updates VeriSimDB)
     let result = __ffi("gossamer_gsa_apply_config", server_id, changes) in
-    if result < 0 then
+    if result != 0 then
       jsonError("Config apply failed: " ++ __ffi("gossamer_gsa_last_error"))
     else {
       -- Record provenance
@@ -158,7 +158,7 @@ fn handleRevertConfig(payload: String, caps: &GsaCapSet) -> String =
     jsonError("No stored config for: " ++ server_id)
   else {
     let result = __ffi("gossamer_gsa_apply_stored_config", server_id, stored) in
-    if result < 0 then
+    if result != 0 then
       jsonError("Revert failed: " ++ __ffi("gossamer_gsa_last_error"))
     else {
       let prov = "{\"event_type\":\"config_revert\",\"actor\":\"gsa-gui\",\"description\":\"Config reverted to stored version\"}" in
@@ -220,7 +220,7 @@ fn handleGetLogs(payload: String, caps: &GsaCapSet) -> String =
 -- Get overall health status of all managed servers.
 fn handleGetHealth(payload: String, caps: &GsaCapSet) -> String =
   let result = __ffi("gossamer_gsa_verisimdb_health") in
-  if result < 0 then
+  if result != 0 then
     jsonError("VeriSimDB health check failed")
   else {
     let drift_status = __ffi("gossamer_gsa_verisimdb_drift_all") in
@@ -279,7 +279,7 @@ fn handleRollbackConfig(payload: String, caps: &GsaCapSet) -> String =
     else {
       -- Apply historical config
       let result = __ffi("gossamer_gsa_apply_stored_config", server_id, historical) in
-      if result < 0 then
+      if result != 0 then
         jsonError("Rollback failed: " ++ __ffi("gossamer_gsa_last_error"))
       else {
         let prov = "{\"event_type\":\"config_rollback\",\"actor\":\"gsa-gui\",\"description\":\"Rolled back to version " ++ version ++ "\"}" in
@@ -506,7 +506,7 @@ fn handleAddProfile(payload: String) -> String =
     jsonError("Missing 'a2ml' profile definition")
   else {
     let result = __ffi("gossamer_gsa_add_profile", a2ml) in
-    if result < 0 then
+    if result != 0 then
       jsonError("Profile registration failed: " ++ __ffi("gossamer_gsa_last_error"))
     else
       jsonOk("{\"registered\":true}")
@@ -574,7 +574,7 @@ fn handleNexusStageFiles(payload: String, caps: &GsaCapSet) -> String =
     let env_json = "{\"STEAM_USER\":\"" ++ steam_user ++
                    "\",\"PROVISION_TARGET_HOST\":\"" ++ target_host ++ "\"}" in
     let result = __ffi("gossamer_gsa_run_script", "scripts/steam-stage.sh", profile_id, env_json, steam_pass) in
-    if result < 0 then
+    if result != 0 then
       jsonError("Staging failed: " ++ __ffi("gossamer_gsa_last_error"))
     else {
       let prov = "{\"event_type\":\"nexus_stage\",\"actor\":\"gsa-gui\",\"description\":\"SteamCMD stage for " ++ profile_id ++ " on " ++ target_host ++ "\"}" in
@@ -605,7 +605,7 @@ fn handleNexusProvision(payload: String, caps: &GsaCapSet) -> String =
       let env_json = "{\"PROVISION_TARGET_HOST\":\"" ++ target_host ++
                      "\",\"PROVISION_SSH_USER\":\"" ++ ssh_user ++ "\"}" in
       let result = __ffi("gossamer_gsa_run_script", "scripts/provision-server.sh", profile_id, env_json, "") in
-      if result < 0 then
+      if result != 0 then
         jsonError("Provisioner failed: " ++ __ffi("gossamer_gsa_last_error"))
       else {
         -- Register in VeriSimDB
@@ -637,7 +637,7 @@ fn handleNexusVerify(payload: String, caps: &GsaCapSet) -> String =
     let vdb_check = __ffi("gossamer_gsa_verisimdb_query",
       "SELECT id FROM octads WHERE id = '" ++ server_id ++ "'") in
     let registered = if vdb_check != "" then "true" else "false" in
-    if probe < 0 then
+    if probe < 1000 then
       -- Not yet reachable — partial ok (provisioned but not responding yet)
       jsonOk("{\"ok\":false,\"verisimdb_registered\":" ++ registered ++
              ",\"error\":\"Server not yet responding on UDP " ++ game_port ++ "\"}")

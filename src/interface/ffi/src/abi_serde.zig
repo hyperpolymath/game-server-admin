@@ -198,18 +198,30 @@ pub export fn gossamer_gsa_free(ptr: ?*anyopaque) callconv(.c) void {
 }
 
 /// Validate and accept a serialised A2MLConfig (binary wire struct).
-/// `serverId` (the first field, offset 0) is read via the same offset-reader the
-/// Idris side uses; persistence to disk is delegated to
-/// `gossamer_gsa_write_server_config`.
+/// `handle` must be a live probe handle from `gossamer_gsa_probe`; using a
+/// closed handle reports `already_consumed` (the linear-type violation the
+/// Idris side proves impossible for its own callers). `serverId` (the first
+/// field, offset 0) is read via the same offset-reader the Idris side uses;
+/// persistence to disk is delegated to `gossamer_gsa_write_server_config`.
 pub export fn gossamer_gsa_apply_config(handle: c_int, config: ?*const anyopaque) callconv(.c) c_int {
-    _ = handle;
     if (config == null) {
         main.setErrorStr("null config");
         return @intFromEnum(main.GsaResult.null_pointer);
     }
-    if (main.getGlobalHandle() == null) {
+    const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);
+    };
+    switch (gsa.useHandle(handle)) {
+        .live => {},
+        .consumed => {
+            main.setError("handle {d} already consumed", .{handle});
+            return @intFromEnum(main.GsaResult.already_consumed);
+        },
+        .unknown => {
+            main.setError("unknown handle {d}", .{handle});
+            return @intFromEnum(main.GsaResult.not_found);
+        },
     }
     if (gossamer_gsa_read_ptr(config, 0) == null) {
         main.setErrorStr("config missing serverId");
@@ -219,17 +231,29 @@ pub export fn gossamer_gsa_apply_config(handle: c_int, config: ?*const anyopaque
     return @intFromEnum(main.GsaResult.ok);
 }
 
-/// Close a server handle. The current FFI uses a process-global singleton, so a
-/// per-id close is a validated no-op; use `gossamer_gsa_shutdown` to release the
-/// global handle. Reserved for the future multi-handle model.
+/// Close a probe handle returned by `gossamer_gsa_probe`, releasing its
+/// server-id binding. A second close of the same id reports `double_free`
+/// (within the bounded tombstone window — see main.CLOSED_HANDLE_TOMBSTONES);
+/// an id that was never issued reports `not_found`.
 pub export fn gossamer_gsa_close_handle(handle: c_int) callconv(.c) c_int {
-    _ = handle;
-    if (main.getGlobalHandle() == null) {
+    const gsa = main.getGlobalHandle() orelse {
         main.setErrorStr("not initialized");
         return @intFromEnum(main.GsaResult.not_initialized);
+    };
+    switch (gsa.closeHandle(handle)) {
+        .live => {
+            main.clearError();
+            return @intFromEnum(main.GsaResult.ok);
+        },
+        .consumed => {
+            main.setError("handle {d} closed twice", .{handle});
+            return @intFromEnum(main.GsaResult.double_free);
+        },
+        .unknown => {
+            main.setError("unknown handle {d}", .{handle});
+            return @intFromEnum(main.GsaResult.not_found);
+        },
     }
-    main.clearError();
-    return @intFromEnum(main.GsaResult.ok);
 }
 
 /// Emit a DriftReport wire struct for a tracked server. `status` reflects the

@@ -81,21 +81,63 @@ pub const BUILD_INFO: [:0]const u8 = "libgsa 0.1.0 (Zig " ++ @import("builtin").
 
 /// FFI result codes.  The integer values are contractual; the Idris2 ABI layer
 /// converts between these and the dependent-type Result via `resultToInt`.
+///
+/// Codes 0-12 mirror the original (stable) Idris constructors; 13-17 are the
+/// Zig-side failure modes added to `Types.idr` in the same change.  The
+/// mapping is machine-checked: `scripts/gen_result_codes.zig` parses
+/// `Types.idr` into `result_codes_expected.zig`, and the comptime block below
+/// the enum turns any name/value/cardinality drift into a compile error.
 pub const GsaResult = enum(c_int) {
     ok = 0,
     err = 1,
     invalid_param = 2,
     out_of_memory = 3,
     null_pointer = 4,
-    not_initialized = 5,
-    timeout = 6,
-    connection_refused = 7,
-    protocol_error = 8,
-    parse_error = 9,
-    io_error = 10,
-    permission_denied = 11,
-    not_found = 12,
+    /// A linear resource was used after consumption.
+    already_consumed = 5,
+    /// A linear resource went out of scope without being consumed.
+    resource_leaked = 6,
+    /// A handle was closed more than once.
+    double_free = 7,
+    probe_timeout = 8,
+    connection_refused = 9,
+    auth_failed = 10,
+    config_parse_error = 11,
+    /// VeriSimDB instance is unreachable or not running.
+    verisimdb_unavailable = 12,
+    not_initialized = 13,
+    protocol_error = 14,
+    io_error = 15,
+    permission_denied = 16,
+    not_found = 17,
 };
+
+// Cross-language contract check: every (constructor, code) pair extracted from
+// Types.idr must exist here with the same value, and the counts must match.
+// See scripts/gen_result_codes.zig (regenerate after editing Types.idr).
+const result_codes_expected = @import("result_codes_expected.zig");
+comptime {
+    const fields = @typeInfo(GsaResult).@"enum".fields;
+    if (fields.len != result_codes_expected.all.len) {
+        @compileError(std.fmt.comptimePrint(
+            "GsaResult has {d} variants but Types.idr declares {d} — regenerate result_codes_expected.zig and reconcile",
+            .{ fields.len, result_codes_expected.all.len },
+        ));
+    }
+    for (result_codes_expected.all) |entry| {
+        if (!@hasField(GsaResult, entry.zig_field)) {
+            @compileError("GsaResult is missing variant '" ++ entry.zig_field ++
+                "' declared in Types.idr as '" ++ entry.idris_ctor ++ "'");
+        }
+        const actual = @intFromEnum(@field(GsaResult, entry.zig_field));
+        if (actual != entry.code) {
+            @compileError(std.fmt.comptimePrint(
+                "GsaResult.{s} = {d} but Types.idr declares {s} = {d}",
+                .{ entry.zig_field, actual, entry.idris_ctor, entry.code },
+            ));
+        }
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Thread-local error buffer
@@ -144,6 +186,20 @@ pub const ConnectionState = struct {
     healthy: bool,
 };
 
+/// First value ever returned as a probe handle id. Deliberately disjoint from
+/// the GsaResult code space (0-17) so a success value can never be mistaken
+/// for an error code by an FFI consumer.
+pub const FIRST_HANDLE_ID: c_int = 1000;
+
+/// Number of recently-closed handle ids remembered for double-close
+/// detection. Bounded: once more than this many closes have happened, the
+/// oldest tombstones are forgotten and a very late double-close reports
+/// `not_found` instead of `double_free` (still an error, just less specific).
+pub const CLOSED_HANDLE_TOMBSTONES: usize = 64;
+
+/// Outcome of consuming or inspecting a per-probe handle id.
+pub const HandleUse = enum { live, consumed, unknown };
+
 /// Core handle carrying all mutable state.
 pub const GsaHandle = struct {
     initialized: bool,
@@ -151,6 +207,13 @@ pub const GsaHandle = struct {
     profile_registry: game_profiles.ProfileRegistry,
     verisimdb_url: []const u8,
     active_connections: std.StringHashMap(ConnectionState),
+    /// Per-probe linear handles: id -> owned server-id string. This is what
+    /// makes the Idris ServerHandle linearity real on the Zig side.
+    open_handles: std.AutoHashMap(c_int, []const u8),
+    next_handle_id: c_int,
+    /// Ring buffer of recently closed ids (double-close detection).
+    closed_ring: [CLOSED_HANDLE_TOMBSTONES]c_int,
+    closed_count: usize,
 
     /// Create a new GsaHandle.  Caller owns the returned pointer.
     pub fn create(
@@ -167,6 +230,10 @@ pub const GsaHandle = struct {
             .profile_registry = game_profiles.ProfileRegistry.init(allocator),
             .verisimdb_url = try allocator.dupe(u8, verisimdb_url),
             .active_connections = std.StringHashMap(ConnectionState).init(allocator),
+            .open_handles = std.AutoHashMap(c_int, []const u8).init(allocator),
+            .next_handle_id = FIRST_HANDLE_ID,
+            .closed_ring = [_]c_int{0} ** CLOSED_HANDLE_TOMBSTONES,
+            .closed_count = 0,
         };
 
         // Load game profiles from the supplied directory
@@ -194,8 +261,56 @@ pub const GsaHandle = struct {
         }
         self.active_connections.deinit();
 
+        var hit = self.open_handles.valueIterator();
+        while (hit.next()) |server_id| {
+            alloc.free(server_id.*);
+        }
+        self.open_handles.deinit();
+
         self.initialized = false;
         alloc.destroy(self);
+    }
+
+    /// Allocate a fresh probe handle id bound to `server_id`.
+    pub fn openHandle(self: *GsaHandle, server_id: []const u8) !c_int {
+        const id_owned = try self.allocator.dupe(u8, server_id);
+        errdefer self.allocator.free(id_owned);
+
+        const id = self.next_handle_id;
+        try self.open_handles.put(id, id_owned);
+        self.next_handle_id += 1;
+        return id;
+    }
+
+    /// Close a probe handle. Distinguishes a double-close from a handle that
+    /// never existed (within the bounded tombstone window).
+    pub fn closeHandle(self: *GsaHandle, id: c_int) HandleUse {
+        if (self.open_handles.fetchRemove(id)) |kv| {
+            self.allocator.free(kv.value);
+            self.closed_ring[self.closed_count % CLOSED_HANDLE_TOMBSTONES] = id;
+            self.closed_count += 1;
+            return .live;
+        }
+        return self.lookupClosed(id);
+    }
+
+    /// Inspect a handle id without consuming it.
+    pub fn useHandle(self: *GsaHandle, id: c_int) HandleUse {
+        if (self.open_handles.contains(id)) return .live;
+        return self.lookupClosed(id);
+    }
+
+    /// Server id bound to a live handle, or null.
+    pub fn handleServerId(self: *GsaHandle, id: c_int) ?[]const u8 {
+        return self.open_handles.get(id);
+    }
+
+    fn lookupClosed(self: *GsaHandle, id: c_int) HandleUse {
+        const remembered = @min(self.closed_count, CLOSED_HANDLE_TOMBSTONES);
+        for (self.closed_ring[0..remembered]) |closed_id| {
+            if (closed_id == id) return .consumed;
+        }
+        return .unknown;
     }
 
     /// Register or update a server connection.
@@ -249,7 +364,7 @@ pub fn getGlobalHandle() ?*GsaHandle {
 /// `profiles_dir` — filesystem path to directory containing .a2ml game
 ///     profiles.
 ///
-/// Returns 0 on success, negative GsaResult on failure.
+/// Returns 0 on success, a positive GsaResult code on failure.
 pub export fn gossamer_gsa_init(
     verisimdb_url: [*:0]const u8,
     profiles_dir: [*:0]const u8,
@@ -278,7 +393,7 @@ pub export fn gossamer_gsa_init(
 
 /// Shut down the library and release all resources.
 ///
-/// Returns 0 on success, negative GsaResult on failure.
+/// Returns 0 on success, a positive GsaResult code on failure.
 pub export fn gossamer_gsa_shutdown() callconv(.c) c_int {
     global_mutex.lock();
     defer global_mutex.unlock();
@@ -311,20 +426,13 @@ pub export fn gossamer_gsa_version() callconv(.c) [*:0]const u8 {
 // Unit tests
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test "GsaResult values match Idris2 ABI" {
+test "GsaResult sanity (cross-language check is the comptime block above)" {
+    // The authoritative Idris2 cross-check is the comptime block after the
+    // enum definition, driven by result_codes_expected.zig.  This test only
+    // pins the two values other modules rely on unconditionally.
     try std.testing.expectEqual(@as(c_int, 0), @intFromEnum(GsaResult.ok));
     try std.testing.expectEqual(@as(c_int, 1), @intFromEnum(GsaResult.err));
-    try std.testing.expectEqual(@as(c_int, 2), @intFromEnum(GsaResult.invalid_param));
-    try std.testing.expectEqual(@as(c_int, 3), @intFromEnum(GsaResult.out_of_memory));
-    try std.testing.expectEqual(@as(c_int, 4), @intFromEnum(GsaResult.null_pointer));
-    try std.testing.expectEqual(@as(c_int, 5), @intFromEnum(GsaResult.not_initialized));
-    try std.testing.expectEqual(@as(c_int, 6), @intFromEnum(GsaResult.timeout));
-    try std.testing.expectEqual(@as(c_int, 7), @intFromEnum(GsaResult.connection_refused));
-    try std.testing.expectEqual(@as(c_int, 8), @intFromEnum(GsaResult.protocol_error));
-    try std.testing.expectEqual(@as(c_int, 9), @intFromEnum(GsaResult.parse_error));
-    try std.testing.expectEqual(@as(c_int, 10), @intFromEnum(GsaResult.io_error));
-    try std.testing.expectEqual(@as(c_int, 11), @intFromEnum(GsaResult.permission_denied));
-    try std.testing.expectEqual(@as(c_int, 12), @intFromEnum(GsaResult.not_found));
+    try std.testing.expectEqual(@as(usize, 18), @typeInfo(GsaResult).@"enum".fields.len);
 }
 
 test "error buffer round-trip" {
@@ -367,4 +475,43 @@ test "GsaHandle track server" {
     const conn = handle.getConnection("mc-1") orelse return error.NotFound;
     try std.testing.expectEqual(@as(u16, 25565), conn.port);
     try std.testing.expect(conn.healthy);
+}
+
+test "handle lifecycle: open, use, close, double-close, unknown" {
+    const allocator = std.testing.allocator;
+    const handle = try GsaHandle.create(allocator, "http://localhost:7820", "");
+    defer handle.destroy();
+
+    const id = try handle.openHandle("mc-1");
+    try std.testing.expect(id >= FIRST_HANDLE_ID);
+    try std.testing.expectEqual(HandleUse.live, handle.useHandle(id));
+    try std.testing.expectEqualStrings("mc-1", handle.handleServerId(id).?);
+
+    // ids are never reused within a process
+    const id2 = try handle.openHandle("mc-2");
+    try std.testing.expect(id2 != id);
+
+    try std.testing.expectEqual(HandleUse.live, handle.closeHandle(id));
+    try std.testing.expectEqual(HandleUse.consumed, handle.useHandle(id));
+    try std.testing.expectEqual(HandleUse.consumed, handle.closeHandle(id));
+    try std.testing.expectEqual(HandleUse.unknown, handle.closeHandle(424242));
+
+    try std.testing.expectEqual(HandleUse.live, handle.closeHandle(id2));
+}
+
+test "handle lifecycle: tombstone ring is bounded, not leaky" {
+    const allocator = std.testing.allocator;
+    const handle = try GsaHandle.create(allocator, "http://localhost:7820", "");
+    defer handle.destroy();
+
+    const first = try handle.openHandle("srv");
+    try std.testing.expectEqual(HandleUse.live, handle.closeHandle(first));
+
+    // Push more closes than the ring holds; the first tombstone is evicted.
+    var i: usize = 0;
+    while (i < CLOSED_HANDLE_TOMBSTONES) : (i += 1) {
+        const id = try handle.openHandle("srv");
+        try std.testing.expectEqual(HandleUse.live, handle.closeHandle(id));
+    }
+    try std.testing.expectEqual(HandleUse.unknown, handle.useHandle(first));
 }

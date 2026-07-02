@@ -42,7 +42,7 @@ panic-attack assail .
 Gossamer GUI (Ephapax .eph)        -- src/core/, src/gui/panels/
     |  IPC (gossamer:// protocol)
 Zig FFI (libgsa.so + gsa CLI)     -- src/interface/ffi/src/ (11 modules)
-    |  C ABI (13 result codes)
+    |  C ABI (18 result codes)
 Idris2 ABI (Types/Foreign/Layout)  -- src/interface/abi/
     |  REST (port 8090)
 VeriSimDB (8-modality octads)      -- container/verisimdb/

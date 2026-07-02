@@ -728,19 +728,19 @@ pub export fn gossamer_gsa_write_server_config(
     // Parse config fields
     const cfg_parsed = std.json.parseFromSlice(std.json.Value, allocator, config_str, .{}) catch {
         main.setErrorStr("invalid config JSON");
-        return @intFromEnum(main.GsaResult.parse_error);
+        return @intFromEnum(main.GsaResult.config_parse_error);
     };
     defer cfg_parsed.deinit();
 
     const ops_parsed = std.json.parseFromSlice(std.json.Value, allocator, ops_str, .{}) catch {
         main.setErrorStr("invalid operators JSON");
-        return @intFromEnum(main.GsaResult.parse_error);
+        return @intFromEnum(main.GsaResult.config_parse_error);
     };
     defer ops_parsed.deinit();
 
     const cfg = if (cfg_parsed.value == .object) cfg_parsed.value.object else {
         main.setErrorStr("config JSON must be an object");
-        return @intFromEnum(main.GsaResult.parse_error);
+        return @intFromEnum(main.GsaResult.config_parse_error);
     };
 
     // Helper to extract string field with fallback
