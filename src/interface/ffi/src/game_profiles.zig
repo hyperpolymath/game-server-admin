@@ -544,7 +544,7 @@ pub export fn gossamer_gsa_add_profile(
     const a2ml_str = std.mem.span(a2ml);
     var profile = parseA2MLProfile(a2ml_str, std.heap.c_allocator) catch |err| {
         main.setError("profile parse failed: {s}", .{@errorName(err)});
-        return @intFromEnum(main.GsaResult.parse_error);
+        return @intFromEnum(main.GsaResult.config_parse_error);
     };
     errdefer profile.deinit();
 

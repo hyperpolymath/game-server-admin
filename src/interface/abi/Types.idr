@@ -34,9 +34,14 @@ import Data.Vect
 --------------------------------------------------------------------------------
 
 ||| Result codes for all FFI operations.
-||| Maps to C int32 values 0-12. Each variant has a fixed integer encoding
+||| Maps to C int32 values 0-17. Each variant has a fixed integer encoding
 ||| used across the ABI boundary. Results are classified as terminal (no retry)
 ||| or transient (retry may succeed).
+|||
+||| This is the single source of truth for the cross-language contract:
+||| scripts/gen_result_codes.zig parses the `resultToInt` clauses below and the
+||| Zig build asserts (at comptime) that GsaResult matches name-for-name and
+||| value-for-value. Regenerate after any change here.
 public export
 data Result : Type where
   ||| Operation completed successfully (code 0)
@@ -65,6 +70,16 @@ data Result : Type where
   ConfigParseError : Result
   ||| VeriSimDB instance is unreachable or not running (code 12)
   VeriSimDBUnavailable : Result
+  ||| The library was used before gossamer_gsa_init succeeded (code 13)
+  NotInitialized   : Result
+  ||| A wire protocol violation was detected while probing (code 14)
+  ProtocolError    : Result
+  ||| An OS-level I/O operation failed (code 15)
+  IoError          : Result
+  ||| The operation was denied by a permission check (code 16)
+  PermissionDenied : Result
+  ||| A requested entity (profile, server, file) does not exist (code 17)
+  NotFound         : Result
 
 ||| Convert a Result to its C-compatible integer representation.
 ||| These values are stable across ABI versions and must not change.
@@ -83,6 +98,11 @@ resultToInt ConnectionRefused   = 9
 resultToInt AuthFailed          = 10
 resultToInt ConfigParseError    = 11
 resultToInt VeriSimDBUnavailable = 12
+resultToInt NotInitialized      = 13
+resultToInt ProtocolError       = 14
+resultToInt IoError             = 15
+resultToInt PermissionDenied    = 16
+resultToInt NotFound            = 17
 
 ||| Parse a C integer back into a Result.
 ||| Returns Nothing for unrecognised codes, providing forward compatibility
@@ -102,6 +122,11 @@ resultFromInt 9  = Just ConnectionRefused
 resultFromInt 10 = Just AuthFailed
 resultFromInt 11 = Just ConfigParseError
 resultFromInt 12 = Just VeriSimDBUnavailable
+resultFromInt 13 = Just NotInitialized
+resultFromInt 14 = Just ProtocolError
+resultFromInt 15 = Just IoError
+resultFromInt 16 = Just PermissionDenied
+resultFromInt 17 = Just NotFound
 resultFromInt _  = Nothing
 
 ||| Classify whether a Result is terminal (will never succeed on retry)
@@ -110,9 +135,11 @@ resultFromInt _  = Nothing
 ||| may be retried with backoff.
 |||
 ||| Terminal: InvalidParam, NullPointer, AlreadyConsumed, ResourceLeaked,
-|||           DoubleFree, ConfigParseError (these indicate bugs, not transient failures)
+|||           DoubleFree, ConfigParseError, NotInitialized, ProtocolError,
+|||           PermissionDenied, NotFound (these indicate bugs or fixed
+|||           preconditions, not transient failures)
 ||| Transient: ProbeTimeout, ConnectionRefused, AuthFailed, VeriSimDBUnavailable,
-|||            OutOfMemory, Error (these may resolve with retry)
+|||            OutOfMemory, IoError, Error (these may resolve with retry)
 ||| Ok is neither — it indicates success.
 public export
 resultIsTerminal : Result -> Bool
@@ -129,6 +156,11 @@ resultIsTerminal ConnectionRefused   = False
 resultIsTerminal AuthFailed          = False
 resultIsTerminal ConfigParseError    = True
 resultIsTerminal VeriSimDBUnavailable = False
+resultIsTerminal NotInitialized      = True
+resultIsTerminal ProtocolError       = True
+resultIsTerminal IoError             = False
+resultIsTerminal PermissionDenied    = True
+resultIsTerminal NotFound            = True
 
 ||| Human-readable description of each result code.
 ||| Used for logging and error reporting.
@@ -147,6 +179,11 @@ resultDescription ConnectionRefused   = "Connection refused"
 resultDescription AuthFailed          = "Authentication failed"
 resultDescription ConfigParseError    = "Configuration parse error"
 resultDescription VeriSimDBUnavailable = "VeriSimDB instance unavailable"
+resultDescription NotInitialized      = "Library not initialised"
+resultDescription ProtocolError       = "Wire protocol violation"
+resultDescription IoError             = "I/O operation failed"
+resultDescription PermissionDenied    = "Permission denied"
+resultDescription NotFound            = "Requested entity not found"
 
 ||| Decidable equality for Result, enabling pattern matching and proof
 ||| construction over result codes at the type level.
@@ -165,6 +202,11 @@ Eq Result where
   AuthFailed == AuthFailed = True
   ConfigParseError == ConfigParseError = True
   VeriSimDBUnavailable == VeriSimDBUnavailable = True
+  NotInitialized == NotInitialized = True
+  ProtocolError == ProtocolError = True
+  IoError == IoError = True
+  PermissionDenied == PermissionDenied = True
+  NotFound == NotFound = True
   _ == _ = False
 
 ||| Show instance for logging and debugging

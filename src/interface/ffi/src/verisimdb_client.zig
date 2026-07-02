@@ -313,7 +313,7 @@ pub export fn gossamer_gsa_verisimdb_store(
     const body = std.mem.span(octad_json);
     const result = client.createOctad(body) catch |err| {
         main.setError("VeriSimDB store failed: {s}", .{@errorName(err)});
-        return @intFromEnum(main.GsaResult.connection_refused);
+        return @intFromEnum(main.GsaResult.verisimdb_unavailable);
     };
     std.heap.c_allocator.free(result);
 
@@ -364,7 +364,7 @@ pub export fn gossamer_gsa_verisimdb_health() callconv(.c) c_int {
     defer client.deinit();
 
     const healthy = client.health() catch false;
-    return if (healthy) @intFromEnum(main.GsaResult.ok) else @intFromEnum(main.GsaResult.connection_refused);
+    return if (healthy) @intFromEnum(main.GsaResult.ok) else @intFromEnum(main.GsaResult.verisimdb_unavailable);
 }
 
 /// Get drift information for a server.

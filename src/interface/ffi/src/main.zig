@@ -81,21 +81,63 @@ pub const BUILD_INFO: [:0]const u8 = "libgsa 0.1.0 (Zig " ++ @import("builtin").
 
 /// FFI result codes.  The integer values are contractual; the Idris2 ABI layer
 /// converts between these and the dependent-type Result via `resultToInt`.
+///
+/// Codes 0-12 mirror the original (stable) Idris constructors; 13-17 are the
+/// Zig-side failure modes added to `Types.idr` in the same change.  The
+/// mapping is machine-checked: `scripts/gen_result_codes.zig` parses
+/// `Types.idr` into `result_codes_expected.zig`, and the comptime block below
+/// the enum turns any name/value/cardinality drift into a compile error.
 pub const GsaResult = enum(c_int) {
     ok = 0,
     err = 1,
     invalid_param = 2,
     out_of_memory = 3,
     null_pointer = 4,
-    not_initialized = 5,
-    timeout = 6,
-    connection_refused = 7,
-    protocol_error = 8,
-    parse_error = 9,
-    io_error = 10,
-    permission_denied = 11,
-    not_found = 12,
+    /// A linear resource was used after consumption.
+    already_consumed = 5,
+    /// A linear resource went out of scope without being consumed.
+    resource_leaked = 6,
+    /// A handle was closed more than once.
+    double_free = 7,
+    probe_timeout = 8,
+    connection_refused = 9,
+    auth_failed = 10,
+    config_parse_error = 11,
+    /// VeriSimDB instance is unreachable or not running.
+    verisimdb_unavailable = 12,
+    not_initialized = 13,
+    protocol_error = 14,
+    io_error = 15,
+    permission_denied = 16,
+    not_found = 17,
 };
+
+// Cross-language contract check: every (constructor, code) pair extracted from
+// Types.idr must exist here with the same value, and the counts must match.
+// See scripts/gen_result_codes.zig (regenerate after editing Types.idr).
+const result_codes_expected = @import("result_codes_expected.zig");
+comptime {
+    const fields = @typeInfo(GsaResult).@"enum".fields;
+    if (fields.len != result_codes_expected.all.len) {
+        @compileError(std.fmt.comptimePrint(
+            "GsaResult has {d} variants but Types.idr declares {d} — regenerate result_codes_expected.zig and reconcile",
+            .{ fields.len, result_codes_expected.all.len },
+        ));
+    }
+    for (result_codes_expected.all) |entry| {
+        if (!@hasField(GsaResult, entry.zig_field)) {
+            @compileError("GsaResult is missing variant '" ++ entry.zig_field ++
+                "' declared in Types.idr as '" ++ entry.idris_ctor ++ "'");
+        }
+        const actual = @intFromEnum(@field(GsaResult, entry.zig_field));
+        if (actual != entry.code) {
+            @compileError(std.fmt.comptimePrint(
+                "GsaResult.{s} = {d} but Types.idr declares {s} = {d}",
+                .{ entry.zig_field, actual, entry.idris_ctor, entry.code },
+            ));
+        }
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Thread-local error buffer
@@ -249,7 +291,7 @@ pub fn getGlobalHandle() ?*GsaHandle {
 /// `profiles_dir` — filesystem path to directory containing .a2ml game
 ///     profiles.
 ///
-/// Returns 0 on success, negative GsaResult on failure.
+/// Returns 0 on success, a positive GsaResult code on failure.
 pub export fn gossamer_gsa_init(
     verisimdb_url: [*:0]const u8,
     profiles_dir: [*:0]const u8,
@@ -278,7 +320,7 @@ pub export fn gossamer_gsa_init(
 
 /// Shut down the library and release all resources.
 ///
-/// Returns 0 on success, negative GsaResult on failure.
+/// Returns 0 on success, a positive GsaResult code on failure.
 pub export fn gossamer_gsa_shutdown() callconv(.c) c_int {
     global_mutex.lock();
     defer global_mutex.unlock();
@@ -311,20 +353,13 @@ pub export fn gossamer_gsa_version() callconv(.c) [*:0]const u8 {
 // Unit tests
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test "GsaResult values match Idris2 ABI" {
+test "GsaResult sanity (cross-language check is the comptime block above)" {
+    // The authoritative Idris2 cross-check is the comptime block after the
+    // enum definition, driven by result_codes_expected.zig.  This test only
+    // pins the two values other modules rely on unconditionally.
     try std.testing.expectEqual(@as(c_int, 0), @intFromEnum(GsaResult.ok));
     try std.testing.expectEqual(@as(c_int, 1), @intFromEnum(GsaResult.err));
-    try std.testing.expectEqual(@as(c_int, 2), @intFromEnum(GsaResult.invalid_param));
-    try std.testing.expectEqual(@as(c_int, 3), @intFromEnum(GsaResult.out_of_memory));
-    try std.testing.expectEqual(@as(c_int, 4), @intFromEnum(GsaResult.null_pointer));
-    try std.testing.expectEqual(@as(c_int, 5), @intFromEnum(GsaResult.not_initialized));
-    try std.testing.expectEqual(@as(c_int, 6), @intFromEnum(GsaResult.timeout));
-    try std.testing.expectEqual(@as(c_int, 7), @intFromEnum(GsaResult.connection_refused));
-    try std.testing.expectEqual(@as(c_int, 8), @intFromEnum(GsaResult.protocol_error));
-    try std.testing.expectEqual(@as(c_int, 9), @intFromEnum(GsaResult.parse_error));
-    try std.testing.expectEqual(@as(c_int, 10), @intFromEnum(GsaResult.io_error));
-    try std.testing.expectEqual(@as(c_int, 11), @intFromEnum(GsaResult.permission_denied));
-    try std.testing.expectEqual(@as(c_int, 12), @intFromEnum(GsaResult.not_found));
+    try std.testing.expectEqual(@as(usize, 18), @typeInfo(GsaResult).@"enum".fields.len);
 }
 
 test "error buffer round-trip" {

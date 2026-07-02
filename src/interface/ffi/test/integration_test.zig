@@ -22,39 +22,47 @@ const server_actions = gsa.server_actions;
 const game_profiles = gsa.game_profiles;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 1. Result code mapping — all 13 values match Idris2 ABI
+// 1. Result code mapping — all 18 values match Idris2 ABI
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test "result codes: all 13 GsaResult values have correct integer mappings" {
-    // These must match GameServerAdmin.ABI.Types.Result.resultToInt
+test "result codes: all 18 GsaResult values have correct integer mappings" {
+    // These must match GameServerAdmin.ABI.Types.Result.resultToInt.
+    // The comptime block in main.zig checks the same contract against the
+    // generated result_codes_expected.zig; this test restates it at runtime
+    // so a failure names the offending variant in test output.
     const expected = [_]struct { result: main.GsaResult, value: c_int }{
         .{ .result = .ok, .value = 0 },
         .{ .result = .err, .value = 1 },
         .{ .result = .invalid_param, .value = 2 },
         .{ .result = .out_of_memory, .value = 3 },
         .{ .result = .null_pointer, .value = 4 },
-        .{ .result = .not_initialized, .value = 5 },
-        .{ .result = .timeout, .value = 6 },
-        .{ .result = .connection_refused, .value = 7 },
-        .{ .result = .protocol_error, .value = 8 },
-        .{ .result = .parse_error, .value = 9 },
-        .{ .result = .io_error, .value = 10 },
-        .{ .result = .permission_denied, .value = 11 },
-        .{ .result = .not_found, .value = 12 },
+        .{ .result = .already_consumed, .value = 5 },
+        .{ .result = .resource_leaked, .value = 6 },
+        .{ .result = .double_free, .value = 7 },
+        .{ .result = .probe_timeout, .value = 8 },
+        .{ .result = .connection_refused, .value = 9 },
+        .{ .result = .auth_failed, .value = 10 },
+        .{ .result = .config_parse_error, .value = 11 },
+        .{ .result = .verisimdb_unavailable, .value = 12 },
+        .{ .result = .not_initialized, .value = 13 },
+        .{ .result = .protocol_error, .value = 14 },
+        .{ .result = .io_error, .value = 15 },
+        .{ .result = .permission_denied, .value = 16 },
+        .{ .result = .not_found, .value = 17 },
     };
 
     // Verify total count
-    try testing.expectEqual(@as(usize, 13), expected.len);
+    try testing.expectEqual(@as(usize, 18), expected.len);
 
     for (expected) |e| {
         try testing.expectEqual(e.value, @intFromEnum(e.result));
     }
 }
 
-test "result codes: enum is exhaustive at 13 variants" {
+test "result codes: enum is exhaustive at 18 variants" {
     // Count all variants in the enum by trying to iterate
     const fields = @typeInfo(main.GsaResult).@"enum".fields;
-    try testing.expectEqual(@as(usize, 13), fields.len);
+    try testing.expectEqual(@as(usize, 18), fields.len);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
