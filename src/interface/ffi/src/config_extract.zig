@@ -85,6 +85,13 @@ pub const ParsedConfig = struct {
         range_max: ?f64,
         is_secret: bool,
     ) !void {
+        // A field with an empty key is meaningless (and breaks getField lookup
+        // and A2ML emission). Malformed input — e.g. a lone "=value" line or a
+        // JSON key of "" — must not produce one. Silently skip it; this is the
+        // single funnel every parser routes through, so the invariant "every
+        // field has a non-empty key" holds by construction (asserted by the
+        // config fuzz harness).
+        if (key.len == 0) return;
         try self.fields.append(.{
             .key = try self.allocator.dupe(u8, key),
             .value = try self.allocator.dupe(u8, value),
@@ -155,12 +162,18 @@ pub fn detectFormat(data: []const u8) ConfigFormat {
         }
     }
 
+    // YAML document marker is an unambiguous signal.
+    if (std.mem.startsWith(u8, trimmed, "---")) return .YAML;
+
     // Scan lines for format indicators
     var has_section_header = false;
     var has_export = false;
     var has_dotted_key = false;
     var has_lua_table = false;
     var has_triple_bracket = false;
+    var yaml_kv_lines: usize = 0; // `key: value` or `key:` (mapping) lines
+    var yaml_seq_lines: usize = 0; // `- item` block-sequence lines
+    var eq_lines: usize = 0; // lines containing `=`
 
     var line_iter = std.mem.splitScalar(u8, data, '\n');
     while (line_iter.next()) |line| {
@@ -172,6 +185,7 @@ pub fn detectFormat(data: []const u8) ConfigFormat {
             if (std.mem.startsWith(u8, stripped, "[[")) has_triple_bracket = true;
         }
         if (std.mem.startsWith(u8, stripped, "export ")) has_export = true;
+        if (std.mem.indexOfScalar(u8, stripped, '=') != null) eq_lines += 1;
         if (std.mem.indexOf(u8, stripped, ".") != null and std.mem.indexOf(u8, stripped, "=") != null) {
             // Check if it looks like "section.key = value" (TOML dotted keys)
             if (std.mem.indexOfScalar(u8, stripped, '=')) |eq_pos| {
@@ -183,14 +197,67 @@ pub fn detectFormat(data: []const u8) ConfigFormat {
         if (std.mem.indexOf(u8, stripped, "= {") != null or std.mem.indexOf(u8, stripped, "={") != null) {
             has_lua_table = true;
         }
+        // YAML block sequence: "- " or a bare "-"
+        if (std.mem.startsWith(u8, stripped, "- ") or std.mem.eql(u8, stripped, "-")) yaml_seq_lines += 1;
+        // YAML mapping line: "key:" or "key: value" (colon followed by space or EOL),
+        // with no '=' on the line and a plausible bareword key.
+        if (std.mem.indexOfScalar(u8, stripped, '=') == null) {
+            if (std.mem.indexOfScalar(u8, stripped, ':')) |ci| {
+                const after = stripped[ci + 1 ..];
+                const key = stripped[0..ci];
+                if (isYamlKey(key) and (after.len == 0 or after[0] == ' ')) yaml_kv_lines += 1;
+            }
+        }
     }
 
     if (has_triple_bracket or (has_section_header and has_dotted_key)) return .TOML;
     if (has_lua_table) return .Lua;
     if (has_section_header) return .INI;
     if (has_export) return .ENV;
+    // YAML: colon-delimited mappings and/or block sequences, and crucially no
+    // `=` lines (which would make it ENV/INI/KeyValue).
+    if (eq_lines == 0 and (yaml_kv_lines > 0 or yaml_seq_lines > 0)) return .YAML;
 
     return .KeyValue;
+}
+
+/// A YAML key is a bareword of `[A-Za-z0-9._-]` (no spaces) — enough to
+/// distinguish `key: value` mappings from prose lines that merely contain a
+/// colon (e.g. a URL or a sentence).
+fn isYamlKey(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s) |c| {
+        if (!(std.ascii.isAlphanumeric(c) or c == '.' or c == '_' or c == '-')) return false;
+    }
+    return true;
+}
+
+/// One level of YAML block-mapping nesting: its indentation and key.
+const YamlEntry = struct { indent: usize, key: []const u8 };
+
+/// Strip surrounding single/double quotes from a YAML scalar.
+fn yamlScalar(s: []const u8) []const u8 {
+    if (s.len >= 2 and
+        ((s[0] == '"' and s[s.len - 1] == '"') or (s[0] == '\'' and s[s.len - 1] == '\'')))
+    {
+        return s[1 .. s.len - 1];
+    }
+    return s;
+}
+
+/// Join the mapping-key path (`a`, `a.b`, …) into `buf`, returning the slice.
+fn buildYamlPath(buf: []u8, entries: []const YamlEntry) []const u8 {
+    var len: usize = 0;
+    for (entries, 0..) |e, i| {
+        if (i != 0 and len < buf.len) {
+            buf[len] = '.';
+            len += 1;
+        }
+        const n = @min(e.key.len, buf.len - len);
+        @memcpy(buf[len .. len + n], e.key[0..n]);
+        len += n;
+    }
+    return buf[0..len];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -830,6 +897,91 @@ pub fn parseKeyValue(allocator: Allocator, data: []const u8) !ParsedConfig {
     return config;
 }
 
+/// Parse a YAML config — a scoped subset (block mappings, block sequences of
+/// scalars, scalar values, comments, `---`/`...` document markers), NOT full
+/// YAML 1.2. Nested mappings flatten to dotted keys (`parent.child`) and
+/// sequence items to `parent.0`, `parent.1`, … — the same flat model
+/// parseTOML/parseJSON use. Anchors, aliases, flow collections, and multi-line
+/// scalars are out of scope.
+pub fn parseYAML(allocator: Allocator, data: []const u8) !ParsedConfig {
+    var config = ParsedConfig.init(allocator, .YAML, "");
+    errdefer config.deinit();
+    config.raw_text = try allocator.dupe(u8, data);
+
+    var stack: [16]YamlEntry = undefined;
+    var depth: usize = 0;
+    var seq_indent: ?usize = null;
+    var seq_index: usize = 0;
+
+    var it = std.mem.splitScalar(u8, data, '\n');
+    while (it.next()) |raw_line| {
+        var line = raw_line;
+        if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+
+        var indent: usize = 0;
+        while (indent < line.len and line[indent] == ' ') indent += 1;
+        const content = line[indent..];
+        if (content.len == 0 or content[0] == '#') continue;
+        if (std.mem.startsWith(u8, content, "---") or std.mem.startsWith(u8, content, "...")) continue;
+
+        // Pop mapping keys no longer in scope; reset sequence tracking on dedent.
+        while (depth > 0 and stack[depth - 1].indent >= indent) depth -= 1;
+        if (seq_indent) |si| {
+            if (indent < si) {
+                seq_indent = null;
+                seq_index = 0;
+            }
+        }
+
+        // Block sequence item: parent.N
+        if (std.mem.startsWith(u8, content, "- ") or std.mem.eql(u8, content, "-")) {
+            const item = if (content.len > 2) yamlScalar(std.mem.trim(u8, content[2..], " \t")) else "";
+            if (seq_indent == null or indent != seq_indent.?) {
+                seq_indent = indent;
+                seq_index = 0;
+            }
+            var kb: [1024]u8 = undefined;
+            const base = buildYamlPath(&kb, stack[0..depth]);
+            var full: [1152]u8 = undefined;
+            const fk = std.fmt.bufPrint(&full, "{s}{s}{d}", .{
+                base, if (base.len > 0) "." else "", seq_index,
+            }) catch continue;
+            try config.addField(fk, item, "string", fk, "", null, null, false);
+            seq_index += 1;
+            continue;
+        }
+
+        // Mapping line: `key:` (parent) or `key: value` (leaf).
+        const ci = std.mem.indexOfScalar(u8, content, ':') orelse continue;
+        const key = std.mem.trim(u8, content[0..ci], " \t");
+        if (!isYamlKey(key)) continue;
+        const after = std.mem.trim(u8, content[ci + 1 ..], " \t");
+
+        if (after.len == 0) {
+            if (depth < stack.len) {
+                stack[depth] = .{ .indent = indent, .key = key };
+                depth += 1;
+            }
+            continue;
+        }
+
+        var kb: [1024]u8 = undefined;
+        const base = buildYamlPath(&kb, stack[0..depth]);
+        var full: [1152]u8 = undefined;
+        const fk = if (base.len > 0)
+            (std.fmt.bufPrint(&full, "{s}.{s}", .{ base, key }) catch continue)
+        else
+            key;
+        const val = yamlScalar(after);
+        const is_secret = std.mem.indexOf(u8, fk, "password") != null or
+            std.mem.indexOf(u8, fk, "secret") != null or
+            std.mem.indexOf(u8, fk, "token") != null;
+        try config.addField(fk, val, "string", fk, "", null, null, is_secret);
+    }
+
+    return config;
+}
+
 /// Dispatch to the correct parser based on format.
 pub fn parseAuto(allocator: Allocator, data: []const u8) !ParsedConfig {
     const format = detectFormat(data);
@@ -841,7 +993,7 @@ pub fn parseAuto(allocator: Allocator, data: []const u8) !ParsedConfig {
         .TOML => parseTOML(allocator, data),
         .Lua => parseLua(allocator, data),
         .KeyValue => parseKeyValue(allocator, data),
-        .YAML => parseKeyValue(allocator, data), // basic YAML fallback
+        .YAML => parseYAML(allocator, data),
     };
 }
 

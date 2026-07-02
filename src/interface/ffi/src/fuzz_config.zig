@@ -12,7 +12,8 @@
 //   3. Memory is correctly freed (tested via std.testing.allocator
 //      which detects leaks).
 //
-// Run with: zig build test -- --fuzz
+// Run with: zig build fuzz            (seed corpus once — CI-safe)
+//       or: zig build fuzz -- --fuzz  (continuous fuzzing)
 //
 // Corpus seeds are embedded as string literals so the fuzzer starts
 // from realistic inputs rather than random noise.
@@ -93,7 +94,7 @@ const kv_seeds = [_][]const u8{
 
 test "fuzz: detectFormat accepts arbitrary bytes without panic" {
     try testing.fuzz(.{}, struct {
-        fn testOne(input: []const u8) !void {
+        fn testOne(_: @TypeOf(.{}), input: []const u8) !void {
             const result = config_extract.detectFormat(input);
             // Verify the result is a valid enum member (0..7)
             const raw: u8 = @intFromEnum(result);
@@ -113,7 +114,7 @@ test "fuzz: detectFormat accepts arbitrary bytes without panic" {
 
 test "fuzz: parseAuto handles arbitrary bytes without panic or leak" {
     try testing.fuzz(.{}, struct {
-        fn testOne(input: []const u8) !void {
+        fn testOne(_: @TypeOf(.{}), input: []const u8) !void {
             const allocator = testing.allocator;
             var config = config_extract.parseAuto(allocator, input) catch |err| {
                 // OutOfMemory is acceptable under fuzzing; other errors
@@ -145,7 +146,7 @@ test "fuzz: parseAuto handles arbitrary bytes without panic or leak" {
 
 test "fuzz: parseXML handles arbitrary bytes without panic or leak" {
     try testing.fuzz(.{}, struct {
-        fn testOne(input: []const u8) !void {
+        fn testOne(_: @TypeOf(.{}), input: []const u8) !void {
             const allocator = testing.allocator;
             var config = config_extract.parseXML(allocator, input) catch |err| {
                 switch (err) {
@@ -167,7 +168,7 @@ test "fuzz: parseXML handles arbitrary bytes without panic or leak" {
 
 test "fuzz: parseINI handles arbitrary bytes without panic or leak" {
     try testing.fuzz(.{}, struct {
-        fn testOne(input: []const u8) !void {
+        fn testOne(_: @TypeOf(.{}), input: []const u8) !void {
             const allocator = testing.allocator;
             var config = config_extract.parseINI(allocator, input) catch |err| {
                 switch (err) {
@@ -189,7 +190,7 @@ test "fuzz: parseINI handles arbitrary bytes without panic or leak" {
 
 test "fuzz: parseJSON handles arbitrary bytes without panic or leak" {
     try testing.fuzz(.{}, struct {
-        fn testOne(input: []const u8) !void {
+        fn testOne(_: @TypeOf(.{}), input: []const u8) !void {
             const allocator = testing.allocator;
             var config = config_extract.parseJSON(allocator, input) catch |err| {
                 switch (err) {
@@ -211,7 +212,7 @@ test "fuzz: parseJSON handles arbitrary bytes without panic or leak" {
 
 test "fuzz: parseENV handles arbitrary bytes without panic or leak" {
     try testing.fuzz(.{}, struct {
-        fn testOne(input: []const u8) !void {
+        fn testOne(_: @TypeOf(.{}), input: []const u8) !void {
             const allocator = testing.allocator;
             var config = config_extract.parseENV(allocator, input) catch |err| {
                 switch (err) {
@@ -233,7 +234,7 @@ test "fuzz: parseENV handles arbitrary bytes without panic or leak" {
 
 test "fuzz: parseTOML handles arbitrary bytes without panic or leak" {
     try testing.fuzz(.{}, struct {
-        fn testOne(input: []const u8) !void {
+        fn testOne(_: @TypeOf(.{}), input: []const u8) !void {
             const allocator = testing.allocator;
             var config = config_extract.parseTOML(allocator, input) catch |err| {
                 switch (err) {
@@ -255,7 +256,7 @@ test "fuzz: parseTOML handles arbitrary bytes without panic or leak" {
 
 test "fuzz: parseLua handles arbitrary bytes without panic or leak" {
     try testing.fuzz(.{}, struct {
-        fn testOne(input: []const u8) !void {
+        fn testOne(_: @TypeOf(.{}), input: []const u8) !void {
             const allocator = testing.allocator;
             var config = config_extract.parseLua(allocator, input) catch |err| {
                 switch (err) {
@@ -277,7 +278,7 @@ test "fuzz: parseLua handles arbitrary bytes without panic or leak" {
 
 test "fuzz: parseKeyValue handles arbitrary bytes without panic or leak" {
     try testing.fuzz(.{}, struct {
-        fn testOne(input: []const u8) !void {
+        fn testOne(_: @TypeOf(.{}), input: []const u8) !void {
             const allocator = testing.allocator;
             var config = config_extract.parseKeyValue(allocator, input) catch |err| {
                 switch (err) {
@@ -301,7 +302,7 @@ test "fuzz: parseKeyValue handles arbitrary bytes without panic or leak" {
 
 test "fuzz: parseAuto format matches detectFormat" {
     try testing.fuzz(.{}, struct {
-        fn testOne(input: []const u8) !void {
+        fn testOne(_: @TypeOf(.{}), input: []const u8) !void {
             const allocator = testing.allocator;
             const detected = config_extract.detectFormat(input);
 

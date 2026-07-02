@@ -241,6 +241,48 @@ test "format detection: key-value fallback (Minecraft properties)" {
     ));
 }
 
+test "format detection: YAML mapping is not mistaken for key-value" {
+    try testing.expectEqual(config_extract.ConfigFormat.YAML, config_extract.detectFormat(
+        \\server:
+        \\  name: My Server
+        \\  max-players: 20
+    ));
+    // a leading document marker is decisive
+    try testing.expectEqual(config_extract.ConfigFormat.YAML, config_extract.detectFormat("---\nkey: value\n"));
+    // a bare `key=value` file must still be KeyValue, not YAML
+    try testing.expectEqual(config_extract.ConfigFormat.KeyValue, config_extract.detectFormat("a=1\nb=2\n"));
+}
+
+test "parse YAML: nested mappings flatten to dotted keys, sequences to indexed keys" {
+    const allocator = testing.allocator;
+    const yaml =
+        \\---
+        \\# a paper-style server config
+        \\server:
+        \\  name: "My Server"
+        \\  motd: Welcome
+        \\  rcon:
+        \\    password: s3cret
+        \\worlds:
+        \\  - overworld
+        \\  - nether
+    ;
+    var config = try config_extract.parseYAML(allocator, yaml);
+    defer config.deinit();
+
+    try testing.expectEqualStrings("My Server", config.getField("server.name").?.value);
+    try testing.expectEqualStrings("Welcome", config.getField("server.motd").?.value);
+    // nested mapping -> dotted key, and secret detection on the flattened key
+    const rcon = config.getField("server.rcon.password").?;
+    try testing.expectEqualStrings("s3cret", rcon.value);
+    try testing.expect(rcon.is_secret);
+    // block sequence -> parent.0, parent.1
+    try testing.expectEqualStrings("overworld", config.getField("worlds.0").?.value);
+    try testing.expectEqualStrings("nether", config.getField("worlds.1").?.value);
+    // no empty-key fields leaked through
+    for (config.fields.items) |f| try testing.expect(f.key.len > 0);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // 3. A2ML emit/parse round-trip
 // ═══════════════════════════════════════════════════════════════════════════════

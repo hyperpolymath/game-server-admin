@@ -206,6 +206,27 @@ pub fn build(b: *std.Build) void {
     behavioral_step.dependOn(&run_behavioral_tests.step);
 
     // ---------------------------------------------------------------
+    // Fuzz harnesses — exercise the config parsers on arbitrary bytes.
+    // `zig build fuzz` runs the seed corpus once (CI-safe); add `--fuzz`
+    // for continuous fuzzing. Previously orphaned: src/fuzz_config.zig was
+    // never referenced by any build step.
+    // ---------------------------------------------------------------
+    const fuzz_mod = b.createModule(.{
+        .root_source_file = b.path("src/fuzz_config.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
+    const fuzz_tests = b.addTest(.{
+        .root_module = fuzz_mod,
+    });
+
+    const run_fuzz_tests = b.addRunArtifact(fuzz_tests);
+    const fuzz_step = b.step("fuzz", "Run config-parser fuzz harnesses (append --fuzz for continuous fuzzing)");
+    fuzz_step.dependOn(&run_fuzz_tests.step);
+
+    // ---------------------------------------------------------------
     // Benchmarks — micro-benchmark executable (prints to stderr)
     // ---------------------------------------------------------------
     const bench_mod = b.createModule(.{
