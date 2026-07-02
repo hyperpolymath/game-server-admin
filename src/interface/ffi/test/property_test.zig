@@ -245,7 +245,7 @@ test "P7: ActionKind values are injective (no duplicates)" {
     // Collect all integer values into a fixed-size array and verify
     // no duplicates using a simple O(n^2) comparison (n=8, negligible cost).
     var seen: [fields.len]u8 = undefined;
-    for (fields, 0..) |f, i| {
+    inline for (fields, 0..) |f, i| {
         seen[i] = @intCast(f.value);
     }
 
@@ -268,7 +268,7 @@ test "P7b: ActionKind covers all 8 expected action types" {
 
     for (expected_names) |expected| {
         var found = false;
-        for (fields) |f| {
+        inline for (fields) |f| {
             if (std.mem.eql(u8, f.name, expected)) {
                 found = true;
                 break;
@@ -501,7 +501,7 @@ test "P13: ConfigFormat values are injective — no two variants share an intege
     const fields = @typeInfo(config_extract.ConfigFormat).@"enum".fields;
 
     var seen: [fields.len]u8 = undefined;
-    for (fields, 0..) |f, i| {
+    inline for (fields, 0..) |f, i| {
         seen[i] = @intCast(f.value);
     }
 
