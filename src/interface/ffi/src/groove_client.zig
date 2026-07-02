@@ -40,7 +40,10 @@ const GROOVE_TTS_PATH: []const u8 = "/.well-known/groove/tts";
 /// Maximum number of Groove targets we track simultaneously.
 const MAX_TARGETS: usize = 8;
 
-/// HTTP timeout for Groove probes (milliseconds).
+/// Intended per-request deadline for Groove probes (milliseconds). NOT yet
+/// enforced — Zig 0.15.2's std.http.Client has no timeout knob, so a hung
+/// endpoint blocks the caller. Wiring it (raw-socket client or watchdog thread)
+/// is a tracked follow-up; kept as the contract to honour.
 const GROOVE_TIMEOUT_MS: u32 = 3000;
 
 // ═══════════════════════════════════════════════════════════════════════════════

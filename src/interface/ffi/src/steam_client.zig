@@ -33,6 +33,11 @@ const main = @import("main.zig");
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const STEAM_API_BASE = "https://api.steampowered.com";
+// Intended per-request deadline. NOT yet enforced: Zig 0.15.2's
+// std.http.Client.fetch exposes no timeout/deadline knob, so a hung endpoint
+// blocks the calling thread. Enforcing it needs either a raw-socket HTTP client
+// (SO_RCVTIMEO + non-blocking connect, as probe.zig already does) or a watchdog
+// thread — tracked as a dedicated follow-up. Kept as the contract to honour.
 const STEAM_API_TIMEOUT_MS: u32 = 8_000;
 
 /// Maximum length of a Steam64 ID in decimal string form (17 digits + NUL)
