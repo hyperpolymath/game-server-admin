@@ -227,6 +227,25 @@ pub fn build(b: *std.Build) void {
     fuzz_step.dependOn(&run_fuzz_tests.step);
 
     // ---------------------------------------------------------------
+    // CLI tests — the gsa executable's own unit tests (config helpers).
+    // The exe is not otherwise covered by any `test` step.
+    // ---------------------------------------------------------------
+    const cli_mod = b.createModule(.{
+        .root_source_file = b.path("src/cli.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
+    const cli_tests = b.addTest(.{
+        .root_module = cli_mod,
+    });
+
+    const run_cli_tests = b.addRunArtifact(cli_tests);
+    const cli_step = b.step("test-cli", "Run the gsa CLI's unit tests");
+    cli_step.dependOn(&run_cli_tests.step);
+
+    // ---------------------------------------------------------------
     // Benchmarks — micro-benchmark executable (prints to stderr)
     // ---------------------------------------------------------------
     const bench_mod = b.createModule(.{

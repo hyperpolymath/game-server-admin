@@ -72,3 +72,11 @@ jobs:
       - name: Behavioral Tests (mock servers)
         working-directory: src/interface/ffi
         run: zig build test-behavioral
+
+      - name: CLI Tests
+        working-directory: src/interface/ffi
+        run: zig build test-cli
+
+      - name: Fuzz seed corpus
+        working-directory: src/interface/ffi
+        run: zig build fuzz
