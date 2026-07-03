@@ -3,7 +3,7 @@
   "spdx": "AGPL-3.0-or-later",
   "service_id": "game-server-admin",
   "domain": "Game Server Management",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "clade": "infrastructure/game-servers",
   "description": "Universal game server probe, config management, and administration via Gossamer + VeriSimDB",
   "default_endpoint": "gossamer://game-server-admin/bridge",
