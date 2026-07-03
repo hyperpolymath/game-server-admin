@@ -93,3 +93,101 @@ test "probe honours a small timeout against a silent server" {
     // 100ms budget must return well under a second (generous bound for CI).
     try testing.expect(elapsed_ms < 1000);
 }
+
+// ── Outbound HTTP capability gateway (Phase 11) ──────────────────────────────
+
+const httpcap = gsa.http_capability;
+
+test "http capability: a hung endpoint returns within the deadline, not forever" {
+    const m = try mock.MockHTTP.start(testing.allocator, .never_respond, 0);
+    defer {
+        m.stop();
+        httpcap.waitQuiescent(2000); // let the abandoned worker drain before leak check
+    }
+    var ubuf: [64]u8 = undefined;
+    const url = m.urlBuf(&ubuf);
+
+    var timer = try std.time.Timer.start();
+    const result = httpcap.call(testing.allocator, .{
+        .verb = .GET,
+        .url = url,
+        .host_allow = &.{"127.0.0.1"},
+        .deadline_ms = 200,
+        .purpose = "deadline smoke test",
+        .label = "test",
+    });
+    const elapsed_ms = timer.read() / std.time.ns_per_ms;
+
+    try testing.expectError(error.Timeout, result); // the deadline fired
+    try testing.expect(elapsed_ms >= 150); // waited ~the deadline
+    try testing.expect(elapsed_ms < 1500); // returned promptly — NOT blocked forever
+}
+
+test "http capability: happy path returns the body under the deadline" {
+    const m = try mock.MockHTTP.start(testing.allocator, .respond_ok, 0);
+    defer m.stop();
+    var ubuf: [64]u8 = undefined;
+    const url = m.urlBuf(&ubuf);
+
+    const resp = try httpcap.call(testing.allocator, .{
+        .verb = .GET,
+        .url = url,
+        .host_allow = &.{"127.0.0.1"},
+        .deadline_ms = 5000,
+        .purpose = "happy path",
+        .label = "test",
+    });
+    defer testing.allocator.free(resp.body);
+
+    try testing.expectEqual(std.http.Status.ok, resp.status);
+    try testing.expectEqualStrings("ok", resp.body);
+    httpcap.waitQuiescent(2000);
+}
+
+test "http capability: a slow endpoint passes a generous deadline but fails a tight one" {
+    // 250ms response vs a 2000ms deadline → success.
+    {
+        const m = try mock.MockHTTP.start(testing.allocator, .slow_respond, 250);
+        defer m.stop();
+        var ubuf: [64]u8 = undefined;
+        const resp = try httpcap.call(testing.allocator, .{
+            .verb = .GET, .url = m.urlBuf(&ubuf), .host_allow = &.{"127.0.0.1"},
+            .deadline_ms = 2000, .purpose = "slow-ok", .label = "test",
+        });
+        defer testing.allocator.free(resp.body);
+        try testing.expectEqualStrings("ok", resp.body);
+        httpcap.waitQuiescent(2000);
+    }
+    // 250ms response vs a 60ms deadline → timeout.
+    {
+        const m = try mock.MockHTTP.start(testing.allocator, .slow_respond, 250);
+        defer { m.stop(); httpcap.waitQuiescent(2000); }
+        var ubuf: [64]u8 = undefined;
+        const result = httpcap.call(testing.allocator, .{
+            .verb = .GET, .url = m.urlBuf(&ubuf), .host_allow = &.{"127.0.0.1"},
+            .deadline_ms = 60, .purpose = "slow-timeout", .label = "test",
+        });
+        try testing.expectError(error.Timeout, result);
+    }
+}
+
+test "http capability: default-deny rejects a non-allow-listed host without a socket" {
+    // No mock started — a HostNotAllowed denial must not attempt any connection.
+    const result = httpcap.call(testing.allocator, .{
+        .verb = .GET,
+        .url = "http://evil.example.com/x",
+        .host_allow = &.{"127.0.0.1"},
+        .deadline_ms = 100,
+        .purpose = "deny test",
+        .label = "test",
+    });
+    try testing.expectError(error.HostNotAllowed, result);
+}
+
+test "http capability: hostAllowed matches authority and host-without-port" {
+    try testing.expect(httpcap.hostAllowed("http://localhost:8090/health", &.{"localhost:8090"}));
+    try testing.expect(httpcap.hostAllowed("http://localhost:8090/health", &.{"localhost"}));
+    try testing.expect(!httpcap.hostAllowed("http://evil.com/x", &.{"localhost:8090"}));
+    try testing.expect(!httpcap.hostAllowed("http://localhost:9999/x", &.{"localhost:8090"})); // port matters when given
+    try testing.expect(httpcap.hostAllowed("https://api.steampowered.com/y", &.{"api.steampowered.com"}));
+}

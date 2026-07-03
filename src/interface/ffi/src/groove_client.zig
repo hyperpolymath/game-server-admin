@@ -23,6 +23,7 @@ const std = @import("std");
 const http = std.http;
 const Allocator = std.mem.Allocator;
 const main = @import("main.zig");
+const http_capability = @import("http_capability.zig");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Constants
@@ -40,10 +41,8 @@ const GROOVE_TTS_PATH: []const u8 = "/.well-known/groove/tts";
 /// Maximum number of Groove targets we track simultaneously.
 const MAX_TARGETS: usize = 8;
 
-/// Intended per-request deadline for Groove probes (milliseconds). NOT yet
-/// enforced — Zig 0.15.2's std.http.Client has no timeout knob, so a hung
-/// endpoint blocks the caller. Wiring it (raw-socket client or watchdog thread)
-/// is a tracked follow-up; kept as the contract to honour.
+/// Per-request deadline for Groove calls (ms) — enforced via the outbound HTTP
+/// capability gateway (http_capability.call).
 const GROOVE_TIMEOUT_MS: u32 = 3000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -177,30 +176,24 @@ fn grooveGet(
 ) ![]const u8 {
     var url_buf: [512]u8 = undefined;
     const url_str = std.fmt.bufPrint(&url_buf, "http://{s}:{d}{s}", .{ host, port, path }) catch return error.URLTooLong;
+    var auth_buf: [320]u8 = undefined;
+    const authority = std.fmt.bufPrint(&auth_buf, "{s}:{d}", .{ host, port }) catch return error.URLTooLong;
 
-    var client = http.Client{ .allocator = allocator };
-    defer client.deinit();
-
-    var alloc_writer = std.Io.Writer.Allocating.init(allocator);
-    errdefer alloc_writer.deinit();
-
-    const result = try client.fetch(.{
-        .location = .{ .url = url_str },
-        .method = .GET,
+    const resp = try http_capability.call(allocator, .{
+        .verb = .GET,
+        .url = url_str,
+        .host_allow = &.{authority},
+        .deadline_ms = GROOVE_TIMEOUT_MS,
+        .purpose = "groove voice/text discovery",
+        .label = "groove",
+        .trust = .internal,
         .extra_headers = &.{
             .{ .name = "Accept", .value = "application/json" },
             .{ .name = "User-Agent", .value = "GSA-Groove/0.1.0" },
         },
-        .response_writer = &alloc_writer.writer,
+        .accept = &.{.ok},
     });
-
-    if (result.status != .ok) {
-        alloc_writer.deinit();
-        return error.HTTPError;
-    }
-
-    var list = alloc_writer.toArrayList();
-    return list.toOwnedSlice(allocator);
+    return resp.body;
 }
 
 /// Perform an HTTP POST against a Groove endpoint with a JSON body.
@@ -214,32 +207,26 @@ fn groovePost(
 ) ![]const u8 {
     var url_buf: [512]u8 = undefined;
     const url_str = std.fmt.bufPrint(&url_buf, "http://{s}:{d}{s}", .{ host, port, path }) catch return error.URLTooLong;
+    var auth_buf: [320]u8 = undefined;
+    const authority = std.fmt.bufPrint(&auth_buf, "{s}:{d}", .{ host, port }) catch return error.URLTooLong;
 
-    var client = http.Client{ .allocator = allocator };
-    defer client.deinit();
-
-    var alloc_writer = std.Io.Writer.Allocating.init(allocator);
-    errdefer alloc_writer.deinit();
-
-    const result = try client.fetch(.{
-        .location = .{ .url = url_str },
-        .method = .POST,
-        .payload = body,
+    const resp = try http_capability.call(allocator, .{
+        .verb = .POST,
+        .url = url_str,
+        .host_allow = &.{authority},
+        .deadline_ms = GROOVE_TIMEOUT_MS,
+        .purpose = "groove voice/text alert",
+        .label = "groove",
+        .trust = .internal,
+        .body = body,
         .extra_headers = &.{
             .{ .name = "Content-Type", .value = "application/json" },
             .{ .name = "Accept", .value = "application/json" },
             .{ .name = "User-Agent", .value = "GSA-Groove/0.1.0" },
         },
-        .response_writer = &alloc_writer.writer,
+        .accept = &.{ .ok, .created, .accepted },
     });
-
-    if (result.status != .ok and result.status != .created and result.status != .accepted) {
-        alloc_writer.deinit();
-        return error.HTTPError;
-    }
-
-    var list = alloc_writer.toArrayList();
-    return list.toOwnedSlice(allocator);
+    return resp.body;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -176,3 +176,101 @@ pub const MockSLP = struct {
         self.allocator.destroy(self);
     }
 };
+
+/// TCP mock speaking just enough HTTP/1.1 to exercise the outbound HTTP
+/// capability gateway's deadline. `never_respond` accepts the connection and
+/// holds it open without answering (a black-hole endpoint); `slow_respond`
+/// answers after `slow_ms`; `respond_ok` answers immediately with a 200 "ok".
+/// The listener uses a short accept timeout so the loop can poll `stop_flag`.
+pub const MockHTTP = struct {
+    pub const Mode = enum { respond_ok, never_respond, slow_respond };
+
+    allocator: Allocator,
+    server: std.net.Server,
+    port: u16,
+    mode: Mode,
+    slow_ms: u32 = 0,
+    stop_flag: std.atomic.Value(bool),
+    held: [16]?std.net.Server.Connection = [_]?std.net.Server.Connection{null} ** 16,
+    held_mutex: std.Thread.Mutex = .{},
+    thread: ?std.Thread = null,
+
+    pub fn start(allocator: Allocator, mode: Mode, slow_ms: u32) !*MockHTTP {
+        const self = try allocator.create(MockHTTP);
+        errdefer allocator.destroy(self);
+
+        var addr = try net.Address.parseIp4("127.0.0.1", 0);
+        var server = try addr.listen(.{ .reuse_address = true });
+        errdefer server.deinit();
+
+        // Short accept timeout so the loop can observe stop_flag.
+        const tv = posix.timeval{ .sec = 0, .usec = 200_000 };
+        try posix.setsockopt(server.stream.handle, posix.SOL.SOCKET, posix.SO.RCVTIMEO, std.mem.asBytes(&tv));
+
+        self.* = .{
+            .allocator = allocator,
+            .server = server,
+            .port = server.listen_address.getPort(),
+            .mode = mode,
+            .slow_ms = slow_ms,
+            .stop_flag = std.atomic.Value(bool).init(false),
+        };
+        self.thread = try std.Thread.spawn(.{}, run, .{self});
+        return self;
+    }
+
+    /// Format "http://127.0.0.1:<port>/" into `buf`.
+    pub fn urlBuf(self: *MockHTTP, buf: []u8) []const u8 {
+        return std.fmt.bufPrint(buf, "http://127.0.0.1:{d}/", .{self.port}) catch unreachable;
+    }
+
+    fn run(self: *MockHTTP) void {
+        while (!self.stop_flag.load(.acquire)) {
+            const conn = self.server.accept() catch continue; // timeout/WouldBlock → re-check flag
+            switch (self.mode) {
+                .respond_ok => serve(conn),
+                .slow_respond => {
+                    std.Thread.sleep(@as(u64, self.slow_ms) * std.time.ns_per_ms);
+                    serve(conn);
+                },
+                .never_respond => self.hold(conn), // keep open; closed in stop()
+            }
+        }
+    }
+
+    fn serve(conn: std.net.Server.Connection) void {
+        var buf: [2048]u8 = undefined;
+        _ = conn.stream.read(&buf) catch {};
+        _ = conn.stream.writeAll("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok") catch {};
+        conn.stream.close();
+    }
+
+    fn hold(self: *MockHTTP, conn: std.net.Server.Connection) void {
+        self.held_mutex.lock();
+        defer self.held_mutex.unlock();
+        for (&self.held) |*slot| {
+            if (slot.* == null) {
+                slot.* = conn;
+                return;
+            }
+        }
+        conn.stream.close(); // no room — don't leak the fd
+    }
+
+    pub fn stop(self: *MockHTTP) void {
+        self.stop_flag.store(true, .release);
+        if (self.thread) |t| t.join();
+        // Close held connections so any blocked worker's fetch unblocks (RST),
+        // runs to completion, and frees its allocations before the leak check.
+        self.held_mutex.lock();
+        for (&self.held) |*slot| {
+            if (slot.*) |c| {
+                c.stream.close();
+                slot.* = null;
+            }
+        }
+        self.held_mutex.unlock();
+        self.server.deinit();
+        self.allocator.destroy(self);
+    }
+};

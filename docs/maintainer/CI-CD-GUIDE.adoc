@@ -1,0 +1,283 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= GSA CI/CD Guide
+:toc:
+
+CI enforces the invariants the codebase cannot check locally. `panic-attack
+assail .` is the local pre-commit gate, but the `panic-attack` binary is not
+installed in every environment (it is fetched at CI time from a GitHub
+release and the step degrades to a skip if unreachable — see
+`static-analysis-gate.yml`), so the CI run is the real gate, not a
+convenience mirror of one. The same is true of Idris2: it is not packaged
+for Ubuntu, so the ABI model can only be type-checked inside the pinned
+container image CI runs.
+
+All third-party actions in `.github/workflows/` are pinned to a full commit
+SHA (with a trailing `# vX.Y.Z` comment for humans), never a floating tag —
+`git log` on the workflow files shows this has been true since the earliest
+commits in this repo. A subset of checks are not local job definitions at
+all but calls into reusable workflows hosted in the estate `standards`
+repo (`hyperpolymath/standards`), each pinned to a SHA in the same way. See
+<<estate-reusables>> for the pinning convention and which workflows use it.
+
+== The workflows
+
+One row per file in `.github/workflows/`, verified against the file
+contents (not inferred from the name).
+
+[cols="2,2,4",options="header"]
+|===
+| File | Trigger(s) | What it gates
+
+3+h| Build / test
+
+| `abi-contract.yml`
+| push to `main`/`claude/**`, PR to `main`
+| Zig↔Idris2 ABI tables are regenerated and diffed for drift, `zig build`
+  (comptime cross-check), `scripts/check_version_drift.sh`, and the Idris2
+  model type-checks in the pinned `idris2-pack` container. See
+  <<abi-contract>>.
+
+| `cross-platform.yml`
+| push to `main`/`claude/**`, PR to `main`
+| `zig build` plus the six Zig test suites (`test`, `test-integration`,
+  `test-smoke`, `test-property`, `test-behavioral`, `test-cli`) and the
+  `fuzz` seed corpus, on Linux only (matrix left in place for when
+  macOS/Windows legs are added — the FFI is currently POSIX-only).
+
+| `dogfood-gate.yml`
+| PR to any branch, push to `main`/`master`
+| Format-compliance checks (not security): A2ML manifest validation
+  (`a2ml-validate-action`), K9 contract validation (`k9-validate-action`),
+  an inline invisible-Unicode-character scan, a `.well-known/groove`
+  manifest check, `eclexiaiser.toml` structural validation, and a rollup
+  dogfooding scorecard job. Companion to `static-analysis-gate.yml`.
+
+| `boj-build.yml`
+| push to `main`/`master`, manual dispatch
+| Optional: pings a BoJ Server instance (Casket `ssg-mcp` cartridge) on
+  push. No-op unless the `BOJ_SERVER_URL` secret/var is set.
+
+3+h| Security / governance
+
+| `codeql.yml`
+| push/PR to `main`/`master`, monthly schedule
+| GitHub CodeQL analysis, matrixed over `javascript-typescript` and
+  `actions` (the workflow files themselves are scanned too).
+
+| `scorecard.yml`
+| `branch_protection_rule`, weekly schedule, push to `main`
+| OpenSSF Scorecard supply-chain analysis via the estate
+  `scorecard-reusable.yml`, with explicit least-privilege
+  `contents:read`/`security-events:write`/`id-token:write` permissions set
+  at the call site.
+
+| `hypatia-scan.yml`
+| push to `main`/`master`/`develop`, PR to `main`/`master`, weekly schedule,
+  manual dispatch
+| Builds and runs the Hypatia neurosymbolic scanner, converts findings to
+  SARIF and uploads to code scanning (category `hypatia`), submits findings
+  to `gitbot-fleet` for cross-repo learning (best-effort, non-fatal), and
+  comments on the PR. Explicitly **advisory**: critical findings are
+  surfaced (annotations, SARIF, PR comment) but do not fail the job — see
+  the "GATING POLICY" comment in the workflow for the reasoning.
+
+| `secret-scanner.yml`
+| PR (any), push to `main`
+| Secret scanning via the estate `secret-scanner-reusable.yml`.
+
+| `static-analysis-gate.yml`
+| PR to any branch, push to `main`/`master`
+| Required branch-protection gate. Four jobs: `panic-attack assail` (fails
+  the build on any critical finding), a second Hypatia scan pass (fails on
+  critical), `panic-attack bridge triage` (CVE triage — warns, does not
+  block), and `deposit-findings`, which combines all three into a single
+  `unified-findings.json` artifact for `gitbot-fleet` to ingest.
+
+| `governance.yml`
+| push to `main`/`master`, PR (any), manual dispatch
+| Single wrapper call into the estate `governance-reusable.yml`. Replaces
+  eight per-repo governance workflows removed in the same commit (quality,
+  guix/nix policy, npm/bun blocker, ts blocker, security policy, RSR
+  anti-pattern, well-known enforcement, workflow linter) — those checks now
+  live centrally in `standards`.
+
+3+h| Release / publish
+
+| `release.yml`
+| push of a `v*` tag
+| Builds `libgsa`/`gsa` with `zig build -Doptimize=ReleaseFast`, packages a
+  tarball, generates a changelog with `git-cliff`, creates the GitHub
+  Release, attests build provenance
+  (`actions/attest-build-provenance`), and runs the isolated SLSA L3
+  generator (`slsa-framework/slsa-github-generator`). See
+  `docs/maintainer/RELEASE-CHECKLIST.adoc` for the human steps around this.
+
+| `casket-pages.yml`
+| push to `main`/`master`, manual dispatch
+| Builds the docs site with `casket-ssg` (Haskell/GHC via `ghcup`) and
+  deploys it to GitHub Pages. Falls back to a generated stub `index.md`
+  when no `site/` directory exists.
+
+| `mirror.yml`
+| push to `main`, manual dispatch
+| Mirrors the repo to other git forges via the estate
+  `mirror-reusable.yml`.
+
+| `instant-sync.yml`
+| push to `main`/`master`, `release: published`
+| Fires a `repository_dispatch` to `hyperpolymath/.git-private-farm` to
+  propagate the push/release to all forges immediately, rather than
+  waiting for `mirror.yml`'s own schedule/trigger. Presence-gated on
+  `FARM_DISPATCH_TOKEN` (skips cleanly on forks where the secret is
+  unavailable).
+
+3+h| Notify / bots
+
+| `push-email-notify.yml`
+| every push
+| Dormant unless the `PUSH_EMAIL_ENABLED` repo variable is `true`. Emails
+  push notifications via SMTP secrets when armed.
+
+| `rhodibot.yml`
+| weekly schedule, manual dispatch, on completion of the Hypatia workflow
+| Automated RSR (repo-structure) compliance bot: deletes banned files,
+  renames misnamed manifests, de-duplicates README/CONTRIBUTING formats,
+  normalises SPDX headers in dotfiles, creates missing `SECURITY.md`/
+  `CONTRIBUTING.md`, flags dangerous patterns (`believe_me`,
+  `assert_total`, `unsafeCoerce`, etc.), and opens a PR with any fixes.
+|===
+
+[[abi-contract]]
+== The ABI contract gate (`abi-contract.yml`)
+
+This is the most important workflow in the estate: result codes 5–12 once
+silently encoded different concepts in the Zig FFI and the Idris2 model,
+and this gate exists specifically to make that class of drift a loud CI
+failure instead of a runtime surprise. It has two jobs.
+
+=== Job `zig-contract` — "Zig ↔ Idris tables in sync"
+
+Runs on `ubuntu-latest` with Zig 0.15.2 installed via `mlugg/setup-zig`.
+Steps, in order:
+
+. **Regenerate expected tables from the Idris2 model** —
+  `zig run scripts/gen_abi_expected.zig` and
+  `zig run scripts/gen_result_codes.zig`. These derive
+  `abi_layout_expected.zig` and `result_codes_expected.zig` from
+  `Layout.idr` / `Types.idr`.
+. **Fail on drift** — `git diff --exit-code` against those two generated
+  files. If regeneration produced a diff, the committed tables are stale
+  relative to the Idris2 model and the job fails with an `::error::`
+  pointing at the two `zig run` commands to fix it locally.
+. **Build** — `zig build` in `src/interface/ffi`, which runs the comptime
+  `GsaResult` ↔ `Types.idr` cross-check baked into `abi_layout.zig` /
+  `main.zig`. This is the actual enforcement mechanism; the regenerate step
+  above exists so a stale table fails loudly here rather than masking a
+  real model change.
+. **Version drift check** — `bash scripts/check_version_drift.sh` (see
+  <<version-drift>>).
+
+=== Job `idris-typecheck` — "Idris2 model type-checks"
+
+Idris2 is not packaged for Ubuntu, so this job runs inside the
+community-standard container image
+`ghcr.io/stefan-hoeck/idris2-pack`, pinned by digest
+(`@sha256:370e2ab066251cf278ac6928d9201ade0aca70c4e7ee1cc434d25bcea1669b29`
+at time of writing). It checks out the repo and runs
+`idris2 --typecheck gsa-abi.ipkg` from `src/interface/abi`. The workflow's
+own header comment documents the `curl`/`ghcr.io` token dance to refresh
+that digest when it goes stale.
+
+[[version-drift]]
+== The version-drift gate
+
+`scripts/check_version_drift.sh` is invoked from the `zig-contract` job in
+`abi-contract.yml` (the last step, after the ABI `zig build`). It treats
+`VERSION` in `src/interface/ffi/src/main.zig`
+(`pub const VERSION: [:0]const u8 = "0.9.0";` at time of writing) as the
+single canonical software version and checks it against: `main.zig`'s own
+`BUILD_INFO` string, both `.version` structs in
+`src/interface/ffi/build.zig`, `run.js`, `panels/manifest.json`, and every
+`panels/*/panel.json`. Any file whose version string does not match
+`main.zig`'s `VERSION` fails the script with a `DRIFT:` line naming the
+offending file. Note the script's own header: `.machine_readable/**/*.a2ml`
+`[metadata] version` fields are versions of the metadata documents
+themselves and are deliberately *not* checked here — do not add them to
+this script without re-reading that scoping note first.
+
+[[estate-reusables]]
+== Estate reusable workflows + pinning
+
+Four of the sixteen workflows are thin wrappers that call a reusable
+workflow defined in `hyperpolymath/standards` rather than defining jobs
+locally:
+
+[cols="2,3",options="header"]
+|===
+| Workflow | Reusable called
+
+| `governance.yml`   | `governance-reusable.yml@d7c22711e830e1f383846472f6e9b99debdb201e`
+| `scorecard.yml`     | `scorecard-reusable.yml@d7c22711e830e1f383846472f6e9b99debdb201e`
+| `secret-scanner.yml`| `secret-scanner-reusable.yml@d135b05bfc647d0c0fbfedc7e80f37ea50f49236`
+| `mirror.yml`        | `mirror-reusable.yml@d135b05bfc647d0c0fbfedc7e80f37ea50f49236`
+|===
+
+Both are full 40-character commit SHAs, exactly like the third-party
+`actions/*` pins elsewhere in the estate — never a branch or floating tag.
+This matters for the same reason any third-party action gets SHA-pinned:
+a tag can be force-moved by the upstream (or a compromised upstream
+account) to point at different code without changing the string in this
+repo's `.yml` file; a commit SHA cannot be silently repointed. `git log`
+on these four files shows the pins are bumped periodically as
+`standards` evolves (recent examples: PR #39 → `5a93d9d5`, #42 →
+`d72fe5a`, #45 → `4ddc926`, #49 → `d135b05bfc64`, #55 → `d7c2271`,
+tightening from short to full 40-character SHAs along the way). Treat a
+pin as **stale**, not wrong, if it lags the `standards` repo's current
+HEAD — refresh it deliberately (bump the SHA, re-run CI) rather than
+switching to a floating ref to "fix" staleness.
+
+NOTE: `docs/INDEX.adoc` and `.machine_readable/6a2/NEUROSYM.a2ml` still
+cite the `4ddc926` pin from PR #45 as of this writing; the workflow files
+themselves are the source of truth and are ahead of those notes (PR #49
+and #55 bumped the pins again since). Update those two references when
+next touching either file.
+
+An estate-side staleness check greps every consuming repo's workflow files
+for the reusable-pin token to detect repos lagging behind the latest
+`standards` SHA; `scorecard.yml` carries a comment warning not to
+duplicate the pin string elsewhere in that file, because a second match
+breaks that check's single-pin assumption.
+
+== Adding or changing a check
+
+* **SHA-pin any new third-party action.** Use the full 40-character commit
+  SHA with a `# vX.Y.Z`-style trailing comment, matching every existing
+  `uses:` line in `.github/workflows/`. Never pin a branch or a mutable
+  tag.
+* **Keep `permissions:` least-privilege.** Default to `contents: read` at
+  the workflow level and grant anything broader (`security-events: write`,
+  `pull-requests: write`, `id-token: write`, …) only on the specific job
+  that needs it, with a comment explaining why (see `hypatia-scan.yml` and
+  `scorecard.yml` for the current house style of documenting each grant).
+* **If it becomes a required gate**, add it to the Gate 1 checklist in
+  `docs/maintainer/RELEASE-CHECKLIST.adoc` so a release is never cut while
+  it is red.
+* **Prefer extending an existing workflow over adding a new file.** The
+  estate has already consolidated eight per-repo governance workflows into
+  the single `governance.yml` wrapper, and `static-analysis-gate.yml` /
+  `dogfood-gate.yml` are each multi-job umbrellas by design. A new
+  standalone `.yml` should be the exception (as `abi-contract.yml` and
+  `cross-platform.yml` are — genuinely distinct build/test surfaces), not
+  the default.
+
+== See also
+
+* `docs/maintainer/RELEASE-CHECKLIST.adoc` — the human checklist for
+  cutting a release, including which of the workflows above must be green
+  first.
+* `docs/maintainer/SECURITY-SCANNING-RUNBOOK.adoc` — running and
+  interpreting Hypatia / panic-attack / Scorecard output and the
+  `.hypatia-ignore` suppression mechanism. Listed as *planned* in
+  `docs/INDEX.adoc` at time of writing; this guide covers what each
+  security workflow runs, not how to triage its output.
