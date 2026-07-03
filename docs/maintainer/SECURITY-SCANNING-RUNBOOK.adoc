@@ -110,8 +110,9 @@ this runbook when adjusting scan behaviour.
 **Current state**: advisory scan is clean — critical=0, high=0
 (`.machine_readable/6a2/STATE.a2ml`, PRs #41–#45). The one standing Hypatia
 finding is rule `GS007` (merged/stale remote branches — a repo-hygiene
-signal, not a code-safety finding). `STATE.a2ml` records this as ~10 merged
-branches pending `git push origin --delete <branch>`; the git proxy used in
+signal, not a code-safety finding). The reported count drifts upward as each
+phase PR leaves its merged branch behind (the live scan has ranged from ~10 to
+20+); all are pending `git push origin --delete <branch>`. The git proxy used in
 some environments 403s deletions, so this is tracked as a manual cleanup
 item on the release checklist's manual-gates table
 (`docs/maintainer/RELEASE-CHECKLIST.adoc`, "Merged-branch cleanup"), **not**
