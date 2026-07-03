@@ -2,7 +2,7 @@
   "id": "gsa-nexus-setup",
   "title": "Nexus Setup",
   "description": "Guided 7-step wizard to deploy a new managed game server on a target host",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
   "license": "AGPL-3.0-or-later",
   "runtime": "gossamer",

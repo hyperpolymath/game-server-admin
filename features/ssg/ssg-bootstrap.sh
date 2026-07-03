@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # ssg-bootstrap.sh — Universal SSG Initialisation Helper
 #

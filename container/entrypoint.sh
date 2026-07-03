@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # game-server-admin container entrypoint
 #
 # Handles signal propagation, startup logging, and health check

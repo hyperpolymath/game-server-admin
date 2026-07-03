@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
 // Game Server Admin — FFI build configuration
@@ -44,7 +44,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libc = true, // needed for socket operations and posix APIs
         }),
-        .version = .{ .major = 0, .minor = 1, .patch = 0 },
+        .version = .{ .major = 0, .minor = 9, .patch = 0 },
     });
 
     b.installArtifact(lib);
@@ -288,7 +288,7 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
                 .link_libc = true,
             }),
-            .version = .{ .major = 0, .minor = 1, .patch = 0 },
+            .version = .{ .major = 0, .minor = 9, .patch = 0 },
         });
 
         const install_cross = b.addInstallArtifact(cross_lib, .{});

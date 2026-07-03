@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= GSA Licensing Policy
+:toc:
+
+Game Server Admin is tri-licensed by artifact class. Every file carries an
+`SPDX-License-Identifier` header that matches the rule below; the repository's
+top-level `LICENSE` file is the full GNU AGPL-3.0 text (the primary code
+licence).
+
+== The rule
+
+[cols="2,2,3",options="header"]
+|===
+| Artifact class | Files | Licence
+| Source code | `*.zig`, `*.idr`, `*.eph`, `*.js`, `*.html`, `*.sh`, `*.affine` | `AGPL-3.0-or-later`
+| Machine-readable metadata + estate config | `*.a2ml`, `*.contractile`, `*.ncl` (incl. `*.k9.ncl`), `Containerfile`, `*.just`, `*.toml`, `.gitattributes`, `.well-known/*` | `MPL-2.0` (carve-out)
+| Documentation | `*.adoc`, `*.md` | `CC-BY-SA-4.0`
+|===
+
+Panel descriptors (`panels/**/panel.json`, `panels/manifest.json`) already
+declare `AGPL-3.0-or-later` and are treated as code.
+
+== Rationale
+
+* **Code → AGPL-3.0-or-later.** GSA administers networked game servers; the
+  strong network-copyleft of the AGPL keeps modifications available to users
+  who interact with a deployed instance over a network. This matches the intent
+  recorded in `0-AI-MANIFEST.a2ml`.
+* **Machine-readable metadata → MPL-2.0 (carve-out).** The `.a2ml` /
+  `.contractile` / `.ncl` descriptors, clade manifests, profiles, and policy
+  files are shared, remixed, and embedded across the wider hyperpolymath estate.
+  File-level MPL-2.0 copyleft lets them be reused in projects under different
+  licences without relicensing the consumer, while still requiring changes to
+  the files themselves to stay open.
+* **Documentation → CC-BY-SA-4.0.** The standard content licence for prose;
+  allows quoting and adaptation with attribution and share-alike.
+
+== Enforcement
+
+* Every new file MUST carry the correct `SPDX-License-Identifier` for its class.
+* A machine-readable file that grows executable logic (e.g. a build script)
+  should be reclassified as code and relicensed AGPL.
+* Reviewers can spot-check with:
++
+[source,bash]
+----
+# code files must all be AGPL (expect zero MPL/other):
+grep -rL "SPDX-License-Identifier: AGPL-3.0-or-later" \
+  --include=*.zig --include=*.idr --include=*.eph .
+# machine-readable files must all be MPL:
+grep -rL "SPDX-License-Identifier: MPL-2.0" \
+  --include=*.a2ml --include=*.contractile .
+----
+
+== History
+
+The tree previously carried a genuine conflict — MPL-2.0 source headers and
+LICENSE file against AGPL-3.0 panel descriptors and `META.a2ml`. This policy
+resolves it in favour of AGPL for code, with the MPL carve-out preserved for the
+reusable machine-readable layer.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
 // Game Server Admin — Core lifecycle, error handling, and exported C ABI entry
@@ -70,10 +70,10 @@ comptime {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Semantic version of the FFI layer — keep in sync with build.zig
-pub const VERSION: [:0]const u8 = "0.1.0";
+pub const VERSION: [:0]const u8 = "0.9.0";
 
 /// Human-readable build tag
-pub const BUILD_INFO: [:0]const u8 = "libgsa 0.1.0 (Zig " ++ @import("builtin").zig_version_string ++ ")";
+pub const BUILD_INFO: [:0]const u8 = "libgsa 0.9.0 (Zig " ++ @import("builtin").zig_version_string ++ ")";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Result codes — must match GameServerAdmin.ABI.Types.Result (Idris2)
@@ -447,7 +447,7 @@ test "error buffer round-trip" {
 
 test "version string" {
     const ver = std.mem.span(gossamer_gsa_version());
-    try std.testing.expectEqualStrings("0.1.0", ver);
+    try std.testing.expectEqualStrings(VERSION, ver);
 }
 
 test "GsaHandle create and destroy" {

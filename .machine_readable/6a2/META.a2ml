@@ -11,12 +11,10 @@ last-updated = "2026-03-22"
 [project-info]
 type = "library"  # libgsa.so is the primary artifact (+ the gsa CLI binary)
 languages = ["zig", "idris2", "ephapax"]
-# NOTE: license is unsettled and pending a maintainer decision. The LICENSE
-# file body and all Zig/Idris source SPDX headers are currently MPL-2.0, while
-# the panel descriptors declare AGPL-3.0-or-later and this field says AGPL —
-# a genuine conflict. See the human checklist / docs/legal (to be added once
-# the direction is chosen). Left as-is deliberately; do not mass-edit headers
-# without that decision.
+# Tri-license policy (see docs/legal/LICENSE-POLICY.adoc):
+#   code (.zig/.idr/.eph/.js) = AGPL-3.0-or-later
+#   machine-readable (.a2ml/.contractile/.ncl) = MPL-2.0 (carve-out)
+#   docs (.adoc/.md) = CC-BY-SA-4.0
 license = "AGPL-3.0-or-later"
 author = "Jonathan D.A. Jewell (hyperpolymath)"
 

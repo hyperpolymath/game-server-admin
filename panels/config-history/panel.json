@@ -2,7 +2,7 @@
   "id": "gsa-config-history",
   "title": "Config History",
   "description": "Config version timeline with diff viewer and provenance chain",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
   "license": "AGPL-3.0-or-later",
   "runtime": "gossamer",

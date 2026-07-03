@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
 // Game Server Admin — FFI integration tests
@@ -661,7 +661,7 @@ test "config diff: no changes yields empty diff" {
 
 test "version string is semantic version" {
     const ver = std.mem.span(main.gossamer_gsa_version());
-    try testing.expectEqualStrings("0.1.0", ver);
+    try testing.expectEqualStrings(main.VERSION, ver);
 
     // Check it has two dots (X.Y.Z)
     var dot_count: usize = 0;

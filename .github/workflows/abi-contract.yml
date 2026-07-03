@@ -52,6 +52,9 @@ jobs:
         working-directory: src/interface/ffi
         run: zig build
 
+      - name: Version drift check (software version == main.zig VERSION)
+        run: bash scripts/check_version_drift.sh
+
   idris-typecheck:
     name: Idris2 model type-checks
     runs-on: ubuntu-latest
