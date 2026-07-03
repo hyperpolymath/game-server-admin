@@ -19,6 +19,11 @@ const Allocator = std.mem.Allocator;
 const main = @import("main.zig");
 const config_extract = @import("config_extract.zig");
 const probe = @import("probe.zig");
+const http_capability = @import("http_capability.zig");
+
+/// Request deadline for VeriSimDB calls (ms) — now enforced via the outbound
+/// HTTP capability gateway (std.http.Client has no timeout of its own).
+pub const VERISIMDB_TIMEOUT_MS: u32 = 5_000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VeriSimClient
@@ -31,20 +36,19 @@ const probe = @import("probe.zig");
 pub const VeriSimClient = struct {
     base_url: []const u8,
     allocator: Allocator,
-    http_client: http.Client,
 
     /// Create a new VeriSimDB client.
     pub fn init(allocator: Allocator, base_url: []const u8) VeriSimClient {
         return .{
             .base_url = base_url,
             .allocator = allocator,
-            .http_client = http.Client{ .allocator = allocator },
         };
     }
 
-    /// Clean up HTTP client resources.
+    /// No per-client HTTP state to release — each request spawns its own client
+    /// inside the capability gateway. Kept for API symmetry with call sites.
     pub fn deinit(self: *VeriSimClient) void {
-        self.http_client.deinit();
+        _ = self;
     }
 
     // ─── CRUD operations ─────────────────────────────────────────────
@@ -181,31 +185,26 @@ pub const VeriSimClient = struct {
         var url_buf: [2048]u8 = undefined;
         const url_str = std.fmt.bufPrint(&url_buf, "{s}{s}", .{ self.base_url, path }) catch return error.URLTooLong;
 
-        // Use the Zig 0.15 fetch() API with Io.Writer.Allocating to collect
-        // the response body into a dynamically-growing buffer.
-        var alloc_writer = std.Io.Writer.Allocating.init(self.allocator);
-        errdefer alloc_writer.deinit();
-
-        const result = try self.http_client.fetch(.{
-            .location = .{ .url = url_str },
-            .method = method,
-            .payload = body,
+        // Route through the outbound HTTP capability gateway: it enforces the
+        // host allow-list (the configured VeriSimDB authority) and a hard
+        // request deadline that std.http.Client cannot provide on its own.
+        const authority = http_capability.authorityOf(self.base_url) orelse return error.URLTooLong;
+        const resp = try http_capability.call(self.allocator, .{
+            .verb = method,
+            .url = url_str,
+            .host_allow = &.{authority},
+            .deadline_ms = VERISIMDB_TIMEOUT_MS,
+            .purpose = "verisimdb octad/provenance I/O",
+            .label = "verisimdb",
+            .trust = .internal,
+            .body = body,
             .extra_headers = &.{
                 .{ .name = "Content-Type", .value = "application/json" },
                 .{ .name = "Accept", .value = "application/json" },
             },
-            .response_writer = &alloc_writer.writer,
+            .accept = &.{ .ok, .created, .no_content },
         });
-
-        // Check status
-        if (result.status != .ok and result.status != .created and result.status != .no_content) {
-            alloc_writer.deinit();
-            return error.HTTPError;
-        }
-
-        // Extract the response body as an owned slice
-        var list = alloc_writer.toArrayList();
-        return list.toOwnedSlice(self.allocator);
+        return resp.body;
     }
 };
 
@@ -313,7 +312,10 @@ pub export fn gossamer_gsa_verisimdb_store(
     const body = std.mem.span(octad_json);
     const result = client.createOctad(body) catch |err| {
         main.setError("VeriSimDB store failed: {s}", .{@errorName(err)});
-        return @intFromEnum(main.GsaResult.verisimdb_unavailable);
+        return switch (err) {
+            error.Timeout => @intFromEnum(main.GsaResult.probe_timeout),
+            else => @intFromEnum(main.GsaResult.verisimdb_unavailable),
+        };
     };
     std.heap.c_allocator.free(result);
 

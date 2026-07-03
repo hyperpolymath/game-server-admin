@@ -23,6 +23,7 @@ pub const groove_client = @import("groove_client.zig");
 pub const steam_client = @import("steam_client.zig");
 pub const abi_layout = @import("abi_layout.zig"); // canonical wire structs + Zig↔Idris cross-check
 pub const abi_serde = @import("abi_serde.zig"); // binary ABI emitters + offset readers
+pub const http_capability = @import("http_capability.zig"); // outbound HTTP capability gateway (deadlines)
 
 // Force the linker to include all exported functions from submodules.
 // Without these references, Zig's linker may dead-strip the `pub export fn`

@@ -27,17 +27,16 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const main = @import("main.zig");
+const http_capability = @import("http_capability.zig");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const STEAM_API_BASE = "https://api.steampowered.com";
-// Intended per-request deadline. NOT yet enforced: Zig 0.15.2's
-// std.http.Client.fetch exposes no timeout/deadline knob, so a hung endpoint
-// blocks the calling thread. Enforcing it needs either a raw-socket HTTP client
-// (SO_RCVTIMEO + non-blocking connect, as probe.zig already does) or a watchdog
-// thread — tracked as a dedicated follow-up. Kept as the contract to honour.
+/// Per-request deadline for Steam Web API calls (ms) — enforced via the outbound
+/// HTTP capability gateway (http_capability.call). TLS is transparent to the
+/// deadline: the watchdog sits above fetch, so a stalled handshake is bounded too.
 const STEAM_API_TIMEOUT_MS: u32 = 8_000;
 
 /// Maximum length of a Steam64 ID in decimal string form (17 digits + NUL)
@@ -96,47 +95,47 @@ pub const OwnershipResult = struct {
 
 pub const SteamClient = struct {
     allocator: Allocator,
-    http_client: std.http.Client,
     api_key: []const u8,
 
     pub fn init(allocator: Allocator, api_key: []const u8) SteamClient {
         return .{
             .allocator = allocator,
-            .http_client = std.http.Client{ .allocator = allocator },
             .api_key = api_key,
         };
     }
 
+    /// No per-client HTTP state — each request spawns its own client inside the
+    /// capability gateway. Kept for API symmetry.
     pub fn deinit(self: *SteamClient) void {
-        self.http_client.deinit();
+        _ = self;
     }
 
     // ── HTTP helper ────────────────────────────────────────────────────────
 
-    /// Fetch a URL and return the response body as an owned slice.
-    /// Caller must free the returned slice.
-    fn get(self: *SteamClient, url: []const u8) ![]const u8 {
-        // Use the Zig 0.15 fetch() API with Io.Writer.Allocating (same pattern
-        // as verisimdb_client.zig and groove_client.zig).
-        var alloc_writer = std.Io.Writer.Allocating.init(self.allocator);
-        errdefer alloc_writer.deinit();
-
-        const result = try self.http_client.fetch(.{
-            .location = .{ .url = url },
-            .method = .GET,
+    /// Fetch a Steam Web API URL and return the response body as an owned slice.
+    /// Routed through the outbound HTTP capability gateway (host allow-list +
+    /// enforced STEAM_API_TIMEOUT_MS deadline; TLS is handled transparently by
+    /// the worker's fetch). Caller must free the returned slice.
+    fn get(self: *SteamClient, url: []const u8) error{ HTTPError, Timeout }![]const u8 {
+        const resp = http_capability.call(self.allocator, .{
+            .verb = .GET,
+            .url = url,
+            .host_allow = &.{"api.steampowered.com"},
+            .deadline_ms = STEAM_API_TIMEOUT_MS,
+            .purpose = "steam web api lookup",
+            .label = "steam-web-api",
+            .trust = .internal,
             .extra_headers = &.{
                 .{ .name = "Accept", .value = "application/json" },
             },
-            .response_writer = &alloc_writer.writer,
-        });
-
-        if (result.status != .ok) {
-            alloc_writer.deinit();
-            return error.HTTPError;
-        }
-
-        var list = alloc_writer.toArrayList();
-        return list.toOwnedSlice(self.allocator);
+            .accept = &.{.ok},
+        }) catch |e| switch (e) {
+            // Preserve the callers' existing error vocabulary; surface a deadline
+            // hit distinctly so the wrappers can map it to probe_timeout.
+            error.Timeout => return error.Timeout,
+            else => return error.HTTPError,
+        };
+        return resp.body;
     }
 
     // ── Vanity URL resolution ──────────────────────────────────────────────
@@ -385,7 +384,10 @@ pub export fn gossamer_gsa_steam_resolve_vanity(
             error.MalformedResponse => main.setError("Steam API returned malformed response", .{}),
             else => main.setError("Steam resolve error: {}", .{err}),
         }
-        return @intFromEnum(main.GsaResult.connection_refused);
+        return switch (err) {
+            error.Timeout => @intFromEnum(main.GsaResult.probe_timeout),
+            else => @intFromEnum(main.GsaResult.connection_refused),
+        };
     };
 
     const id_slice = result.idSlice();
@@ -429,7 +431,10 @@ pub export fn gossamer_gsa_steam_player_info(
             error.MalformedResponse => main.setError("Steam API returned malformed response", .{}),
             else => main.setError("Steam player info error: {}", .{err}),
         }
-        return @intFromEnum(main.GsaResult.connection_refused);
+        return switch (err) {
+            error.Timeout => @intFromEnum(main.GsaResult.probe_timeout),
+            else => @intFromEnum(main.GsaResult.connection_refused),
+        };
     };
 
     const written = std.fmt.bufPrint(&steam_result_buf,
