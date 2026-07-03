@@ -178,6 +178,74 @@ pub fn build(b: *std.Build) void {
     property_step.dependOn(&run_property_tests.step);
 
     // ---------------------------------------------------------------
+    // Behavioral tests — drive real sockets / the exported C ABI against
+    // in-process mock servers (test/mock_servers.zig). No live services.
+    // ---------------------------------------------------------------
+    const mock_module = b.createModule(.{
+        .root_source_file = b.path("test/mock_servers.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
+    const behavioral_mod = b.createModule(.{
+        .root_source_file = b.path("test/behavioral_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    behavioral_mod.addImport("gsa", src_module);
+    behavioral_mod.addImport("mock_servers", mock_module);
+
+    const behavioral_tests = b.addTest(.{
+        .root_module = behavioral_mod,
+    });
+
+    const run_behavioral_tests = b.addRunArtifact(behavioral_tests);
+    const behavioral_step = b.step("test-behavioral", "Run behavioral tests against in-process mock servers");
+    behavioral_step.dependOn(&run_behavioral_tests.step);
+
+    // ---------------------------------------------------------------
+    // Fuzz harnesses — exercise the config parsers on arbitrary bytes.
+    // `zig build fuzz` runs the seed corpus once (CI-safe); add `--fuzz`
+    // for continuous fuzzing. Previously orphaned: src/fuzz_config.zig was
+    // never referenced by any build step.
+    // ---------------------------------------------------------------
+    const fuzz_mod = b.createModule(.{
+        .root_source_file = b.path("src/fuzz_config.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
+    const fuzz_tests = b.addTest(.{
+        .root_module = fuzz_mod,
+    });
+
+    const run_fuzz_tests = b.addRunArtifact(fuzz_tests);
+    const fuzz_step = b.step("fuzz", "Run config-parser fuzz harnesses (append --fuzz for continuous fuzzing)");
+    fuzz_step.dependOn(&run_fuzz_tests.step);
+
+    // ---------------------------------------------------------------
+    // CLI tests — the gsa executable's own unit tests (config helpers).
+    // The exe is not otherwise covered by any `test` step.
+    // ---------------------------------------------------------------
+    const cli_mod = b.createModule(.{
+        .root_source_file = b.path("src/cli.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
+    const cli_tests = b.addTest(.{
+        .root_module = cli_mod,
+    });
+
+    const run_cli_tests = b.addRunArtifact(cli_tests);
+    const cli_step = b.step("test-cli", "Run the gsa CLI's unit tests");
+    cli_step.dependOn(&run_cli_tests.step);
+
+    // ---------------------------------------------------------------
     // Benchmarks — micro-benchmark executable (prints to stderr)
     // ---------------------------------------------------------------
     const bench_mod = b.createModule(.{

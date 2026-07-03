@@ -200,8 +200,8 @@ test "smoke: all 8 config formats are detectable" {
         .{ .input = "[[plugins]]\nname = \"test\"", .expected = .TOML },
         .{ .input = "local config = {\n  name = \"Test\",\n}", .expected = .Lua },
         .{ .input = "name=Test\nport=25565", .expected = .KeyValue },
-        // YAML detection falls through to KeyValue in current impl
-        // (acceptable — YAML support is deferred)
+        .{ .input = "---\nname: Test\nport: 25565", .expected = .YAML },
+        .{ .input = "server:\n  name: Test\n  motd: Hi", .expected = .YAML },
     };
 
     for (formats) |f| {

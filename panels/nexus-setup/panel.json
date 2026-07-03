@@ -1,0 +1,30 @@
+{
+  "id": "gsa-nexus-setup",
+  "title": "Nexus Setup",
+  "description": "Guided 7-step wizard to deploy a new managed game server on a target host",
+  "version": "0.1.0",
+  "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
+  "license": "AGPL-3.0-or-later",
+  "runtime": "gossamer",
+  "dimensions": { "width": 1400, "height": 900, "resizable": true },
+  "entry": "../../src/gui/panels/nexus-setup/panel.html",
+  "data_sources": [
+    { "id": "profile-list", "uri": "gossamer://gsa/profiles", "refresh_interval_ms": 0 },
+    { "id": "steam-resolve", "uri": "gossamer://gsa/steam_resolve_vanity", "refresh_interval_ms": 0 },
+    { "id": "stage-files", "uri": "gossamer://gsa/nexus_stage_files", "refresh_interval_ms": 0 },
+    { "id": "provision", "uri": "gossamer://gsa/nexus_provision", "refresh_interval_ms": 0 },
+    { "id": "verify", "uri": "gossamer://gsa/nexus_verify", "refresh_interval_ms": 0 }
+  ],
+  "widgets": [
+    { "type": "wizard", "steps": [
+      { "id": "profile", "label": "Game Profile", "data_source": "profile-list" },
+      { "id": "operators", "label": "Steam Operators", "data_source": "steam-resolve" },
+      { "id": "config", "label": "Server Configuration" },
+      { "id": "target", "label": "Deployment Target" },
+      { "id": "stage", "label": "Steam File Staging", "data_source": "stage-files" },
+      { "id": "provision", "label": "Provisioning", "data_source": "provision" },
+      { "id": "verify", "label": "Health Verify", "data_source": "verify" }
+    ]}
+  ],
+  "tags": ["game-server", "wizard", "deploy", "provision", "nexus", "setup"]
+}

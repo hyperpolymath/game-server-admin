@@ -9,8 +9,14 @@ version = "0.1.0"
 last-updated = "2026-03-22"
 
 [project-info]
-type = "library"  # TODO: update type (library|binary|service|website|monorepo)  # library | binary | monorepo | service | website
-languages = []             # e.g. ["rust", "zig", "idris2"]
+type = "library"  # libgsa.so is the primary artifact (+ the gsa CLI binary)
+languages = ["zig", "idris2", "ephapax"]
+# NOTE: license is unsettled and pending a maintainer decision. The LICENSE
+# file body and all Zig/Idris source SPDX headers are currently MPL-2.0, while
+# the panel descriptors declare AGPL-3.0-or-later and this field says AGPL —
+# a genuine conflict. See the human checklist / docs/legal (to be added once
+# the direction is chosen). Left as-is deliberately; do not mass-edit headers
+# without that decision.
 license = "AGPL-3.0-or-later"
 author = "Jonathan D.A. Jewell (hyperpolymath)"
 

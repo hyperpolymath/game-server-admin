@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= GSA Config-Format Guide
+:toc:
+:source-highlighter: rouge
+
+How `src/interface/ffi/src/config_extract.zig` detects and parses game-server
+configuration files, and how to add support for a new format.
+
+== Overview
+
+GSA extracts a game server's configuration into a flat list of typed fields
+(`ParsedConfig.fields`), which the A2ML emitter then serialises with provenance.
+Every server config — whatever its on-disk syntax — is normalised into the same
+`ConfigField { key, value, field_type, label, default_val, range_min,
+range_max, is_secret }` shape.
+
+Two entry points:
+
+* `detectFormat(data) ConfigFormat` — sniff the format from the bytes.
+* `parseAuto(allocator, data) !ParsedConfig` — detect, then dispatch to the
+  matching parser.
+
+== The eight formats
+
+[cols="1,3,2",options="header"]
+|===
+| `ConfigFormat` | Detection signal | Parser
+| `XML`      | `<?xml` prefix, or `<` followed by a letter | `parseXML`
+| `JSON`     | leading `{`, or `[` followed by `{`/`"`/digit/`-`/`tr`/`fa`/`nu` | `parseJSON` (delegates to `std.json`)
+| `TOML`     | `[[table]]` headers, or `[section]` + dotted `a.b = c` keys | `parseTOML`
+| `INI`      | `[section]` headers (no dotted keys) | `parseINI`
+| `ENV`      | `export KEY=...` lines | `parseENV`
+| `Lua`      | `key = { ... }` table literals | `parseLua`
+| `YAML`     | leading `---`, or `key: value` mappings / `- item` sequences with **no** `=` lines | `parseYAML`
+| `KeyValue` | fallback: `key=value` / `key: value` with no other signal | `parseKeyValue`
+|===
+
+Detection is deliberately ordered most-specific-first. The ambiguous cases are
+handled explicitly:
+
+* `[network]` is INI, not a JSON array — the JSON branch requires a 2-character
+  lookahead (`[tr`, `[fa`, `[nu`) before treating `[` + letter as JSON.
+* A `key: value` file with no `=` and no `[section]` is YAML, not KeyValue — but
+  a bare `a=1` file stays KeyValue. `eq_lines == 0` is the discriminator, so a
+  colon in a value (a URL, a sentence) does not trip YAML detection.
+
+== Parser conventions
+
+All parsers funnel field creation through `ParsedConfig.addField`. Two
+invariants are enforced there, once, for every format:
+
+* **Non-empty keys.** A field whose key is empty (a lone `=value` line, a JSON
+  key of `""`) is silently dropped — it would break `getField` lookup and A2ML
+  emission. This invariant is asserted by the config fuzz harness
+  (`zig build fuzz`).
+* **Secret redaction.** Keys containing `password`, `secret`, `token`, or
+  `rcon.password` are flagged `is_secret = true`; the A2ML emitter renders their
+  values as `[REDACTED]`.
+
+Nested structures flatten to dotted keys: `server.rcon.password`,
+`worlds.0`, `worlds.1`. This is uniform across TOML, Lua, JSON, and YAML so
+downstream code never has to care which syntax a value came from.
+
+=== YAML scope
+
+`parseYAML` is a *scoped subset*, not a full YAML 1.2 implementation — the same
+level as `parseTOML`/`parseLua`. It handles:
+
+* block mappings (indentation → dotted keys),
+* block sequences of scalars (`- item` → `parent.N`),
+* scalar values with optional single/double quotes,
+* `#` comments and `---` / `...` document markers.
+
+Out of scope (documented, not silently wrong): anchors/aliases, flow
+collections (`{a: 1}`, `[1, 2]`), and multi-line/folded scalars.
+
+== Adding a new format
+
+. Add a variant to `ConfigFormat` (keep the integer stable — it crosses the
+  ABI as a `u8`; mirror it in `GameServerAdmin.ABI.Types.ConfigFormat`).
+. Write `parseXYZ(allocator, data) !ParsedConfig`, routing every field through
+  `addField` so the invariants above hold for free.
+. Add a detection branch to `detectFormat`, ordered by specificity, and be
+  explicit about any ambiguity with existing formats.
+. Add the dispatch arm to `parseAuto`.
+. Add tests: a detection test (including a negative case proving you don't
+  steal from an adjacent format) and a parse test asserting the flattened keys.
+  The fuzz harness (`src/fuzz_config.zig`) will exercise the new parser on
+  arbitrary bytes automatically once it is reachable from `parseAuto`.
+
+== See also
+
+* `docs/developer/ABI-FFI-README.adoc` — the ABI these fields cross.
+* `src/interface/ffi/test/integration_test.zig` — per-format parse tests.
+* `src/interface/ffi/src/fuzz_config.zig` — the fuzz harnesses.

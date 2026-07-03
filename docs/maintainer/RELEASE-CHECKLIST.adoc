@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= GSA Release Checklist
+:toc:
+
+The steps to cut a GSA release. The release itself is automated —
+`.github/workflows/release.yml` fires on a `v*` tag, builds `libgsa` + the
+`gsa` CLI with Zig, packages a tarball, generates a `git-cliff` changelog, and
+attaches SLSA build-provenance. This checklist is what to verify *before*
+pushing the tag.
+
+== Gate 1 — CI is green on `main`
+
+All must pass on the commit you intend to tag:
+
+* `Cross-Platform Build & Test` — `zig build` + the six test suites: `test`,
+  `test-integration`, `test-smoke`, `test-property`, `test-behavioral`,
+  `test-cli` (plus the `fuzz` seed corpus).
+* `ABI Contract` — `zig-contract` (regenerates `abi_layout_expected.zig` +
+  `result_codes_expected.zig` from the Idris2 model and fails on drift; runs the
+  comptime cross-check) **and** `idris-typecheck` (type-checks
+  `src/interface/abi/gsa-abi.ipkg` in the pinned `idris2-pack` container).
+* `CodeQL`, `Scorecard`, SonarCloud quality gate, Hypatia scan (critical=0,
+  high=0).
+
+`panic-attack assail .` is the local pre-commit gate; the static-analysis CI
+workflow covers it when the estate tool is installed.
+
+== Gate 2 — Version is reconciled
+
+There is not yet a single-source-of-truth version. Before tagging, confirm the
+following agree on the release number: `src/interface/ffi/src/main.zig`
+(`VERSION`, `BUILD_INFO`), `src/interface/ffi/build.zig` (`.version` ×2),
+`run.js`, `panels/manifest.json`, `panels/*/panel.json`, and
+`.machine_readable/6a2/*.a2ml`. (Follow-up: a `scripts/check_version_drift.sh`
+CI gate once the canonical location is chosen.)
+
+== Gate 3 — License is settled
+
+*Blocking, one-time.* The LICENSE file + all Zig/Idris source SPDX headers are
+MPL-2.0; the panel descriptors and `META.a2ml` declare AGPL-3.0-or-later. Pick a
+direction, reconcile every artifact, and record it in `docs/legal/` before the
+first tagged release. See `.machine_readable/6a2/META.a2ml` for the flagged
+conflict.
+
+== Gate 4 — Docs reflect reality
+
+* `.machine_readable/6a2/STATE.a2ml` completion % and session history updated.
+* `docs/INDEX.adoc` statuses (`live`/`thin`/`planned`) match the tree.
+* `CHANGELOG` / release notes — `git-cliff` generates these from Conventional
+  Commit messages, so confirm the commit log is clean.
+
+== Manual gates (outside CI — see also the project human checklist)
+
+These cannot be done by an agent and gate a *feature-complete* v1.0.0, not the
+mechanics of tagging:
+
+[cols="1,3",options="header"]
+|===
+| Gate | Action
+| CryoFall staging (B4) | `STEAM_USER=… just cryofall-stage-verpex` (Steam password + Guard 2FA, ~3 GB, on Verpex), then `just cryofall-watchdog-install`
+| Bitbucket mirror (B2) | provision the SSH key / token; `mirror.yml` is already wired
+| OpenSSF badge | register at bestpractices.dev, add the badge to `README.md`
+| Merged-branch cleanup | `git push origin --delete <branch>` for the merged feature branches (Hypatia GS007)
+| Ephapax parser gaps | tracked externally (`nextgen-languages/ephapax`) — 2/25 Gossamer chain tests
+|===
+
+== Cut the release
+
+[source,bash]
+----
+git checkout main && git pull
+git tag -a vX.Y.Z -m "GSA vX.Y.Z"
+git push origin vX.Y.Z          # release.yml does the rest
+----
+
+Then verify the GitHub Release has the tarball, changelog, and provenance
+attestation attached, and that the `mirror.yml` run propagated the tag.

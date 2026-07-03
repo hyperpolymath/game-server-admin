@@ -92,7 +92,8 @@
     "panels/live-logs/panel.json",
     "panels/health-dashboard/panel.json",
     "panels/config-history/panel.json",
-    "panels/cross-search/panel.json"
+    "panels/cross-search/panel.json",
+    "panels/nexus-setup/panel.json"
   ],
   "capabilities": [
     "Network",

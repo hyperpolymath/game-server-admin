@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+
+[clade-metadata]
+id = "gsa-nexus-setup"
+name = "GSA Nexus Setup"
+short-name = "Nexus"
+version = "1.0.0"
+kind = "wizard"
+icon = "wand-sparkles"
+description = "Guided 7-step wizard to deploy a new managed game server: profile selection, Steam operators, configuration, target host, file staging, provisioning, and health verification. Mirrors the scripts/wizard.sh flow in the Gossamer GUI."
+
+[clade-traits]
+has-backend = true
+has-scanning = false
+has-persistence = false
+has-work-items = false
+has-real-time = true
+is-directive = true
+is-readonly = false
+is-ambient = false
+
+[clade-capabilities]
+capabilities = ["Network", "Shell", "ProcessSpawn", "Containerised"]
+
+[clade-protocols]
+protocols = ["REST", "TauriIPC"]
+
+[clade-taxonomy]
+inherits-from = "gsa"
+sibling-clades = ["gsa-actions", "gsa-config", "gsa-browser"]
+supersedes = ""
+
+[clade-fli]
+fli-inherits = ["fli-terminal"]
+
+[clade-panel-integration]
+panel-id = "PanelGsaNexusSetup"
+model-module = "GsaNexusSetupModel"
+component-module = "GsaNexusSetup"
+command-module = "GsaNexusSetupCmd"
+module-module = "GsaNexusSetupModule"

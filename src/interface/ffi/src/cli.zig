@@ -374,9 +374,16 @@ fn cmdConfigSetDefault(host: []const u8, port: u16, out: std.fs.File) void {
     };
     defer file.close();
     
-    var existing: [16384]u8 = undefined;
-    const n = file.read(&existing) catch 0;
-    const existing_content = existing[0..n];
+    // Read the whole file — a fixed 16 KiB buffer silently truncated larger
+    // configs (e.g. many favorites), corrupting the rewrite.
+    const existing_content = file.readToEndAlloc(std.heap.c_allocator, 1024 * 1024) catch |err| {
+        const err_f = std.fs.File.stderr();
+        err_f.writeAll("✗ Failed to read config: ") catch {};
+        err_f.writeAll(@errorName(err)) catch {};
+        err_f.writeAll("\n") catch {};
+        std.process.exit(1);
+    };
+    defer std.heap.c_allocator.free(existing_content);
     
     // Simple string replacement for default server
     // In a real implementation, you'd use a proper Nickel parser
@@ -422,9 +429,16 @@ fn cmdConfigAddFavorite(name: []const u8, host: []const u8, port: u16, out: std.
     };
     defer file.close();
     
-    var existing: [16384]u8 = undefined;
-    const n = file.read(&existing) catch 0;
-    const existing_content = existing[0..n];
+    // Read the whole file — a fixed 16 KiB buffer silently truncated larger
+    // configs (e.g. many favorites), corrupting the rewrite.
+    const existing_content = file.readToEndAlloc(std.heap.c_allocator, 1024 * 1024) catch |err| {
+        const err_f = std.fs.File.stderr();
+        err_f.writeAll("✗ Failed to read config: ") catch {};
+        err_f.writeAll(@errorName(err)) catch {};
+        err_f.writeAll("\n") catch {};
+        std.process.exit(1);
+    };
+    defer std.heap.c_allocator.free(existing_content);
     
     // Add favorite to the favorites list
 
@@ -468,7 +482,15 @@ fn cmdConfigListFavorites(out: std.fs.File) void {
     out.writeAll("Use `gsa config show` to view the full config.\n") catch {};
 }
 
-/// Helper: Write config content with replaced default server to a file.
+/// Helper: rewrite the `host = ...` / `port = ...` lines of the generated
+/// user-config.ncl with a new default server.
+///
+/// This is a deliberately narrow, structure-aware text patch — NOT a Nickel
+/// parser. It relies on the shape GSA itself emits (`gsa config init` from the
+/// bundled template): top-level `host = "..."` and `port = N` lines. On any
+/// unexpected shape (either marker missing) it writes the input back unchanged
+/// rather than risk corrupting a hand-edited file. A full Nickel editor is out
+/// of scope for the CLI. Round-tripped by the tests at the bottom of this file.
 fn writeWithDefaultServer(existing: []const u8, host: []const u8, port: u16, out_file: std.fs.File) !void {
     const host_start = std.mem.indexOf(u8, existing, "host = ") orelse {
         _ = try out_file.write(existing);
@@ -496,7 +518,10 @@ fn writeWithDefaultServer(existing: []const u8, host: []const u8, port: u16, out
     }
 }
 
-/// Helper: Write config content with a new favorite appended to a file.
+/// Helper: append a favorite entry before the closing `]` of the favorites
+/// list. Same philosophy as writeWithDefaultServer — a structure-aware patch of
+/// GSA's own generated file, not a Nickel parser; on a missing `]` it writes the
+/// input back unchanged. Round-tripped by the tests at the bottom of this file.
 fn writeWithFavorite(existing: []const u8, name: []const u8, host: []const u8, port: u16, out_file: std.fs.File) !void {
     const fav_end = std.mem.indexOf(u8, existing, "]") orelse {
         _ = try out_file.write(existing);
@@ -629,9 +654,79 @@ fn printUsage(out: std.fs.File) void {
         \\    help                Show this help
         \\
         \\  Environment:
-        \\    GSA_VERISIMDB_URL   VeriSimDB endpoint (default: http://[::1]:8090)
+        \\    GSA_VERISIMDB_URL   VeriSimDB endpoint (default: http://localhost:8090)
         \\    GSA_PROFILES_DIR    Profiles directory (default: ./profiles)
         \\
         \\
     ) catch {};
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+test "writeWithDefaultServer replaces host/port and preserves the rest" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const existing =
+        \\{
+        \\  default_server = {
+        \\    host = "old.example.com",
+        \\    port = 12345,
+        \\  },
+        \\  favorites = [],
+        \\}
+    ;
+    {
+        const f = try tmp.dir.createFile("c.ncl", .{});
+        defer f.close();
+        try writeWithDefaultServer(existing, "new.host", 25565, f);
+    }
+    const rf = try tmp.dir.openFile("c.ncl", .{});
+    defer rf.close();
+    const content = try rf.readToEndAlloc(std.testing.allocator, 1 << 16);
+    defer std.testing.allocator.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "host = \"new.host\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "port = 25565") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "old.example.com") == null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "favorites = []") != null);
+}
+
+test "writeWithFavorite inserts an entry before the closing bracket" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const existing =
+        \\{
+        \\  favorites = [
+        \\  ],
+        \\}
+    ;
+    {
+        const f = try tmp.dir.createFile("c.ncl", .{});
+        defer f.close();
+        try writeWithFavorite(existing, "myfav", "10.0.0.1", 27015, f);
+    }
+    const rf = try tmp.dir.openFile("c.ncl", .{});
+    defer rf.close();
+    const content = try rf.readToEndAlloc(std.testing.allocator, 1 << 16);
+    defer std.testing.allocator.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "name = \"myfav\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "host = \"10.0.0.1\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "port = 27015") != null);
+}
+
+test "config helpers preserve unknown-shape input unchanged (no corruption)" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const weird = "this is not the generated config at all\n";
+    {
+        const f = try tmp.dir.createFile("c.ncl", .{});
+        defer f.close();
+        try writeWithDefaultServer(weird, "x", 1, f);
+    }
+    const rf = try tmp.dir.openFile("c.ncl", .{});
+    defer rf.close();
+    const content = try rf.readToEndAlloc(std.testing.allocator, 1 << 16);
+    defer std.testing.allocator.free(content);
+    try std.testing.expectEqualStrings(weird, content);
 }
