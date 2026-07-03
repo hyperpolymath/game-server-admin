@@ -1,0 +1,378 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= GSA Panel Extension Guide
+:toc:
+:source-highlighter: rouge
+
+How to add a new GUI panel to Game Server Admin, using the `nexus-setup`
+wizard — the newest panel — as the worked example.
+
+== Overview
+
+Panels are GSA's GUI surface. Each panel is a fat, self-contained
+`panel.html` file (markup + `<style>` + `<script>` in one document) that is
+loaded into `src/gui/host.html`'s panel-content area, driven by FLI widgets
+(a small set of reusable frontend behaviours — gauges, editable tables,
+terminal rendering, tooltips, undo — declared in `panel-clades/fli*`), and
+registered in three places: a per-panel descriptor (`panel.json`), the
+top-level registry (`panels/manifest.json`), and a governance clade
+(`panel-clades/`).
+
+Panels never talk to the Zig FFI engine directly. They call
+`gossamerInvoke(command, payload)` (defined in `src/gui/host.html`), which
+goes out over the `gossamer://` IPC channel to `src/core/Shell.eph`
+(`bindAllHandlers`), which dispatches by command name to a handler function
+in `src/core/Bridge.eph`. Bridge handlers call the actual engine — the
+`gossamer_gsa_*` C-ABI exports built by `src/interface/ffi/` — and return a
+`{"ok": true, "data": …}` / `{"ok": false, "error": …}` JSON envelope back
+across the bridge. See `docs/developer/FFI-MODULE-REFERENCE.adoc` for the
+full per-module export list this bridge ultimately calls into.
+
+The eight current panels, all under `src/gui/panels/`:
+
+[cols="1,3",options="header"]
+|===
+| Panel | Purpose
+| `server-browser`    | Discover, fingerprint, and manage game servers
+| `config-editor`     | A2ML-aware config editor with type validation
+| `server-actions`    | Start/stop/restart/logs actions
+| `live-logs`         | Streaming log viewer
+| `health-dashboard`  | VeriSimDB health + drift overview
+| `config-history`    | Temporal version history + rollback
+| `cross-search`      | VQL search across all managed servers
+| `nexus-setup`       | 7-step guided wizard to deploy a new managed server
+|===
+
+== Anatomy of a panel
+
+A panel is spread across four locations. This section walks the concrete
+file set using `server-browser` as the reference (it is the simplest of the
+eight); the worked example below repeats the same walk for `nexus-setup`.
+
+=== 1. The panel directory — `src/gui/panels/<name>/`
+
+Two files, verified from `src/gui/panels/server-browser/`:
+
+* `<name>.eph` — an Ephapax module (`module GSA.GUI.Panels.ServerBrowser`)
+  that documents the panel's IPC contract in comments. It is documentation,
+  not executable UI code — the actual handler logic lives in
+  `src/core/Bridge.eph`.
+* `panel.html` — the entire UI: `<style>` block, markup, and a `<script>`
+  block defining the panel's controller functions (state object, a
+  `refresh<Name>()` entry point called by `host.html` on panel activation,
+  and DOM-manipulation helpers). No build step — it is loaded as a raw HTML
+  fragment by `host.html`'s `loadPanelContent()`.
+
+=== 2. The descriptor — `panels/<name>/panel.json`
+
+This is a *separate* top-level `panels/` tree from `src/gui/panels/` — do
+not confuse the two. Verified fields, from `panels/server-browser/panel.json`:
+
+[source,json]
+----
+{
+  "id": "gsa-server-browser",
+  "title": "Server Browser",
+  "description": "Discover, fingerprint, and manage game servers",
+  "version": "0.9.0",
+  "author": "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
+  "license": "AGPL-3.0-or-later",
+  "runtime": "gossamer",
+  "dimensions": { "width": 1400, "height": 900, "resizable": true },
+  "entry": "../../src/gui/panels/server-browser/panel.html",
+  "data_sources": [
+    { "id": "server-list", "uri": "gossamer://gsa/servers", "refresh_interval_ms": 10000 }
+  ],
+  "widgets": [
+    { "type": "search-bar", "data_source": "server-list", "placeholder": "Filter servers..." },
+    { "type": "sidebar-list", "data_source": "server-list", "fields": [
+      { "field": "game_name", "label": "Game", "width": "120px" }
+    ]},
+    { "type": "action-bar", "actions": [
+      { "id": "probe", "label": "Probe Server", "icon": "radar", "target": "gossamer://gsa/probe" }
+    ]}
+  ],
+  "tags": ["game-server", "probe", "fingerprint", "discovery", "admin"]
+}
+----
+
+`entry` is a relative path back into `src/gui/panels/`, `license` is the
+panel's own SPDX identifier (JSON has no comment syntax for a header), and
+`widgets[].type` selects which FLI-backed widget renders that block
+(`search-bar`, `sidebar-list`, `action-bar`, `dynamic-form`, `diff-viewer`,
+`wizard`, … — one entry per widget instance on the panel).
+
+=== 3. The registry entry — `panels/manifest.json`
+
+The manifest carries the service-wide SPDX identifier once
+(`"spdx": "AGPL-3.0-or-later"`) and lists every panel descriptor by path:
+
+[source,json]
+----
+"panels": [
+  "panels/server-browser/panel.json",
+  "panels/config-editor/panel.json",
+  "panels/server-actions/panel.json",
+  "panels/live-logs/panel.json",
+  "panels/health-dashboard/panel.json",
+  "panels/config-history/panel.json",
+  "panels/cross-search/panel.json",
+  "panels/nexus-setup/panel.json"
+]
+----
+
+It also defines the top-level `data_sources` map (`gossamer://gsa/*` URI →
+`{path, method, returns}`) that documents the REST/WS shape behind the
+`gossamer://` scheme, and the `capabilities` array
+(`Network, Shell, ProcessSpawn, Containerised, Streaming, SecretManagement`)
+the whole service is allowed to request.
+
+=== 4. The clade — `panel-clades/<clade-id>/`
+
+Every panel has a matching clade directory with two files: an A2ML clade
+manifest and a `config.k9.ncl` "kennel" config. Verified from
+`panel-clades/gsa-browser/`:
+
+`GsaBrowser.a2ml` (`# SPDX-License-Identifier: MPL-2.0` — note this is a
+*different* license to the panel's own AGPL-3.0-or-later, since the clade
+file is project metadata, not shipped panel code):
+
+[source,toml]
+----
+[clade-metadata]
+id = "gsa-browser"
+name = "GSA Server Browser"
+short-name = "Servers"
+version = "1.0.0"
+kind = "inspector"
+icon = "radar"
+description = "Discover, fingerprint, and manage game servers. …"
+
+[clade-traits]
+has-backend = true
+has-scanning = true
+has-persistence = true
+has-work-items = false
+has-real-time = true
+is-directive = false
+is-readonly = false
+is-ambient = false
+
+[clade-capabilities]
+capabilities = ["Network"]
+
+[clade-protocols]
+protocols = ["REST", "TauriIPC"]
+
+[clade-taxonomy]
+inherits-from = "gsa"
+sibling-clades = ["gsa-config", "gsa-actions"]
+supersedes = ""
+
+[clade-fli]
+fli-inherits = ["fli-tooltip"]
+
+[clade-panel-integration]
+panel-id = "PanelGsaServerBrowser"
+model-module = "GsaBrowserModel"
+component-module = "GsaBrowser"
+command-module = "GsaBrowserCmd"
+module-module = "GsaBrowserModule"
+----
+
+Every panel clade sets `inherits-from = "gsa"` — the root clade at
+`panel-clades/gsa/Gsa.a2ml` — which is where the service-wide capability set
+(`Network, Shell, ProcessSpawn, Containerised, Streaming, SecretManagement,
+Visualisation, SessionRecording`) and protocol list are declared once.
+`clade-fli.fli-inherits` is the authoritative statement of which FLI modules
+the panel needs; `host.html`'s `fliRegistry.panelTraits` map (see the worked
+example below) must mirror it.
+
+`config.k9.ncl` mirrors the same panel identity for the K9 kennel/build
+tooling: `pedigree` (name/version/author), `panel` (id, short_name,
+description, `has_backend`, `clade_id`, `isolation_tier`), `wiring`
+(model_slice, msg_namespace, view_route, module_name), and `obligations`
+(`requires_tests`, `requires_backend_health`, `requires_clade_manifest` — all
+`true` on every existing panel).
+
+== Worked example: the Nexus Setup wizard
+
+`nexus-setup` is the newest panel and the best template for "add a panel"
+because every layer it touches is small enough to read in full. It is a
+7-step guided wizard (mirroring the standalone `scripts/wizard.sh` flow) for
+deploying a new managed game server: profile → Steam operators →
+configuration → deployment target → SteamCMD file staging → provisioning →
+health verify.
+
+=== `src/gui/panels/nexus-setup/`
+
+* `nexus-setup.eph` documents the IPC contract in comments: `list_profiles`,
+  `steam_resolve_vanity`, `steam_player_info`, `nexus_stage_files`,
+  `nexus_provision`, `nexus_verify` — payload and return shape for each.
+* `panel.html` implements the 7-step stepper UI (`.ns-stepper`,
+  `.ns-step-pane`, `.ns-terminal` for live SteamCMD/provisioner output) and a
+  `nsState` object tracking wizard progress. `refreshNexusSetup()` is the
+  activation hook `host.html` calls; it loads profiles and renders operator
+  slots. Each step's "Next" call is gated by `nsCanAdvance(step)` — e.g. step
+  5 cannot advance until `nsState.stagingDone` (or the user ticks "skip
+  staging").
+
+=== `panels/nexus-setup/panel.json`
+
+Uses a `"type": "wizard"` widget with a `steps` array, each step optionally
+naming a `data_source`:
+
+[source,json]
+----
+{
+  "id": "gsa-nexus-setup",
+  "title": "Nexus Setup",
+  "description": "Guided 7-step wizard to deploy a new managed game server on a target host",
+  "version": "0.9.0",
+  "widgets": [
+    { "type": "wizard", "steps": [
+      { "id": "profile",    "label": "Game Profile",       "data_source": "profile-list" },
+      { "id": "operators",  "label": "Steam Operators",    "data_source": "steam-resolve" },
+      { "id": "config",     "label": "Server Configuration" },
+      { "id": "target",     "label": "Deployment Target" },
+      { "id": "stage",      "label": "Steam File Staging",  "data_source": "stage-files" },
+      { "id": "provision",  "label": "Provisioning",        "data_source": "provision" },
+      { "id": "verify",     "label": "Health Verify",       "data_source": "verify" }
+    ]}
+  ],
+  "tags": ["game-server", "wizard", "deploy", "provision", "nexus", "setup"]
+}
+----
+
+=== `panels/manifest.json`
+
+Added `"panels/nexus-setup/panel.json"` to the `panels` array (see the full
+list quoted above — it is already the last entry).
+
+=== `panel-clades/gsa-nexus-setup/`
+
+`GsaNexusSetup.a2ml` sets `kind = "wizard"` (vs. `"inspector"` for
+`gsa-browser`), `is-directive = true` (it performs a guided, one-shot
+provisioning action rather than passive monitoring), and
+`fli-inherits = ["fli-terminal"]` (for the live SteamCMD/provisioner output
+panes) — it does **not** list `fli-tooltip` here even though `host.html`'s
+runtime `panelTraits` map does (see the wiring gap noted below).
+`inherits-from = "gsa"`, same as every other panel clade.
+
+=== `src/gui/host.html` wiring
+
+Registering a panel in `manifest.json` and `panel-clades/` is necessary but
+not sufficient — `host.html` itself has four places that must name the new
+panel ID, all four of which were touched for `nexus-setup`:
+
+. A `<div class="nav-item" data-panel="nexus-setup" onclick="switchPanel('nexus-setup')">`
+  sidebar entry (with an icon and a `<span class="nav-status" id="status-nexus-setup">`).
+. A `<div id="panel-nexus-setup" class="panel-content">` placeholder comment
+  (`<!-- Loaded from panels/nexus-setup/panel.html -->`) in the panel-content area.
+. An entry in `loadPanelContent()`'s path table:
+  `{ id: 'nexus-setup', path: 'src/gui/panels/nexus-setup/panel.html' }`.
+. A `case 'nexus-setup':` arm in `switchPanel()`'s refresh dispatch, calling
+  `refreshNexusSetup()` if it is defined, and an entry in
+  `fliRegistry.panelTraits`: `'nexus-setup': ['fli-terminal', 'fli-tooltip']`.
+
+=== A verified gap worth knowing about
+
+`src/core/Shell.eph`'s `bindAllHandlers` function is what actually binds a
+command name to a `Bridge.eph` handler on the IPC channel
+(`__ffi("gossamer_channel_bind", channel, "<command>", …)`). As of this
+writing, `list_profiles` is bound, but `steam_resolve_vanity`,
+`steam_player_info`, `nexus_stage_files`, `nexus_provision`, and
+`nexus_verify` — despite having working handlers in `Bridge.eph`
+(`handleSteamResolveVanity`, `handleNexusStageFiles`, `handleNexusProvision`,
+`handleNexusVerify`, etc.) and being called from `panel.html` via
+`gossamerInvoke(...)` — are **not yet bound** in `Shell.eph`. Until that
+binding is added, those calls fall through to `gossamerInvoke`'s "Gossamer
+bridge not available" error path (see <<Conventions>> below). This is the
+concrete shape of "wire the FFI calls it needs" (checklist step 5) not being
+finished for a panel that otherwise looks complete — worth checking for on
+any new panel before calling it done.
+
+== Steps to add a panel
+
+Derived from the `nexus-setup` file set above, in the order it is easiest to
+verify each step:
+
+. *Create the panel directory*: `src/gui/panels/<name>/panel.html` (the UI:
+  styles, markup, a `refresh<Name>()` activation hook, and controller
+  functions calling `gossamerInvoke(command, payload)`), plus an optional
+  `<name>.eph` documenting the IPC contract in comments.
+. *Add the descriptor*: `panels/<name>/panel.json` — `id`, `title`,
+  `description`, `version` (must match the SSOT, see <<Conventions>>),
+  `author`, `license`, `runtime: "gossamer"`, `dimensions`, `entry` (relative
+  path to the `panel.html` from step 1), `data_sources`, `widgets`, `tags`.
+. *Register in the manifest*: add `"panels/<name>/panel.json"` to the
+  `panels` array in `panels/manifest.json`. If the panel introduces new
+  `gossamer://gsa/*` IPC surface, also add it to the manifest's top-level
+  `data_sources` map (`nexus-setup`'s own steam/nexus URIs were **not**
+  added here — only `gossamer://gsa/profiles` was already present — so check
+  this against what your panel actually calls, don't assume it is covered).
+. *Add a clade*: `panel-clades/<clade-id>/<ClradeId>.a2ml` (MPL-2.0 header,
+  `inherits-from = "gsa"`, `clade-fli.fli-inherits` naming the FLI modules
+  the panel needs) and `panel-clades/<clade-id>/config.k9.ncl` (pedigree,
+  panel, wiring, and obligations blocks, all four `requires_*` obligations
+  `true`).
+. *Wire the FFI calls it needs*: for each `gossamerInvoke(command, …)` call
+  in the panel's `panel.html`, add a `Bridge.eph` handler function
+  (`handle<Thing>`, calling the relevant `gossamer_gsa_*` export — see
+  `docs/developer/FFI-MODULE-REFERENCE.adoc`) *and* bind it in
+  `Shell.eph`'s `bindAllHandlers` (`__ffi("gossamer_channel_bind", channel,
+  "<command>", fn(payload) -> String { Bridge.handle<Thing>(payload, caps) })`).
+  Skipping the bind step is the exact gap found in `nexus-setup` above —
+  don't ship a panel with handlers defined but unbound.
+. *Wire `host.html`*: add the sidebar `nav-item`, the `panel-content` div,
+  the `loadPanelContent()` path entry, the `switchPanel()` refresh-dispatch
+  case, and the `fliRegistry.panelTraits` entry (should match the clade's
+  `fli-inherits`).
+. *Update docs*: add the panel to any panel-listing table (such as the one
+  in this guide) and to `CLAUDE.md`'s file-location table if it introduces a
+  new top-level concept.
+
+== Conventions
+
+SPDX::
+Shipped panel code (`panel.html`, `.eph` files, `panel.json`'s `license`
+field, and `panels/manifest.json`'s top-level `spdx` field) is
+`AGPL-3.0-or-later`. Clade governance files (`panel-clades/**/*.a2ml`,
+`config.k9.ncl`) are `MPL-2.0` — a deliberately different license for
+project/build metadata versus shipped GUI code. `panels/manifest.json` is
+explicitly machine-readable metadata for the panel registry.
+
+Version SSOT::
+`panel.json`'s `"version"` field and `panels/manifest.json`'s
+`"version"` field are both currently `"0.9.0"`, matching the single source
+of truth: `pub const VERSION: [:0]const u8 = "0.9.0";` in
+`src/interface/ffi/src/main.zig` (exposed via `gossamer_gsa_version()`).
+When the engine version bumps, every panel descriptor's `version` field
+should move with it.
+
+Graceful degradation on FFI failure::
+Every `gossamer_gsa_*` export returns a `GsaResult` code (18 variants,
+`0 = ok`, `1 = err`, up through `17 = not_found`, defined in
+`src/interface/ffi/src/main.zig` and cross-checked at compile time against
+`src/interface/abi/Types.idr`). Bridge handlers translate any non-zero
+result into a `jsonError(...)` envelope (`{"ok": false, "error": "..."}`),
+never a thrown exception. `host.html`'s `gossamerInvoke()` mirrors this on
+the frontend: if `window.gossamer` isn't present at all (dev mode, or the
+IPC channel/command isn't bound yet) it resolves to
+`{ ok: false, error: 'Gossamer bridge not available' }` rather than
+throwing. Every panel controller must check `resp.ok` and render a
+visible error/alert state on failure — see `nexus-setup`'s
+`nsShowAlert(id, 'err', message)` pattern — rather than assuming `resp.data`
+is present.
+
+== See also
+
+* `docs/developer/FFI-MODULE-REFERENCE.adoc` — per-module reference for the
+  `gossamer_gsa_*` exports Bridge handlers call into.
+* `docs/developer/ABI-FFI-README.adoc` — the Idris2/Zig ABI/FFI architecture.
+* `docs/developer/CONFIG-FORMATS.adoc` — the config-parsing side of the FFI
+  layer, in the same house style as this guide.
+* `src/gui/host.html` — panel host shell, `gossamerInvoke`, `switchPanel`,
+  `fliRegistry`.
+* `src/core/Shell.eph` — `bindAllHandlers`, the IPC channel setup.
+* `src/core/Bridge.eph` — one `handle<Thing>` function per IPC command.

@@ -21,9 +21,12 @@ _You run and administer game servers via the Gossamer GUI and the `gsa` CLI._
 | `README.adoc` | live | Overview, quick-start, `gsa` CLI reference, supported games
 | `USER-CONFIG.md` | live | Nickel config: defaults, favourites, troubleshooting
 | `docs/QUICKSTART.adoc` | thin | One-liner pointer — not a real getting-started
-| GUI panel guide | *planned* | One section per panel (8: server-browser, config-editor, server-actions, live-logs, health-dashboard, config-history, cross-search, nexus-setup). **`nexus-setup`, the 7-step provisioning wizard, is entirely undocumented.**
-| Game-profile selection | *planned* | Which game → which of the 18 profiles; port/protocol table
-| Admin workflows | *planned* | Add a server; manage config across servers; roll back via config history
+| `docs/wikis/Home.md` | live | **Illustrated wiki** — narrative tour with Mermaid diagrams; start here
+| `docs/wikis/03-Installation.md` | live | Honest install guide: what works today, exact prereqs, verify steps
+| `docs/wikis/07-GUI-and-Nexus-Setup.md` | live | All 8 panels + the 7-step `nexus-setup` provisioning wizard (was undocumented)
+| `docs/wikis/04-Probing-and-Games.md` | live | Probe pipeline + the 18-game profile/protocol/format table
+| `docs/wikis/09-Troubleshooting.md` | live | Symptom → cause → fix for the common first-run failures
+| Admin workflows | *thin* | Covered piecewise in the wiki (server-actions, config-history); a single end-to-end runbook is still a gap
 |===
 
 == Developers
@@ -37,11 +40,14 @@ _You build GSA, extend it, or contribute code across the Gossamer GUI → Zig FF
 | `docs/developer/ABI-FFI-README.adoc` | live | Idris2 ABI + Zig FFI standard; C/Idris2/Rust/Julia examples (strong)
 | `TOPOLOGY.md` | live | System architecture + data flow
 | `docs/decisions/` | live | Architecture decision records (RSR adoption)
-| FFI module reference | *planned* | Per-module docs for the 11 FFI modules (signatures, the 18 result codes, examples)
-| Panel extension guide | *planned* | The PanLL clade system; registering a new panel; inheriting base clades
-| Game-profile authoring | *thin* | Expand the README snippet: field types, validation, port/protocol, debugging
+| `docs/developer/FFI-MODULE-REFERENCE.adoc` | live | Per-module docs for the FFI modules (every `gossamer_gsa_*` symbol, the 18 result codes, the handle lifecycle)
+| `docs/developer/PANEL-EXTENSION-GUIDE.adoc` | live | Panel anatomy + the clade system; `nexus-setup` as the worked example; the `host.html` wiring points
+| `docs/wikis/05-The-Proven-ABI.md` | live | The machine-checked ABI contract (codegen pipeline, 18 codes, linear handles) — the differentiator, illustrated
+| `docs/wikis/06-HTTP-Capability-Gateway.md` | live | How outbound HTTP is a declared, deadline-bounded, default-deny capability
+| `docs/wikis/10-Contributing.md` | live | Build/test, the ABI regen rule, conventions, tri-license SPDX, branch/PR flow
+| Game-profile authoring | *thin* | See `docs/wikis/04-Probing-and-Games.md`; a deep field-type/validation/debugging guide is still a gap
 | `docs/developer/CONFIG-FORMATS.adoc` | live | The 8 formats, detection order, `addField` invariants, YAML scope, and how to add a parser
-| Architecture rationale | *planned* | Why Ephapax / Idris2 / Zig / VeriSimDB; when to touch each layer
+| `docs/developer/ARCHITECTURE-RATIONALE.adoc` | live | Why Ephapax / Idris2 / Zig / VeriSimDB; when to touch each layer
 |===
 
 == Maintainers
@@ -56,10 +62,17 @@ _You release, run CI/CD, operate containers, and manage governance + security sc
 | `docs/DEPLOYMENT-RUNBOOK.adoc` | live | Build, container, VeriSimDB main+backup, health, backup/restore
 | `SECURITY.md` | live | Vulnerability reporting
 | `docs/maintainer/RELEASE-CHECKLIST.adoc` | live | CI gates (6 suites + ABI contract), version/license/docs gates, manual gates, tag steps
-| CI/CD guide | *planned* | `.github/workflows/` structure, standards-estate reusables (pins `4ddc926`), staleness check, adding a check
-| Security-scanning runbook | *planned* | Running/interpreting Hypatia + panic-attack + Scorecard; the `.hypatia-ignore` suppression mechanism (NOT `.hypatia-baseline.json` — see `NEUROSYM.a2ml`)
-| Container/quadlet ops | *thin* | Expand the runbook: `.container` format, systemd user units, day-to-day ops
+| `docs/maintainer/CI-CD-GUIDE.adoc` | live | All 16 workflows, the ABI-contract + version-drift gates, standards-estate reusable pins, adding a check
+| `docs/maintainer/SECURITY-SCANNING-RUNBOOK.adoc` | live | Running/interpreting Hypatia + panic-attack + Scorecard; the `.hypatia-ignore` suppression mechanism (NOT `.hypatia-baseline.json` — see `NEUROSYM.a2ml`)
+| `docs/wikis/08-Deployment-Topology.md` | live | Podman quadlets, the two VeriSimDB instances (`:8090`/`:8091`), the `container/` map — the illustrated deployment view
+| Container/quadlet ops | *thin* | The wiki covers the topology; a day-to-day systemd-unit ops guide is still a gap
 |===
+
+NOTE: the standards-estate reusable-workflow pin cited historically as `4ddc926`
+has since been bumped (governance/scorecard and secret-scanner/mirror now pin
+newer SHAs — see `docs/maintainer/CI-CD-GUIDE.adoc` for the current values).
+`.machine_readable/6a2/NEUROSYM.a2ml` still cites the stale SHA and should be
+updated in a follow-up.
 
 == Machine-readable layer
 _For AI agents and tooling. Read `0-AI-MANIFEST.a2ml` FIRST._
@@ -70,14 +83,30 @@ _For AI agents and tooling. Read `0-AI-MANIFEST.a2ml` FIRST._
 * `.hypatia-ignore` — reviewed false-positive suppressions (the active mechanism).
 * `.claude/CLAUDE.md` — human-friendly codebase guide.
 
-== Wiki status
-`docs/wikis/` is a stub that declares an intent to sync to a forge-hosted wiki but
-is **unpopulated**. The `docs/` tree also carries several empty placeholder
-subtrees (`theory/`, `reports/`, parts of `practice/`).
+== The wiki
+`docs/wikis/` is now the **illustrated narrative tour** of GSA — a 10-page,
+Mermaid-diagrammed wiki that complements the audience-segmented reference docs
+above. Start at `docs/wikis/Home.md`; it links every page.
 
-*Decision pending:* either populate `docs/wikis/` and sync it, **or** (recommended)
-consolidate all narrative under `docs/` using the three audience paths above and
-prune the empty scaffolding. Until then, this index is the single navigation point.
+[cols="2,4"]
+|===
+| Page | Covers
+
+| `Home.md` | Landing page + ecosystem diagram + navigation
+| `02-Architecture.md` | The four layers, data-flow sequence, graceful degradation
+| `03-Installation.md` | Honest install guide (what works today)
+| `04-Probing-and-Games.md` | Probe pipeline + the 18-game table
+| `05-The-Proven-ABI.md` | The machine-checked ABI contract (the differentiator)
+| `06-HTTP-Capability-Gateway.md` | Outbound HTTP as a declared, deadline-bounded capability
+| `07-GUI-and-Nexus-Setup.md` | The 8 panels + the 7-step provisioning wizard
+| `08-Deployment-Topology.md` | Podman quadlets + the two VeriSimDB instances
+| `09-Troubleshooting.md` | Symptom → cause → fix for common first-run failures
+| `10-Contributing.md` | Build/test, ABI regen, conventions, tri-license, PR flow
+|===
+
+The wiki is written in GitHub-flavoured Markdown with native Mermaid diagrams, so
+it renders both in-repo and if synced to a forge-hosted wiki. The remaining `docs/`
+scaffolding decision (below) is unchanged.
 
 NOTE: a mechanical prune is **not** clean — `verification/`, `docs/theory/`,
 `docs/reports/`, and `docs/wikis/` are referenced by the governance layer

@@ -1,0 +1,237 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= GSA Security-Scanning Runbook
+:toc:
+
+GSA layers three security scanners plus two GitHub-native backstops. This is
+the operational guide: how to run each one, how to read its output, and —
+because it is the point most commonly gotten wrong — exactly how the
+`.hypatia-ignore` suppression mechanism works.
+
+* **panic-attack** — local pre-commit lint / banned-pattern gate for the
+  Idris2 + Zig code (`believe_me`, `assert_total`, `unsafeCoerce` and similar
+  proof/type escapes). Runs locally via `just assail`, and as a required
+  check in CI (`.github/workflows/static-analysis-gate.yml`).
+* **Hypatia** — repo-wide neurosymbolic security/governance scanner. Runs on
+  every push/PR/schedule (`.github/workflows/hypatia-scan.yml`, advisory) and
+  again as a required check inside the static analysis gate
+  (`static-analysis-gate.yml`, blocking on critical findings).
+* **OpenSSF Scorecard** — supply-chain posture (branch protection, pinning,
+  dependency update tooling, etc.), run weekly and on push to `main`
+  (`.github/workflows/scorecard.yml`).
+* **CodeQL** (`.github/workflows/codeql.yml`) and **Secret Scanner**
+  (`.github/workflows/secret-scanner.yml`) are GitHub-native backstops that
+  cover code-flow vulnerabilities and credential leakage respectively.
+
+== panic-attack
+
+`panic-attack assail` is the estate's static analysis / banned-pattern
+scanner (`https://github.com/hyperpolymath/panic-attacker`; the installed CLI
+binary is `panic-attack`). It is the local pre-commit gate.
+
+Run it directly from the repo root:
+
+[source,bash]
+----
+panic-attack assail .
+----
+
+Or via the wrapped Justfile recipe, which no-ops with a warning if the
+binary is not installed:
+
+[source,bash]
+----
+just assail
+----
+
+For the full local quality sweep (format check + lint + test, chaining
+`fmt-check`, `lint`, and `test`), run:
+
+[source,bash]
+----
+just quality
+----
+
+**What it bans** — enforced as a `severity: critical` rule in
+`.machine_readable/contractiles/must/Mustfile.a2ml` (`no-believe-me`, which
+fails the build on any `believe_me` in `*.idr` code) and, per project
+convention documented in `.claude/CLAUDE.md`, extended to the rest of the
+Idris2 unsoundness surface: `believe_me`, `assert_total`, `unsafeCoerce`, and
+other dangerous proof/type escapes. `.machine_readable/6a2/META.a2ml`
+(`idris-unsound-scan = "believe_me/assert_total"`) and `MUST.contractile`
+(`"all GitHub Actions SHA-pinned"`) record the same requirements as
+repository-level hard constraints, independent of whether the scanner binary
+is present in a given environment.
+
+**Sandboxed environments** — `panic-attack` is not always installable (no
+network egress to the release URL, no binary for the platform, etc.). In
+that case `just assail` degrades to a `WARN: panic-attack not found` message
+rather than failing, and the CI job
+(`static-analysis-gate.yml` → job `panic-attack-assail`) does the same: it
+probes for the release binary, and if unavailable it emits
+`::notice::panic-attack binary not available — skipping assail` and writes
+an empty findings stub instead of failing the job. In other words: **when
+the tool is unavailable, nothing enforces the banned-pattern rule for that
+run.** Do not treat a green `panic-attack-assail` job as proof the scan ran —
+check its step summary for "Skipped: panic-attack not available" before
+trusting a clean result. This is a known gap, not a design goal.
+
+== Hypatia
+
+Hypatia (`https://github.com/hyperpolymath/hypatia`) is a neurosymbolic
+CI/CD security scanner. It runs in two places with two different gating
+postures — know which one you're looking at:
+
+[cols="2,3,3",options="header"]
+|===
+| Workflow | Trigger | Gating
+
+| `.github/workflows/hypatia-scan.yml` (`Hypatia Security Scan`)
+| push to `main`/`master`/`develop`, PR to `main`/`master`, weekly cron
+  (Sundays 00:00 UTC), `workflow_dispatch`
+| **Advisory, by explicit design.** Findings are uploaded as SARIF to
+  *Security → Code scanning* (category `hypatia`), attached as a build
+  artifact, and posted as a PR comment. Critical findings emit a
+  `::warning::` annotation but do **not** fail the job — see the
+  "GATING POLICY" comment in the workflow for the rationale (enforcement is
+  meant to be added via branch protection on the `hypatia` SARIF category,
+  not by editing this workflow).
+| `.github/workflows/static-analysis-gate.yml` (job `hypatia-scan`)
+| PR to any branch, push to `main`/`master`
+| **Blocking.** This is a separate, self-contained Hypatia run (its own
+  Elixir setup + clone/build steps) feeding the required "Static Analysis
+  Gate" check. It fails the job with `exit 1` if `critical > 0`.
+|===
+
+Configuration for the scan (depth, report format, and the suppression scope)
+lives in `.machine_readable/6a2/NEUROSYM.a2ml` — read that file alongside
+this runbook when adjusting scan behaviour.
+
+**Current state**: advisory scan is clean — critical=0, high=0
+(`.machine_readable/6a2/STATE.a2ml`, PRs #41–#45). The one standing Hypatia
+finding is rule `GS007` (merged/stale remote branches — a repo-hygiene
+signal, not a code-safety finding). `STATE.a2ml` records this as ~10 merged
+branches pending `git push origin --delete <branch>`; the git proxy used in
+some environments 403s deletions, so this is tracked as a manual cleanup
+item on the release checklist's manual-gates table
+(`docs/maintainer/RELEASE-CHECKLIST.adoc`, "Merged-branch cleanup"), **not**
+suppressed and **not** a code fix.
+
+=== The `.hypatia-ignore` suppression mechanism
+
+This is the one place it is easy to get wrong, so read carefully.
+
+[WARNING]
+====
+**`.hypatia-ignore` is the only mechanism `hypatia scan` actually honours.**
+A file named `.hypatia-baseline.json` **does not exist in this repo and must
+not be recreated.** It was removed in PR #43 because it was inert: `hypatia
+scan` never applied it — only an external `apply-baseline.sh` post-filter
+(which this estate's CI does not run) would have honoured it. If you find
+guidance elsewhere (older docs, a different repo, a stale AI suggestion)
+telling you to add findings to a `.hypatia-baseline.json`, it will silently
+do nothing here. See `.machine_readable/6a2/NEUROSYM.a2ml` and
+`.machine_readable/6a2/STATE.a2ml` (2026-06-21 entry) for the documented
+history of the switch.
+====
+
+`.hypatia-ignore` lives at the repo root and is consulted by
+`Hypatia.ScannerSuppression`. Format — one entry per line, `#` starts a
+comment:
+
+[source]
+----
+<rule_module>/<rule_type>:<repo-relative-path-fragment>
+----
+
+The path fragment is matched as a **substring** of the finding's
+repo-relative path. Real entries from the file, for example:
+
+[source]
+----
+security_errors/secret_detected:src/interface/ffi/src/fuzz_config.zig
+code_safety/js_innerhtml:src/gui/fli/fli-tooltip.js
+code_safety/zig_bit_cast:src/interface/ffi/src/probe.zig
+----
+
+Every entry in `.hypatia-ignore` must be a **reviewed, justified false
+positive** — the file documents *why* inline (fuzzer seed strings that look
+like credentials but aren't, escaped-markup `innerHTML` sinks where the
+input is provably sanitised, a loopback-only HTTP URL, a behaviour-preserving
+`@bitCast` on a packed syscall struct). It is never a way to silence a
+finding you haven't investigated. `NEUROSYM.a2ml`'s `suppression-scope` field
+is the canonical inventory (currently 7 reviewed false positives plus a
+self-exemption so the ignore file's own documentation comments don't trip
+the secret-detection rule they describe).
+
+Adding a new entry:
+
+1. Confirm the finding is genuinely a false positive (re-read the flagged
+   code, don't assume).
+2. Add one line: `<rule_module>/<rule_type>:<path-fragment>`, with a comment
+   block above it explaining why.
+3. Update `NEUROSYM.a2ml`'s `suppression-scope` description to keep the
+   inventory in sync.
+4. Say so in the PR description — suppressions are reviewed like any other
+   security-relevant change.
+
+== OpenSSF Scorecard
+
+`.github/workflows/scorecard.yml` calls the estate's pinned reusable
+(`hyperpolymath/standards/.github/workflows/scorecard-reusable.yml`) on
+`branch_protection_rule` changes, a weekly cron (Mondays 04:23 UTC), and push
+to `main`. It runs with `contents: read`, `security-events: write`, and
+`id-token: write` — the last of which publishes results to the OpenSSF API
+in addition to uploading SARIF to *Security → Code scanning*. Results surface
+in two places: the code-scanning alert list (category matches the reusable's
+SARIF upload) and, once published, the public Scorecard API/badge for the
+repository.
+
+The **OpenSSF Best Practices badge** is a separate, manual v1.0.0 gate: it
+requires registering the project at `bestpractices.dev` and adding the
+resulting badge to `README.md`. It is tracked on the manual-gates table in
+`docs/maintainer/RELEASE-CHECKLIST.adoc`, not automated by any workflow in
+this repo.
+
+== Secret scanning + CodeQL
+
+`.github/workflows/secret-scanner.yml` runs on every PR and on push to
+`main`, calling the estate's pinned reusable
+(`hyperpolymath/standards/.github/workflows/secret-scanner-reusable.yml`)
+with `contents: read` and inherited secrets. Treat any hit here as
+credential-leak-until-proven-otherwise — the only sanctioned way to clear a
+confirmed false positive on the *Hypatia* side is a reviewed
+`.hypatia-ignore` entry (see above); the secret-scanner reusable has its own
+allow-list mechanism upstream in `hyperpolymath/standards`, not this repo.
+
+`.github/workflows/codeql.yml` runs CodeQL on push/PR to `main`/`master` and
+a monthly cron, across two query packs in matrix: `javascript-typescript`
+(build-mode `none`) and `actions` — the latter scans the GitHub Actions
+workflow files themselves (added specifically to close the Hypatia
+`workflow_audit: codeql_missing_actions_language` finding). Both run with
+`security-events: write` and upload to *Security → Code scanning* under
+category `/language:<matrix-language>`.
+
+== Triage checklist
+
+When a new finding shows up (Hypatia SARIF alert, panic-attack annotation,
+Scorecard regression, CodeQL alert, or secret-scanner hit):
+
+1. **Is it a real defect?** Reproduce it, read the flagged code/config in
+   context. If yes → fix it. This is always the first move; scanning gates
+   exist to catch real problems, and most findings are real.
+2. **Is it a reviewed false positive?** Only after genuinely ruling out (1).
+   For Hypatia findings specifically, add a justified entry to
+   `.hypatia-ignore` (never `.hypatia-baseline.json` — see the warning
+   above), update `NEUROSYM.a2ml`'s `suppression-scope`, and explain the
+   reasoning in the PR. For other scanners, use their own reviewed-exception
+   mechanism (documented upstream in `hyperpolymath/standards` for the
+   reusable secret-scanner/Scorecard workflows) — do not invent a local
+   equivalent.
+3. **Is it a manual/infrastructure item, not a code defect?** Examples:
+   Hypatia `GS007` (stale remote branches), the OpenSSF badge registration,
+   the Bitbucket mirror SSH key. These cannot be closed by a commit. Track
+   them on the human/manual-gates table in
+   `docs/maintainer/RELEASE-CHECKLIST.adoc` and action them out-of-band
+   (`git push origin --delete <branch>`, a manual registration step, etc.).
+   Do **not** paper over them with a code-level suppression.

@@ -1,0 +1,338 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= GSA FFI Module Reference
+:toc:
+:source-highlighter: rouge
+
+Per-module reference for the Zig FFI layer at `src/interface/ffi/src/`: what
+each module does, and its exported symbols.
+
+== Overview
+
+The FFI layer builds to `libgsa.so` (shared library) and the `gsa` CLI
+executable. Every function the library exposes across the C ABI is prefixed
+`gossamer_gsa_` and declared `pub export fn ... callconv(.c)`. `main.zig`
+re-exports every sibling module as `pub const` purely so the linker keeps
+their `pub export fn` symbols in the shared library's symbol table — nothing
+in `main.zig` calls them directly.
+
+Result codes returned across this boundary are a contract shared with
+`src/interface/abi/Types.idr` (`GameServerAdmin.ABI.Types.Result` /
+`resultToInt`); see <<Result codes>> below. The Idris2 ABI layer
+(`src/interface/abi/Foreign.idr`) binds against this C ABI.
+
+== Modules
+
+One subsection per file in `src/interface/ffi/src/`. Files with no
+`gossamer_gsa_*` exports (helper/internal modules, generated tables, the CLI
+binary, the fuzz harness) are noted as such — they are part of the FFI
+*layer* but not part of its exported surface.
+
+=== main.zig
+
+Core lifecycle, thread-local error handling, and the `GsaResult`/`GsaHandle`
+types. Implements the FFI surface declared in `src/interface/abi/Foreign.idr`.
+Owns the global (mutex-guarded) `GsaHandle` singleton, the thread-local error
+buffer, and the per-probe linear handle table (`open_handles`, `next_handle_id`,
+`closed_ring`) that gives the Idris `ServerHandle` linearity a real runtime
+enforcement on the Zig side. Also re-exports every sibling module as `pub
+const` so the linker does not dead-strip their exports.
+
+* `gossamer_gsa_init` — initialise the library with a VeriSimDB URL and a
+  profiles directory.
+* `gossamer_gsa_shutdown` — release all resources.
+* `gossamer_gsa_last_error` — retrieve the last thread-local error message.
+* `gossamer_gsa_version` — library version string.
+
+=== probe.zig
+
+Protocol fingerprinting engine — the core innovation of GSA. Given a host
+and port, probes using multiple game server protocols to identify the
+running game, its version, and configuration paths: Steam A2S_INFO
+(Source/GoldSrc), Minecraft SLP, RCON handshake detection, HTTP/REST header
+probing, raw TCP banner grabbing, plus a comptime table of ~20 well-known
+game server ports.
+
+* `gossamer_gsa_probe` — probe a single host:port; returns a linear handle
+  id (`>= 1000`) on success or a positive `GsaResult` code (`< 1000`) on
+  failure. See <<The handle lifecycle>>.
+* `gossamer_gsa_fingerprint` — fingerprint multiple ports (given as a JSON
+  array) on one host; returns a JSON array of fingerprint objects.
+
+=== config_extract.zig
+
+Config file extraction and parsing. Handles the diverse zoo of
+configuration file formats used by game servers: XML, INI, JSON, ENV,
+YAML, TOML, Lua tables, and generic key=value (8 formats total). Also
+provides extraction methods that pull config files from remote hosts via
+SSH, container exec, or RCON. See `docs/developer/CONFIG-FORMATS.adoc` for
+the format-detection and parser design in depth.
+
+* `gossamer_gsa_extract_config` — extract the configuration for a
+  server/profile combination (via container exec) and return it as an
+  A2ML string.
+
+=== a2ml_emit.zig
+
+A2ML (Annotated Attribute Markup Language) serialisation and
+deserialisation. Converts between `ParsedConfig` structures and A2ML text,
+the canonical interchange format used by hyperpolymath projects for
+structured configuration (`@server(...): @probe(...):@end @config(...):
+@field(...): "value" @end @end @end`).
+
+* `gossamer_gsa_a2ml_emit` — convert a JSON config representation to A2ML.
+* `gossamer_gsa_a2ml_parse` — parse A2ML back to a JSON representation.
+
+=== verisimdb_client.zig
+
+VeriSimDB HTTP client. Communicates with the dedicated VeriSimDB instance
+allocated to GSA (a hyperpolymath database combining vector search, drift
+detection, and provenance tracking in a single octad-based store). Each
+game server is represented as a VeriSimDB octad containing its config,
+probe data, spatial location, and provenance chain. GSA has its own
+VeriSimDB instance and port — GSA data is never stored in the VeriSimDB
+source repo.
+
+* `gossamer_gsa_verisimdb_store` — store an octad (JSON body) in VeriSimDB.
+* `gossamer_gsa_verisimdb_query` — execute a VQL query, returning JSON results.
+* `gossamer_gsa_verisimdb_health` — health check (0 = healthy).
+* `gossamer_gsa_verisimdb_drift` — fetch drift information for a server.
+
+=== steam_client.zig
+
+Steam Web API client: resolving Steam vanity URLs to Steam64 IDs, fetching
+player summaries (display name, avatar, profile URL), and checking game
+ownership. Requires the `GSA_STEAM_API_KEY` environment variable (never
+stored in the binary or repository); only makes read-only requests, per
+the Steam Web API Terms of Use. Outbound calls go through
+`http_capability.zig`.
+
+* `gossamer_gsa_steam_resolve_vanity` — resolve a vanity URL to a Steam64 ID.
+* `gossamer_gsa_steam_player_info` — fetch a player summary as JSON.
+* `gossamer_gsa_steam_get_result` — retrieve the last result string from a
+  Steam API call (thread-local buffer).
+
+=== server_actions.zig
+
+Server action dispatcher. Executes lifecycle actions (start, stop,
+restart, status, logs, update, backup, validate-config) against game
+servers running in Podman/Docker containers or managed by systemd.
+Actions can be dispatched locally or via SSH to remote hosts.
+
+* `gossamer_gsa_server_action` — execute a server action described by a
+  JSON request; returns a JSON result (`{"success", "output", "exit_code"}`).
+* `gossamer_gsa_get_logs` — fetch the last N lines of logs.
+* `gossamer_gsa_run_script` — run a GSA helper script under `scripts/`
+  (path-traversal-checked) with JSON env vars and an optional stdin secret.
+* `gossamer_gsa_write_server_config` — write a game server config file from
+  JSON form values and a JSON operators array.
+
+=== game_profiles.zig
+
+Game profile registry. Loads, stores, and queries game profiles defined
+in A2ML files. Each profile describes a game server type: its ports,
+protocol, config format, config path, field definitions, and available
+actions. The registry is the bridge between the probing engine (which
+identifies servers) and the config extraction layer (which knows how to
+read them).
+
+* `gossamer_gsa_load_profiles` — load profiles from a directory of `.a2ml`
+  files; returns the count loaded.
+* `gossamer_gsa_list_profiles` — list all loaded profiles as a JSON array.
+* `gossamer_gsa_add_profile` — add a single profile from an A2ML string
+  (not a file path).
+
+=== groove_client.zig
+
+Groove protocol client for Burble voice alerting. Implements the Groove
+`.well-known` capability-discovery protocol to find Burble and Vext
+endpoints on the local network (default `localhost:6473` /
+`localhost:6480`), then sends voice alerts when server health thresholds
+are exceeded. Groove is a transient, fire-and-forget protocol — this
+module does not store any data in VeriSimDB.
+
+* `gossamer_gsa_groove_discover` — probe the default endpoints and
+  populate the internal target registry.
+* `gossamer_gsa_groove_status` — status of a named target as JSON.
+* `gossamer_gsa_groove_alert` — send a severity-tagged alert message to
+  the first reachable target (Burble preferred).
+* `gossamer_gsa_groove_tts_alert` — send a text-to-speech alert to the
+  first reachable target with TTS capability.
+
+=== http_capability.zig
+
+Outbound HTTP capability gateway (client side). No subsystem calls
+`std.http.Client.fetch` directly; each call site declares an
+`OutboundCapability` (verb, host allow-list, trust level, deadline,
+narrative) and this module's `call()` is the only place `fetch` runs. It
+enforces the host allow-list and a hard wall-clock deadline that Zig
+0.15's `std.http.Client` has no native timeout for: a worker thread runs
+the fetch, and the caller waits on a semaphore with
+`std.Thread.Semaphore.timedWait`, bounding caller latency uniformly for
+plain HTTP and TLS. Ownership is a 2-count refcount on a shared
+`RequestBox` (malloc-backed, `std.heap.c_allocator`) so a worker that
+outlives a timed-out caller never touches a transient allocator. Consumed
+internally by `groove_client.zig`, `steam_client.zig`, and
+`verisimdb_client.zig` — it exports no `gossamer_gsa_*` symbols itself.
+
+=== abi_layout.zig
+
+Canonical C-ABI structs plus the Zig<->Idris layout cross-check.
+`Layout.idr` (`GSA.ABI.Layout`) carries machine-checked proofs that the 8
+GSA wire structs are internally consistent (`NoOverlap` / `AllFieldsAligned`
+/ `SizeAligned` / `SizeCoversFields`), but those proofs run over
+hand-written offset constants, so on their own they cannot guarantee the
+numbers match what a C compiler actually lays out. This module closes that
+gap: it declares each struct as a Zig `extern struct` (the real System-V /
+AAPCS64 layout, compiler-inserted padding included), then a comptime block
+asserts `@offsetOf`/`@sizeOf`/`@alignOf` for every field equal the proven
+Idris constants lifted into `abi_layout_expected.zig`. A divergence is a
+compile error. No `gossamer_gsa_*` exports — this is the compile-time half
+of the ABI contract; `abi_serde.zig` is the runtime half.
+
+=== abi_layout_expected.zig
+
+Generated file — `@generated by scripts/gen_abi_expected.zig from
+src/interface/abi/Layout.idr`. Not to be hand-edited; regenerate with
+`zig run scripts/gen_abi_expected.zig`. Holds the canonical C-ABI layout
+numbers (struct name, total size, alignment, and per-field name/offset/
+size/alignment) lifted from the machine-checked Idris2 model, consumed by
+`abi_layout.zig`'s comptime cross-check. No exports.
+
+=== abi_serde.zig
+
+The live binary ABI: emitters that serialise GSA records into the
+canonical `extern struct` wire format from `abi_layout.zig`, and the C
+readers the Idris2 ABI layer (`GSA.ABI.Foreign`) binds to consume them.
+This is what makes the proven `Layout.idr` offsets a *runtime* contract —
+an emitter writes a wire struct whose layout the compiler guarantees
+matches the Idris model; the Idris side reads each field with
+`gossamer_gsa_read_int(ptr, offset)` / `gossamer_gsa_read_double(...)`
+using the same offsets it proved.
+
+* `gossamer_gsa_read_int` — read an `i32` at a byte offset.
+* `gossamer_gsa_read_double` — read an `f64` at a byte offset.
+* `gossamer_gsa_read_ptr` — read a pointer field at a byte offset.
+* `gossamer_gsa_read_string` — read a NUL-terminated string field.
+* `gossamer_gsa_array_len` — length of an array field.
+* `gossamer_gsa_array_get_string` — indexed string read from an array field.
+* `gossamer_gsa_is_null` — null check on a pointer.
+* `gossamer_gsa_free` — free a buffer previously returned by an ABI emitter
+  (NULL-safe).
+* `gossamer_gsa_apply_config` — validate and accept a serialised
+  `A2MLConfig` wire struct against a live probe handle; persistence to disk
+  is delegated to `gossamer_gsa_write_server_config`.
+* `gossamer_gsa_close_handle` — consume a probe handle. See
+  <<The handle lifecycle>>.
+* `gossamer_gsa_drift_struct` — emit a `DriftReport` wire struct for a
+  tracked server (caller must `gossamer_gsa_free` the result).
+
+=== result_codes_expected.zig
+
+Generated file — `@generated by scripts/gen_result_codes.zig from
+src/interface/abi/Types.idr`. Not to be hand-edited; regenerate with `zig
+run scripts/gen_result_codes.zig`. Holds the canonical result-code
+contract (Idris constructor name, Zig field name, integer code) lifted
+from `GameServerAdmin.ABI.Types.resultToInt`, consumed by the comptime
+block next to `GsaResult` in `main.zig`. No exports.
+
+=== fuzz_config.zig
+
+Fuzz-testing harnesses for the config parsers, using Zig's built-in
+`std.testing.fuzz` support. Each harness feeds arbitrary byte sequences
+into a parser in `config_extract.zig` and asserts it does not panic or
+invoke undefined behaviour, that any returned `ParsedConfig` has
+consistent internal state, and that memory is correctly freed (checked via
+`std.testing.allocator`'s leak detection). Corpus seeds are embedded
+string literals per format. Run with `zig build fuzz` (seeded corpus,
+CI-safe) or `zig build fuzz -- --fuzz` (continuous). No exports — this is
+a test target, not part of the shared library.
+
+=== cli.zig
+
+Standalone executable that exercises the FFI layer directly without
+Gossamer. Entry point for `just run` and `just gui` (headless mode).
+Provides the `gsa` subcommands: `status` (VeriSimDB health + loaded
+profiles), `probe` (fingerprint a host:port), `profiles` (list available
+game profiles), `version` (print version info). Being a `pub fn main`
+executable rather than a library module, it has no `gossamer_gsa_*`
+exports of its own — it calls into `main.zig`, `probe.zig`,
+`game_profiles.zig`, `verisimdb_client.zig`, and `steam_client.zig`.
+
+== Result codes
+
+`GsaResult` (`main.zig`) is a `c_int`-backed enum; codes 0-12 mirror the
+original Idris constructors, 13-17 were added to `Types.idr` in the same
+change that introduced the Zig-side failure modes. `0` is success; every
+other value is a failure.
+
+[cols="1,3,4",options="header"]
+|===
+| Value | Name | Meaning
+| 0  | `ok`                     | Operation completed successfully.
+| 1  | `err`                    | Generic/unclassified error.
+| 2  | `invalid_param`          | A parameter failed validation.
+| 3  | `out_of_memory`          | Memory allocation failed.
+| 4  | `null_pointer`           | A null pointer was dereferenced or passed.
+| 5  | `already_consumed`       | A linear resource (handle) was used after consumption.
+| 6  | `resource_leaked`        | A linear resource was not consumed before going out of scope.
+| 7  | `double_free`            | A handle was closed more than once.
+| 8  | `probe_timeout`          | A server probe timed out waiting for a response.
+| 9  | `connection_refused`     | TCP connection to the target host:port was refused.
+| 10 | `auth_failed`            | Authentication credentials were rejected.
+| 11 | `config_parse_error`     | A configuration file could not be parsed.
+| 12 | `verisimdb_unavailable`  | The VeriSimDB instance is unreachable or not running.
+| 13 | `not_initialized`        | The library was used before `gossamer_gsa_init` succeeded.
+| 14 | `protocol_error`         | A wire protocol violation was detected while probing.
+| 15 | `io_error`               | An OS-level I/O operation failed.
+| 16 | `permission_denied`      | The operation was denied by a permission check.
+| 17 | `not_found`              | A requested entity (profile, server, file) does not exist.
+|===
+
+The contract: `0` means success; any positive code is a failure and is
+paired with a human-readable message retrievable via
+`gossamer_gsa_last_error`. Handle ids returned by `gossamer_gsa_probe` are
+`>= 1000` (`FIRST_HANDLE_ID` in `main.zig`) — deliberately disjoint from the
+0-17 result-code space, so a success handle can never be mistaken for an
+error code by an FFI consumer classifying the return value by magnitude
+alone.
+
+This is not a documentation-only convention: it is machine-checked at
+compile time. `scripts/gen_result_codes.zig` parses `resultToInt` out of
+`src/interface/abi/Types.idr` into `result_codes_expected.zig`, and a
+comptime block beside the `GsaResult` definition in `main.zig` walks that
+generated table, asserting field-for-field and value-for-value agreement
+(and matching cardinality — 18 on each side). Any drift between the Zig
+enum and the Idris `Result` type is a Zig compile error, not a runtime
+surprise.
+
+=== The handle lifecycle
+
+`gossamer_gsa_probe` returns a linear handle id (`>= 1000`) identifying the
+probed server. `gossamer_gsa_close_handle` consumes it. `GsaHandle` tracks
+open handles in `open_handles` (id -> owned server-id string) and remembers
+recently-closed ids in a bounded ring buffer (`closed_ring`,
+`CLOSED_HANDLE_TOMBSTONES = 64` entries) for double-close detection:
+
+* Closing a live handle succeeds (`ok`, 0) and moves the id into the
+  tombstone ring.
+* Closing an already-closed id still present in the ring reports
+  `double_free` (7).
+* Closing (or otherwise using, e.g. via `gossamer_gsa_apply_config`) an id
+  that was never issued, or whose tombstone has aged out of the ring,
+  reports `not_found` (17) — `gossamer_gsa_apply_config` reports
+  `already_consumed` (5) instead when the id is a *known* closed handle
+  still in the ring.
+
+This is the Zig runtime enforcing, for real callers, the linear-type
+protocol that `src/interface/abi/Foreign.idr` proves impossible to violate
+for well-typed Idris callers: the tombstone ring is precisely the runtime
+check that stands in for what the type system guarantees on the Idris
+side.
+
+== See also
+
+* `docs/developer/ABI-FFI-README.adoc` — the ABI these functions and result
+  codes cross.
+* `docs/wikis/05-The-Proven-ABI.md` — the proof narrative behind
+  `Layout.idr` and `Types.idr`.

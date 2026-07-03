@@ -1,0 +1,230 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= GSA Architecture Rationale
+:toc:
+:source-highlighter: rouge
+
+Why GSA is four layers — Gossamer/Ephapax GUI, Zig FFI, Idris2 ABI,
+VeriSimDB — and which one to touch when you're changing something.
+
+== The guiding principle
+
+GSA is deliberately not a single-language monolith. It is four layers, each
+with a narrow, typed contract to the next:
+
+```
+Gossamer GUI (Ephapax .eph)        -- src/core/, src/gui/panels/
+    |  IPC (gossamer:// protocol)
+Zig FFI (libgsa.so + gsa CLI)     -- src/interface/ffi/src/ (11 modules)
+    |  C ABI (18 result codes)
+Idris2 ABI (Types/Foreign/Layout)  -- src/interface/abi/
+    |  REST (port 8090)
+VeriSimDB (8-modality octads)      -- container/verisimdb/
+```
+
+The principle behind that shape: **push correctness down to where it can be
+proven, and keep every boundary explicit.** Not every layer *can* carry the
+same kind of proof — a webview shell and a wire-format struct fail in
+different ways — so each layer uses the tool best suited to eliminating
+*its* class of bug, and the boundary between layers is always a typed
+contract, never an implicit convention. The rest of this document is the
+"why" for each choice, including what it costs.
+
+== Why Ephapax for the GUI
+
+The presentation layer owns a set of resources that are cheap to leak or
+double-free in the usual GUI languages: webview handles, IPC channels,
+capability tokens. Ephapax is a linearly-typed language — its type system
+guarantees that a linear value (a handle, a channel) is consumed **exactly
+once**. That is the whole reason the presentation layer is written in
+Ephapax and not JavaScript: use-after-free and forget-to-close of a UI
+handle become compile errors instead of runtime bugs that only show up
+under load or after a panel is torn down and rebuilt.
+
+This isn't a hypothetical concern for GSA specifically — the Idris2 ABI
+layer defines three `Result` codes purely for linear-protocol violations on
+the C side (`AlreadyConsumed`, `ResourceLeaked`, `DoubleFree`, codes 5-7 in
+`Types.idr`). Those exist because the underlying `ServerHandle` is itself a
+linear resource that must be closed exactly once; Ephapax's job is to make
+the equivalent mistake unrepresentable at the GUI layer, the same way it is
+proof-carrying at the ABI layer.
+
+The honest cost: Ephapax is an estate language (a sibling project, not
+vendored into GSA) with an in-progress parser. `scripts/gossamer-integration-test.sh`
+validates the pre-conditions for the full GUI chain (binaries present,
+symbols exported, panel files exist) but cannot yet drive the chain
+end-to-end, because parser support for constructs GSA's `.eph` sources use
+(`;` sequencing, zero-arg calls, lambda blocks) is incomplete. That leaves
+2 of 25 Gossamer chain tests blocked. The `gsa` CLI is unaffected — it
+doesn't depend on Ephapax at all — but the GUI cannot be fully exercised
+until the parser gap closes. Choosing a language that eliminates a class of
+bug at the type level meant accepting that the language's own tooling is
+younger than the C/Zig ecosystem GSA otherwise relies on.
+
+== Why Idris2 for the ABI
+
+The boundary between the GUI and the engine is exactly where silent
+contract drift historically hides in a C-ABI system: a result code renamed
+on one side and not the other, a struct field reordered, a handle passed
+after it was already freed. None of that shows up as a type error in C or
+Zig alone — it shows up as a segfault or a garbled read weeks later.
+
+`src/interface/abi/` makes the wire contract a specification with proofs,
+not just documentation:
+
+* **Dependent-typed validation.** `Types.idr` defines `ValidPort` (a port
+  paired with an erased proof it's in `[1, 65535]`), `NonEmpty`/`ValidId`
+  (a string paired with proof it's non-blank), `ConfigHasFields`/`ValidConfig`
+  (a config paired with proof it has at least one field), and
+  `ValidGameProfile` (all three checked together, plus every declared port
+  in range). These aren't runtime assertions bolted on after the fact — a
+  function that requires a `ValidPort` cannot be called with an unvalidated
+  `Nat` at all; the proof has to exist before the value type-checks.
+* **Constructive layout proofs, zero postulates.** `Layout.idr` proves, for
+  every one of the 8 wire structs, that fields don't overlap (`NoOverlap`),
+  every field offset is a multiple of its alignment (`AllFieldsAligned`),
+  the struct's total size is itself aligned (`SizeAligned`), and the size
+  covers the sum of field sizes (`SizeCoversFields`). The alignment
+  arithmetic used to be a postulate; it was replaced with `alignUpCeil` plus
+  a constructive proof (`alignUpCeilIsMultiple`) that the result is provably
+  a multiple of the alignment by construction — no `believe_me`, no
+  admitted lemma.
+* **Total, exhaustive matches.** `Result` has 18 variants (0-17). Every
+  function over `Result` — `resultToInt`, `resultFromInt`,
+  `resultIsTerminal`, `resultDescription`, `Eq` — is written as a total,
+  exhaustive `case`/pattern match under `%default total`. Idris2 refuses to
+  compile a non-exhaustive match, so adding a new `Result` constructor
+  without updating every function that consumes `Result` is a compile
+  error, not a code-review miss.
+
+None of that would matter if it stayed in Idris2. A code generator
+(`scripts/gen_result_codes.zig` for `Result`, `scripts/gen_abi_expected.zig`
+for the struct layouts) lifts these facts into Zig as generated constants
+(`result_codes_expected.zig`, `abi_layout_expected.zig`). `main.zig` and
+`abi_layout.zig` then assert at `comptime` that the hand-written Zig
+`GsaResult` enum and the eight `extern struct`s match those generated
+constants field-for-field, name-for-name, value-for-value — so a mismatch
+between the Idris2 proof and the Zig implementation is a **Zig compile
+error**, checked on every `zig build` and therefore in CI, not a
+documentation drift someone notices later. See
+`docs/wikis/05-The-Proven-ABI.md` for the full walkthrough of that
+generator pipeline.
+
+== Why Zig for the engine
+
+The engine is the one artifact of the four that has to run completely
+standalone: the `gsa` CLI and `libgsa.so` work with no Gossamer, no
+Ephapax, and no VeriSimDB running. That constraint alone rules out anything
+requiring a managed runtime. Beyond that, `src/interface/ffi/src/` does three
+things that specifically fit Zig:
+
+* **Raw sockets to game servers.** `probe.zig` speaks 8 distinct wire
+  protocols (`ProbeProtocol` in `Types.idr`: Steam Query, RCON, Minecraft
+  Query, GameSpy, REST, SSH, WebSocket, CustomTCP) against 20+ known ports,
+  with per-probe deadlines. This is exactly the kind of byte-level,
+  no-abstraction-in-the-way work Zig is built for.
+* **A clean, comptime-checked C ABI.** Every exported symbol is
+  `pub export fn ... callconv(.c)` prefixed `gossamer_gsa_`, so any
+  language — Gossamer/Ephapax via `dlopen`, but equally C, Rust, or
+  anything else — can call in without a binding-generator step. Because Zig
+  can dead-strip unreferenced exports, `main.zig` carries an explicit
+  `comptime` block that takes a reference to every one of the 40 exported
+  functions purely so the linker keeps them; that block is itself a form of
+  "no hidden control flow" — what's exported is a literal, auditable list,
+  not an artifact of whatever happened to get referenced.
+* **Manual-memory work without a runtime.** `http_capability.zig` is the
+  single deadline-enforcing gateway every outbound HTTP call (VeriSimDB,
+  Steam, Groove) goes through: a hand-rolled 2-count refcounted request box,
+  a worker thread, and a hard wall-clock deadline enforced via
+  `std.Thread.Semaphore.timedWait` so a stuck request can never hang the
+  caller indefinitely. That's the kind of explicit lifetime management a
+  GC'd or async-runtime language would paper over — Zig makes the refcount
+  and the deadline both visible in the code.
+
+`server_actions.zig` is a good example of why "no hidden control flow"
+matters operationally, not just architecturally: server start/stop/restart
+goes through Podman/Docker/systemd, locally or over SSH, and every
+externally-derived value (hostnames, container names, profile IDs) is
+checked against a strict allowlist and shell-quoted before it reaches a
+command line — because the alternative (an implicit "this string is safe"
+assumption) is exactly the kind of silent contract that this whole
+architecture is designed to avoid.
+
+== Why VeriSimDB for persistence
+
+Game server state doesn't fit rows well: a server has structural
+relationships (which servers share a network, which configs derive from
+which baseline), a similarity dimension (is this config drift-adjacent to a
+known-good profile), point-in-time snapshots, and free-text config content
+to search. `ServerOctad` in `Types.idr` models that directly as an
+8-modality record — graph, vector, tensor, semantic, document, temporal,
+provenance, spatial — rather than forcing it into a normalized relational
+shape and reassembling the relationships at query time.
+
+Just as important is what GSA *doesn't* do: it is deliberately a **client**
+of a dedicated VeriSimDB instance, never a place where VeriSimDB's own
+source lives. Two instances, two purposes: main (`:8090`,
+`GSA_VERISIMDB_URL`) holds server config, probe data, and octads; backup
+(`:8091`, `GSA_BACKUP_VERISIMDB_URL`) holds game-save metadata, snapshots,
+and restore points. Keeping GSA's estate data out of the VeriSimDB source
+repo, and keeping the two GSA instances separate by purpose, means a bad
+write to game-save metadata can't corrupt server config and vice versa.
+
+The dependency is graceful, not load-bearing for the core loop: probing a
+server and extracting its configuration work with no VeriSimDB running at
+all. Only the storage and drift paths need it, and when the instance is
+unreachable those calls return `verisimdb_unavailable` (`Result` code 12,
+`resultIsTerminal = False` — it's classified as transient, so a caller may
+legitimately retry) rather than failing the whole operation.
+
+== When to touch each layer
+
+[cols="2,2,3",options="header"]
+|===
+| Change | Layer(s) to touch | Contract to re-verify
+| New `Result` code | `Types.idr` (add variant + every total function over `Result`) | Regenerate `result_codes_expected.zig` (`scripts/gen_result_codes.zig`); `main.zig`'s comptime block will refuse to build until `GsaResult` matches
+| New/changed wire struct field | `Types.idr` + `Layout.idr` (layout + `NoOverlap`/`AllFieldsAligned`/`SizeAligned` proofs) | Regenerate `abi_layout_expected.zig` (`scripts/gen_abi_expected.zig`); `abi_layout.zig`'s comptime block cross-checks the Zig `extern struct`; update the offset readers in `abi_serde.zig`
+| New probe protocol | `ProbeProtocol` variant in `Types.idr` + implementation in `probe.zig` | Behavioral test in `zig build test-integration`; update any `profiles/*.a2ml` that reference it
+| New config format | `ConfigFormat` variant in `Types.idr` + `parseXYZ` in `config_extract.zig` | Follow `docs/developer/CONFIG-FORMATS.adoc`: detection test, parse test, fuzz harness coverage via `parseAuto`
+| New game profile | `profiles/<id>.a2ml` (18 exist today) | `panel-clades/gsa-game-<id>/` if the game needs UI beyond the generic panels; no ABI change needed — profiles are data, not wire structs
+| New GUI panel | `src/gui/panels/` (or `panels/`) + `panel-clades/` | `0-AI-MANIFEST.a2ml` / Shell/Bridge `.eph` wiring so the panel is reachable over `gossamer://`
+| New exported FFI function | `pub export fn gossamer_gsa_*` in the owning `src/interface/ffi/src/*.zig` module | Add it to `main.zig`'s comptime linker-hint list (otherwise the linker dead-strips it) + a `Foreign.idr` wrapper if Idris2 callers need it
+| New VeriSimDB modality/query | `verisimdb_client.zig` | Update `ServerOctad` in `Types.idr`/`Layout.idr` only if the wire shape changes; otherwise this is engine-only
+|===
+
+== The multi-repo shape
+
+GSA is the client half of an estate, not a self-contained product. Gossamer
+(the linear webview shell), Ephapax (the language GSA's `.eph` sources are
+written in), the VeriSimDB source, and Groove (voice/text alerting) all
+live in sibling repositories — `container/verisimdb/`'s Containerfile
+builds the DB server from an external source at container-build time
+rather than vendoring it, and `scripts/gossamer-integration-test.sh`
+resolves `libgossamer.so` and the `ephapax` binary from sibling-repo paths
+rather than anything shipped in this tree.
+
+That separation is deliberate, not accidental: it's the same "keep every
+boundary explicit" principle applied at the repo level, not just the code
+level. GSA's job is to be a correct, standalone engine and CLI; the estate
+components each own their own release cadence, their own proofs, and their
+own bugs, and GSA depends on them only through the same typed contracts
+(`gossamer://` IPC, the C ABI, VeriSimDB's REST API) it would use if they
+were remote services rather than sibling checkouts.
+
+It costs exactly what you'd expect: the GUI is not one-click installable
+outside the estate today. Building the full chain means having Gossamer,
+Ephapax, and VeriSimDB checked out and built alongside GSA — and until the
+Ephapax parser gap above closes, even a full estate checkout can't drive
+the GUI chain end-to-end. The `gsa` CLI and `libgsa.so`, by contrast, build
+and run with nothing but this repository and a Zig toolchain — which is
+exactly why the architecture keeps the engine layer capable of standing
+alone.
+
+== See also
+
+* `docs/wikis/02-Architecture.md` — the layer diagram and data-flow walkthrough this document explains the reasoning behind.
+* `docs/wikis/05-The-Proven-ABI.md` — the Idris2-to-Zig generator pipeline in detail.
+* `docs/developer/ABI-FFI-README.adoc` — the Hyperpolymath RSR ABI/FFI standard GSA follows.
+* `docs/developer/CONFIG-FORMATS.adoc` — the pattern to follow when adding a config format.
+* `docs/decisions/0001-adopt-rsr-standard.adoc` — why GSA's repo structure follows the RSR template.
+* `TOPOLOGY.md` — the module map this document's layers correspond to on disk.
