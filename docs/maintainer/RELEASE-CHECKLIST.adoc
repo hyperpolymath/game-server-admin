@@ -32,7 +32,7 @@ There is not yet a single-source-of-truth version. Before tagging, confirm the
 following agree on the release number: `src/interface/ffi/src/main.zig`
 (`VERSION`, `BUILD_INFO`), `src/interface/ffi/build.zig` (`.version` ×2),
 `run.js`, `panels/manifest.json`, `panels/*/panel.json`, and
-`.machine_readable/6a2/*.a2ml`. (Follow-up: a `scripts/check_version_drift.sh`
+`.machine_readable/descriptiles/*.a2ml`. (Follow-up: a `scripts/check_version_drift.sh`
 CI gate once the canonical location is chosen.)
 
 == Gate 3 — License is settled
@@ -40,12 +40,12 @@ CI gate once the canonical location is chosen.)
 *Blocking, one-time.* The LICENSE file + all Zig/Idris source SPDX headers are
 MPL-2.0; the panel descriptors and `META.a2ml` declare AGPL-3.0-or-later. Pick a
 direction, reconcile every artifact, and record it in `docs/legal/` before the
-first tagged release. See `.machine_readable/6a2/META.a2ml` for the flagged
+first tagged release. See `.machine_readable/descriptiles/META.a2ml` for the flagged
 conflict.
 
 == Gate 4 — Docs reflect reality
 
-* `.machine_readable/6a2/STATE.a2ml` completion % and session history updated.
+* `.machine_readable/descriptiles/STATE.a2ml` completion % and session history updated.
 * `docs/INDEX.adoc` statuses (`live`/`thin`/`planned`) match the tree.
 * `CHANGELOG` / release notes — `git-cliff` generates these from Conventional
   Commit messages, so confirm the commit log is clean.

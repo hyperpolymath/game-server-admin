@@ -3,12 +3,32 @@
 // Underpinned by Cadre Router (Affine Stack Implementation)
 //
 // Purpose: Provide a formally verified, resource-safe interface for the
-// Universal game server probe, configuration management, and administration.
+// universal game server probe, configuration management, and administration
+// tool — capable of serving ANY game: the model is driven by the A2ML game
+// profile registry (18 shipped profiles, extendable at runtime), and unknown
+// games fall back to protocol fingerprinting with a generic profile.
+//
+// Architecture: this file is the PURE TEA core (init/update/view/subs —
+// the quadruple the Cadre Router / Gossamer bridge lowers to the WASM ABI).
+// It performs no I/O. All effects live in gsa_ffi.affine as `cmd_*`
+// functions over the libgsa C ABI (Zig FFI, Idris2-proven layout); the
+// host runs a command and feeds its outcome back in as a Msg. Result
+// codes shown here mirror src/interface/abi/Types.idr (codes 0-17).
+
+module gsa_gui;
+
+use gsa_ffi::{cmd_bootstrap, cmd_probe, cmd_server_action, cmd_fetch_logs,
+              cmd_health, cmd_list_profiles, cmd_add_profile,
+              cmd_extract_config, cmd_provision, cmd_drift, cmd_alert};
+
+// Stdlib canon extern (pure; see affinescript stdlib/effects.affine).
+extern fn int_to_string(n: Int) -> String;
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
 enum Panel {
   ServerBrowser,
+  NexusSetup,
   ConfigEditor,
   ServerActions,
   LiveLogs,
@@ -35,26 +55,91 @@ struct GameServer {
   status: ServerStatus
 }
 
+// One entry of the A2ML game profile registry (profiles/*.a2ml). The
+// registry is what makes this interface any-game: every game GSA can
+// administer is described by a profile, and new games are added by
+// registering a new A2ML profile — no interface change required.
+struct GameProfile {
+  id: String,
+  name: String,
+  engine: String,
+  query_port: Int,
+  protocol: String
+}
+
 // ── Model ───────────────────────────────────────────────────────────────────
 
 struct Model {
   current_panel: Panel,
   managed_servers: [GameServer],
+  profiles: [GameProfile],
+  profile_count: Int,
+  active_profile_id: String,
   selected_server_id: String,
   search_query: String,
   is_loading: Bool,
-  history_depth: Int
+  history_depth: Int,
+  probe_code: Int,
+  health_code: Int,
+  logs: String,
+  status_line: String
 }
 
 // ── Msg ──────────────────────────────────────────────────────────────────────
+//
+// Inbound messages. The *Completed / *Loaded / *Received variants are how
+// the host feeds `cmd_*` outcomes back into the pure core.
 
 enum Msg {
   Navigate(Panel),
   SelectServer(String),
+  SelectProfile(String),
   UpdateSearch(String),
-  ServerAction(String, String), // server_id, action
+  ServerAction(String, String), // server_id, action ("start"|"stop"|"restart")
   RefreshServers,
+  ServersLoaded([GameServer]),
+  ProfilesLoaded([GameProfile], Int),
+  ProbeCompleted(Int),          // result code from cmd_probe
+  ActionCompleted(String),      // ActionResult JSON from cmd_server_action
+  LogsReceived(String),         // text from cmd_fetch_logs
+  HealthChecked(Int),           // result code from cmd_health
+  ProfileAdded(Int),            // result code from cmd_add_profile
   PopState
+}
+
+// ── Pure helpers ─────────────────────────────────────────────────────────────
+
+// Human text for a libgsa result code (codes mirror Types.idr 0-17;
+// gsa_ffi::result_label is the full mapper — this covers what the GUI
+// surfaces and keeps the pure core standalone-compilable).
+fn result_text(code: Int) -> String {
+  if code == 0 { "ok" }
+  else if code == 8 { "probe timeout" }
+  else if code == 9 { "connection refused" }
+  else if code == 10 { "authentication failed" }
+  else if code == 11 { "config parse error" }
+  else if code == 12 { "VeriSimDB unavailable" }
+  else if code == 13 { "not initialized" }
+  else if code == 14 { "protocol error" }
+  else if code == 17 { "not found" }
+  else { "error (code " ++ int_to_string(code) ++ ")" }
+}
+
+// Display name for the active profile; empty means auto-detect, where
+// the probe engine fingerprints the server and picks (or synthesises)
+// a profile — the generic fallback that serves any game.
+fn profile_display(active_profile_id: String) -> String {
+  if active_profile_id == "" {
+    "auto-detect (generic probe)"
+  } else {
+    active_profile_id
+  }
+}
+
+// JSON payload for cmd_server_action, built here so the effectful layer
+// stays a thin pass-through.
+pub fn action_payload(action: String, server_id: String) -> String {
+  "{\"action\":\"" ++ action ++ "\",\"server_id\":\"" ++ server_id ++ "\"}"
 }
 
 // ── TEA Logic ────────────────────────────────────────────────────────────────
@@ -63,91 +148,301 @@ fn gsa_init() -> Model {
   #{
     current_panel: Panel::ServerBrowser,
     managed_servers: [],
+    profiles: [],
+    profile_count: 0,
+    active_profile_id: "",
     selected_server_id: "",
     search_query: "",
     is_loading: false,
-    history_depth: 0
+    history_depth: 0,
+    probe_code: 0,
+    health_code: 0,
+    logs: "",
+    status_line: "GSA ready — bootstrap pending (cmd_bootstrap)"
   }
 }
 
 fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
   match model {
-    { current_panel: p, managed_servers: s, selected_server_id: id, search_query: q, is_loading: l, history_depth: h } => {
+    { current_panel: p, managed_servers: servers, profiles: profs,
+      profile_count: nprofs, active_profile_id: prof_id,
+      selected_server_id: sel, search_query: q, is_loading: loading,
+      history_depth: depth, probe_code: probe, health_code: health,
+      logs: logtext, status_line: status } => {
       match msg {
         Navigate(new_panel) => {
           #{
             current_panel: new_panel,
-            managed_servers: s,
-            selected_server_id: id,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: prof_id,
+            selected_server_id: sel,
             search_query: q,
             is_loading: false,
-            history_depth: h + 1
+            history_depth: depth + 1,
+            probe_code: probe,
+            health_code: health,
+            logs: logtext,
+            status_line: status
           }
         }
 
         SelectServer(new_id) => {
           #{
             current_panel: p,
-            managed_servers: s,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: prof_id,
             selected_server_id: new_id,
             search_query: q,
-            is_loading: l,
-            history_depth: h
+            is_loading: loading,
+            history_depth: depth,
+            probe_code: probe,
+            health_code: health,
+            logs: logtext,
+            status_line: status
+          }
+        }
+
+        SelectProfile(new_profile) => {
+          #{
+            current_panel: p,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: new_profile,
+            selected_server_id: sel,
+            search_query: q,
+            is_loading: loading,
+            history_depth: depth,
+            probe_code: probe,
+            health_code: health,
+            logs: logtext,
+            status_line: "profile: " ++ profile_display(new_profile)
           }
         }
 
         UpdateSearch(new_query) => {
           #{
             current_panel: p,
-            managed_servers: s,
-            selected_server_id: id,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: prof_id,
+            selected_server_id: sel,
             search_query: new_query,
-            is_loading: l,
-            history_depth: h
+            is_loading: loading,
+            history_depth: depth,
+            probe_code: probe,
+            health_code: health,
+            logs: logtext,
+            status_line: status
           }
         }
 
+        // Host contract: on this message the host calls
+        // cmd_server_action(handle, action_payload(action, sid)) and
+        // answers with ActionCompleted(json).
         ServerAction(sid, action) => {
-          // This would trigger an FFI call via Command in a full impl
           #{
             current_panel: p,
-            managed_servers: s,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: prof_id,
             selected_server_id: sid,
             search_query: q,
             is_loading: true,
-            history_depth: h
+            history_depth: depth,
+            probe_code: probe,
+            health_code: health,
+            logs: logtext,
+            status_line: "dispatching " ++ action ++ " ..."
           }
         }
 
+        // Host contract: host re-probes known servers (cmd_probe /
+        // cmd_fingerprint per profile) and answers ServersLoaded.
         RefreshServers => {
           #{
             current_panel: p,
-            managed_servers: s,
-            selected_server_id: id,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: prof_id,
+            selected_server_id: sel,
             search_query: q,
             is_loading: true,
-            history_depth: h
+            history_depth: depth,
+            probe_code: probe,
+            health_code: health,
+            logs: logtext,
+            status_line: "refreshing servers ..."
+          }
+        }
+
+        ServersLoaded(new_servers) => {
+          #{
+            current_panel: p,
+            managed_servers: new_servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: prof_id,
+            selected_server_id: sel,
+            search_query: q,
+            is_loading: false,
+            history_depth: depth,
+            probe_code: probe,
+            health_code: health,
+            logs: logtext,
+            status_line: "server list updated"
+          }
+        }
+
+        // Outcome of cmd_list_profiles after cmd_bootstrap: the full
+        // any-game registry (18 shipped A2ML profiles + runtime adds).
+        ProfilesLoaded(new_profiles, n) => {
+          #{
+            current_panel: p,
+            managed_servers: servers,
+            profiles: new_profiles,
+            profile_count: n,
+            active_profile_id: prof_id,
+            selected_server_id: sel,
+            search_query: q,
+            is_loading: false,
+            history_depth: depth,
+            probe_code: probe,
+            health_code: health,
+            logs: logtext,
+            status_line: int_to_string(n) ++ " game profiles loaded"
+          }
+        }
+
+        ProbeCompleted(code) => {
+          #{
+            current_panel: p,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: prof_id,
+            selected_server_id: sel,
+            search_query: q,
+            is_loading: false,
+            history_depth: depth,
+            probe_code: code,
+            health_code: health,
+            logs: logtext,
+            status_line: "probe: " ++ result_text(code)
+          }
+        }
+
+        ActionCompleted(result_json) => {
+          #{
+            current_panel: p,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: prof_id,
+            selected_server_id: sel,
+            search_query: q,
+            is_loading: false,
+            history_depth: depth,
+            probe_code: probe,
+            health_code: health,
+            logs: logtext,
+            status_line: "action result: " ++ result_json
+          }
+        }
+
+        LogsReceived(text) => {
+          #{
+            current_panel: p,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: prof_id,
+            selected_server_id: sel,
+            search_query: q,
+            is_loading: false,
+            history_depth: depth,
+            probe_code: probe,
+            health_code: health,
+            logs: text,
+            status_line: status
+          }
+        }
+
+        HealthChecked(code) => {
+          #{
+            current_panel: p,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: nprofs,
+            active_profile_id: prof_id,
+            selected_server_id: sel,
+            search_query: q,
+            is_loading: loading,
+            history_depth: depth,
+            probe_code: probe,
+            health_code: code,
+            logs: logtext,
+            status_line: "VeriSimDB: " ++ result_text(code)
+          }
+        }
+
+        ProfileAdded(code) => {
+          #{
+            current_panel: p,
+            managed_servers: servers,
+            profiles: profs,
+            profile_count: if code == 0 { nprofs + 1 } else { nprofs },
+            active_profile_id: prof_id,
+            selected_server_id: sel,
+            search_query: q,
+            is_loading: false,
+            history_depth: depth,
+            probe_code: probe,
+            health_code: health,
+            logs: logtext,
+            status_line: "add profile: " ++ result_text(code)
           }
         }
 
         PopState => {
-          if h > 0 {
+          if depth > 0 {
             #{
               current_panel: Panel::ServerBrowser,
-              managed_servers: s,
+              managed_servers: servers,
+              profiles: profs,
+              profile_count: nprofs,
+              active_profile_id: prof_id,
               selected_server_id: "",
               search_query: q,
               is_loading: false,
-              history_depth: h - 1
+              history_depth: depth - 1,
+              probe_code: probe,
+              health_code: health,
+              logs: logtext,
+              status_line: status
             }
           } else {
             #{
               current_panel: p,
-              managed_servers: s,
-              selected_server_id: id,
+              managed_servers: servers,
+              profiles: profs,
+              profile_count: nprofs,
+              active_profile_id: prof_id,
+              selected_server_id: sel,
               search_query: q,
-              is_loading: l,
-              history_depth: 0
+              is_loading: loading,
+              history_depth: 0,
+              probe_code: probe,
+              health_code: health,
+              logs: logtext,
+              status_line: status
             }
           }
         }
@@ -158,16 +453,32 @@ fn gsa_update(@linear msg: Msg, @linear model: Model) -> Model {
 
 fn gsa_view(model: Model) -> String {
   match model.current_panel {
-    ServerBrowser   => "GAME HUB: Discovery & Lifecycle",
-    ConfigEditor    => "CONFIG EDITOR: " ++ model.selected_server_id,
-    ServerActions   => "SERVER ACTIONS: " ++ model.selected_server_id,
-    LiveLogs        => "LIVE LOGS: " ++ model.selected_server_id,
-    HealthDashboard => "HEALTH DASHBOARD",
+    ServerBrowser   => "GAME HUB: Discovery & Lifecycle — "
+                       ++ int_to_string(model.profile_count)
+                       ++ " game profiles | " ++ model.status_line,
+    NexusSetup      => "NEXUS SETUP: provision "
+                       ++ profile_display(model.active_profile_id)
+                       ++ " | " ++ model.status_line,
+    ConfigEditor    => "CONFIG EDITOR: " ++ model.selected_server_id
+                       ++ " [" ++ profile_display(model.active_profile_id) ++ "]",
+    ServerActions   => "SERVER ACTIONS: " ++ model.selected_server_id
+                       ++ " | " ++ model.status_line,
+    LiveLogs        => "LIVE LOGS: " ++ model.selected_server_id
+                       ++ "\n" ++ model.logs,
+    HealthDashboard => "HEALTH DASHBOARD: VeriSimDB "
+                       ++ result_text(model.health_code)
+                       ++ " | last probe " ++ result_text(model.probe_code),
     ConfigHistory   => "CONFIG HISTORY: " ++ model.selected_server_id,
-    CrossSearch     => "CROSS-SERVER SEARCH"
+    CrossSearch     => "CROSS-SERVER SEARCH: " ++ model.search_query
   }
 }
 
+// Subscriptions the host should service while a panel is active:
+// LiveLogs polls cmd_fetch_logs; HealthDashboard polls cmd_health.
 fn gsa_subs(model: Model) -> String {
-  "None"
+  match model.current_panel {
+    LiveLogs        => "logs:" ++ model.selected_server_id,
+    HealthDashboard => "health:30s",
+    _               => "None"
+  }
 }

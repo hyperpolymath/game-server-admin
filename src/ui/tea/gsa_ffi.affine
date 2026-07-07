@@ -1,0 +1,275 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+//
+// Game Server Admin (GSA) — AffineScript FFI layer over libgsa
+//
+// Estate seam convention: AffineScript for the interface, Zig for the
+// FFI, Idris2 for the ABI. Every extern below names a C ABI symbol
+// exported by the Zig FFI (`src/interface/ffi/src/*.zig`, prefix
+// `gossamer_gsa_`, `pub export fn ... callconv(.c)`); the Idris2 ABI
+// contract for those symbols lives at `src/interface/abi/Foreign.idr`,
+// and the result codes mirror `src/interface/abi/Types.idr` (the single
+// source of truth — codes 0-17 are stable across ABI versions).
+//
+// `scripts/affine-ffi-contract-check.sh` keeps this file honest: every
+// symbol declared here must exist as a Zig export, and the operational
+// core set must all be declared here. Run it after touching either side.
+
+module gsa_ffi;
+
+// ── Result codes (mirrors Types.idr `Result`, codes 0-17) ──────────────────
+
+enum ResultCode {
+  Ok,
+  Error,
+  InvalidParam,
+  OutOfMemory,
+  NullPointer,
+  AlreadyConsumed,
+  ResourceLeaked,
+  DoubleFree,
+  ProbeTimeout,
+  ConnectionRefused,
+  AuthFailed,
+  ConfigParseError,
+  VeriSimDBUnavailable,
+  NotInitialized,
+  ProtocolError,
+  IoError,
+  PermissionDenied,
+  NotFound,
+  UnknownCode(Int)
+}
+
+// Decode a C int result into a ResultCode. Unrecognised codes map to
+// UnknownCode for forward compatibility (Types.idr resultFromInt
+// returns Nothing there; the interface keeps the raw value instead).
+pub fn result_from_int(code: Int) -> ResultCode {
+  if code == 0 { ResultCode::Ok }
+  else if code == 1 { ResultCode::Error }
+  else if code == 2 { ResultCode::InvalidParam }
+  else if code == 3 { ResultCode::OutOfMemory }
+  else if code == 4 { ResultCode::NullPointer }
+  else if code == 5 { ResultCode::AlreadyConsumed }
+  else if code == 6 { ResultCode::ResourceLeaked }
+  else if code == 7 { ResultCode::DoubleFree }
+  else if code == 8 { ResultCode::ProbeTimeout }
+  else if code == 9 { ResultCode::ConnectionRefused }
+  else if code == 10 { ResultCode::AuthFailed }
+  else if code == 11 { ResultCode::ConfigParseError }
+  else if code == 12 { ResultCode::VeriSimDBUnavailable }
+  else if code == 13 { ResultCode::NotInitialized }
+  else if code == 14 { ResultCode::ProtocolError }
+  else if code == 15 { ResultCode::IoError }
+  else if code == 16 { ResultCode::PermissionDenied }
+  else if code == 17 { ResultCode::NotFound }
+  else { ResultCode::UnknownCode(code) }
+}
+
+pub fn result_is_ok(code: Int) -> Bool {
+  code == 0
+}
+
+// Transient results may succeed on retry; terminal ones will not
+// (classification mirrors Types.idr isTransient).
+pub fn result_is_transient(code: Int) -> Bool {
+  code == 8 || code == 9 || code == 12 || code == 15
+}
+
+pub fn result_label(rc: ResultCode) -> String {
+  match rc {
+    ResultCode::Ok => "ok",
+    ResultCode::Error => "error",
+    ResultCode::InvalidParam => "invalid parameter",
+    ResultCode::OutOfMemory => "out of memory",
+    ResultCode::NullPointer => "null pointer",
+    ResultCode::AlreadyConsumed => "linear resource already consumed",
+    ResultCode::ResourceLeaked => "linear resource leaked",
+    ResultCode::DoubleFree => "double free",
+    ResultCode::ProbeTimeout => "probe timeout",
+    ResultCode::ConnectionRefused => "connection refused",
+    ResultCode::AuthFailed => "authentication failed",
+    ResultCode::ConfigParseError => "config parse error",
+    ResultCode::VeriSimDBUnavailable => "VeriSimDB unavailable",
+    ResultCode::NotInitialized => "not initialized",
+    ResultCode::ProtocolError => "protocol error",
+    ResultCode::IoError => "I/O error",
+    ResultCode::PermissionDenied => "permission denied",
+    ResultCode::NotFound => "not found",
+    ResultCode::UnknownCode(_) => "unknown result code"
+  }
+}
+
+// ── Opaque handle types ─────────────────────────────────────────────────────
+//
+// Heap pointers owned by libgsa. Never dereference; pass through the
+// binary ABI read accessors below and release with gossamer_gsa_free.
+
+pub extern type GsaPtr;
+
+// ── Lifecycle ────────────────────────────────────────────────────────────────
+
+pub extern fn gossamer_gsa_init(verisimdb_url: String,
+                                profiles_dir: String) -> Int / IO;
+pub extern fn gossamer_gsa_shutdown() -> Int / IO;
+pub extern fn gossamer_gsa_version() -> String;
+pub extern fn gossamer_gsa_last_error() -> String / IO;
+
+// ── Probe engine ─────────────────────────────────────────────────────────────
+
+pub extern fn gossamer_gsa_probe(host: String, port: Int) -> Int / IO;
+pub extern fn gossamer_gsa_fingerprint(host: String,
+                                       ports_json: String) -> String / IO;
+
+// ── Config extraction / application ─────────────────────────────────────────
+
+pub extern fn gossamer_gsa_extract_config(server_handle: Int,
+                                          profile_id: String) -> String / IO;
+pub extern fn gossamer_gsa_apply_config(server_handle: Int,
+                                        config: GsaPtr) -> Int / IO;
+pub extern fn gossamer_gsa_write_server_config(profile_id: String,
+                                               config_json: String,
+                                               operators_json: String) -> Int / IO;
+
+// ── A2ML serialisation ───────────────────────────────────────────────────────
+
+pub extern fn gossamer_gsa_a2ml_emit(config_json: String) -> String / IO;
+pub extern fn gossamer_gsa_a2ml_parse(a2ml: String) -> String / IO;
+
+// ── Server actions (Podman/Docker/systemd) ──────────────────────────────────
+
+pub extern fn gossamer_gsa_server_action(server_handle: Int,
+                                         action_json: String) -> String / IO;
+pub extern fn gossamer_gsa_get_logs(server_handle: Int, lines: Int) -> String / IO;
+pub extern fn gossamer_gsa_run_script(script_path: String,
+                                      arg: String,
+                                      env_json: String,
+                                      stdin_secret: String) -> Int / IO;
+
+// ── Game profile registry (the any-game surface) ────────────────────────────
+
+pub extern fn gossamer_gsa_load_profiles(dir: String) -> Int / IO;
+pub extern fn gossamer_gsa_list_profiles() -> String / IO;
+pub extern fn gossamer_gsa_add_profile(a2ml: String) -> Int / IO;
+
+// ── VeriSimDB backing store ──────────────────────────────────────────────────
+
+pub extern fn gossamer_gsa_verisimdb_store(octad_json: String) -> Int / IO;
+pub extern fn gossamer_gsa_verisimdb_query(vql: String) -> String / IO;
+pub extern fn gossamer_gsa_verisimdb_health() -> Int / IO;
+pub extern fn gossamer_gsa_verisimdb_drift(server_id: String) -> String / IO;
+pub extern fn gossamer_gsa_drift_struct(server_id: String) -> GsaPtr / IO;
+
+// ── Groove voice alerting ────────────────────────────────────────────────────
+
+pub extern fn gossamer_gsa_groove_discover() -> Int / IO;
+pub extern fn gossamer_gsa_groove_status(target_name: String) -> String / IO;
+pub extern fn gossamer_gsa_groove_alert(severity: Int,
+                                        server_id: String,
+                                        message: String) -> Int / IO;
+pub extern fn gossamer_gsa_groove_tts_alert(text: String) -> Int / IO;
+
+// ── Steam Web API ────────────────────────────────────────────────────────────
+
+pub extern fn gossamer_gsa_steam_resolve_vanity(vanity_url: String,
+                                                api_key: String) -> Int / IO;
+pub extern fn gossamer_gsa_steam_player_info(steam_id: String,
+                                             api_key: String) -> Int / IO;
+pub extern fn gossamer_gsa_steam_get_result() -> String / IO;
+
+// ── Binary ABI accessors (Layout.idr offsets as a live contract) ────────────
+
+pub extern fn gossamer_gsa_read_int(ptr: GsaPtr, offset: Int) -> Int;
+pub extern fn gossamer_gsa_read_double(ptr: GsaPtr, offset: Int) -> Float;
+pub extern fn gossamer_gsa_read_ptr(ptr: GsaPtr, offset: Int) -> GsaPtr;
+pub extern fn gossamer_gsa_read_string(ptr: GsaPtr) -> String;
+pub extern fn gossamer_gsa_array_len(ptr: GsaPtr) -> Int;
+pub extern fn gossamer_gsa_array_get_string(ptr: GsaPtr, index: Int) -> String;
+pub extern fn gossamer_gsa_is_null(ptr: GsaPtr) -> Int;
+pub extern fn gossamer_gsa_free(own ptr: GsaPtr) -> () / IO;
+pub extern fn gossamer_gsa_close_handle(server_handle: Int) -> Int / IO;
+
+// ── Effectful command layer (the TEA app's side effects) ────────────────────
+//
+// The pure TEA core in gsa_gui.affine never performs I/O itself; the
+// host (Cadre Router / Gossamer bridge) invokes these commands and
+// feeds the outcomes back in as Msg values. Each command returns the
+// raw C result (Int status or String payload) — decode status ints
+// with result_from_int.
+
+// Bring the library up and load the game profile registry.
+// Returns the init result code; profile count is reported by
+// cmd_list_profiles afterwards.
+pub fn cmd_bootstrap(verisimdb_url: String, profiles_dir: String) -> Int / IO {
+  let rc = gossamer_gsa_init(verisimdb_url, profiles_dir);
+  if rc == 0 {
+    gossamer_gsa_load_profiles(profiles_dir)
+  } else {
+    rc
+  }
+}
+
+// Probe a host:port and fingerprint the game server behind it.
+pub fn cmd_probe(host: String, port: Int) -> Int / IO {
+  gossamer_gsa_probe(host, port)
+}
+
+// Fingerprint across a JSON list of candidate ports; returns JSON.
+pub fn cmd_fingerprint(host: String, ports_json: String) -> String / IO {
+  gossamer_gsa_fingerprint(host, ports_json)
+}
+
+// Run a lifecycle action ("start" | "stop" | "restart") against a
+// probed server handle; returns a JSON ActionResult.
+pub fn cmd_server_action(server_handle: Int, action_json: String) -> String / IO {
+  gossamer_gsa_server_action(server_handle, action_json)
+}
+
+// Tail the server's logs.
+pub fn cmd_fetch_logs(server_handle: Int, lines: Int) -> String / IO {
+  gossamer_gsa_get_logs(server_handle, lines)
+}
+
+// VeriSimDB liveness for the health dashboard.
+pub fn cmd_health() -> Int / IO {
+  gossamer_gsa_verisimdb_health()
+}
+
+// JSON list of every registered game profile (18 shipped + any added
+// at runtime). This is what makes the interface any-game: unknown
+// games fall back to probe fingerprinting plus a generic profile.
+pub fn cmd_list_profiles() -> String / IO {
+  gossamer_gsa_list_profiles()
+}
+
+// Register a new game profile from A2ML source at runtime.
+pub fn cmd_add_profile(a2ml: String) -> Int / IO {
+  gossamer_gsa_add_profile(a2ml)
+}
+
+// Extract a server's live config as A2ML (secrets arrive [REDACTED]).
+pub fn cmd_extract_config(server_handle: Int, profile_id: String) -> String / IO {
+  gossamer_gsa_extract_config(server_handle, profile_id)
+}
+
+// Write a typed config for the Nexus provisioning wizard.
+pub fn cmd_provision(profile_id: String,
+                     config_json: String,
+                     operators_json: String) -> Int / IO {
+  gossamer_gsa_write_server_config(profile_id, config_json, operators_json)
+}
+
+// Config drift between the live server and its VeriSimDB baseline.
+pub fn cmd_drift(server_id: String) -> String / IO {
+  gossamer_gsa_verisimdb_drift(server_id)
+}
+
+// Voice-alert an operator via Groove when a server misbehaves.
+pub fn cmd_alert(severity: Int, server_id: String, message: String) -> Int / IO {
+  gossamer_gsa_groove_alert(severity, server_id, message)
+}
+
+// Resolve a Steam vanity URL for the Nexus operator slots.
+pub fn cmd_steam_resolve(vanity_url: String, api_key: String) -> Int / IO {
+  gossamer_gsa_steam_resolve_vanity(vanity_url, api_key)
+}

@@ -639,8 +639,20 @@ test-smoke:
     [[ "$PROFILES" -ge 1 ]] || { echo "FAIL: No game profiles"; exit 1; }
     echo "Smoke test passed!"
 
+# Typecheck the AffineScript interface (module resolution is cwd-relative,
+# so run from src/ui/tea). Point AFFINESCRIPT_BIN at the compiler if it is
+# not on PATH (e.g. .../affinescript/_build/default/bin/main.exe).
+affine-check:
+    cd src/ui/tea && "${AFFINESCRIPT_BIN:-affinescript}" check gsa_ffi.affine \
+        && "${AFFINESCRIPT_BIN:-affinescript}" check gsa_gui.affine
+    @echo "AffineScript interface typechecks"
+
+# AffineScript FFI declarations ↔ Zig exports symbol contract
+affine-contract:
+    bash scripts/affine-ffi-contract-check.sh
+
 # Run all quality checks
-quality: fmt-check lint test
+quality: fmt-check lint test affine-contract
     @echo "All quality checks passed!"
 
 # Fix all auto-fixable issues [reversible: git checkout]

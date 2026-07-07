@@ -237,7 +237,7 @@ pin as **stale**, not wrong, if it lags the `standards` repo's current
 HEAD — refresh it deliberately (bump the SHA, re-run CI) rather than
 switching to a floating ref to "fix" staleness.
 
-NOTE: `docs/INDEX.adoc` and `.machine_readable/6a2/NEUROSYM.a2ml` still
+NOTE: `docs/INDEX.adoc` and `.machine_readable/descriptiles/NEUROSYM.a2ml` still
 cite the `4ddc926` pin from PR #45 as of this writing; the workflow files
 themselves are the source of truth and are ahead of those notes (PR #49
 and #55 bumped the pins again since). Update those two references when
