@@ -57,7 +57,7 @@ just quality
 fails the build on any `believe_me` in `*.idr` code) and, per project
 convention documented in `.claude/CLAUDE.md`, extended to the rest of the
 Idris2 unsoundness surface: `believe_me`, `assert_total`, `unsafeCoerce`, and
-other dangerous proof/type escapes. `.machine_readable/6a2/META.a2ml`
+other dangerous proof/type escapes. `.machine_readable/descriptiles/META.a2ml`
 (`idris-unsound-scan = "believe_me/assert_total"`) and `MUST.contractile`
 (`"all GitHub Actions SHA-pinned"`) record the same requirements as
 repository-level hard constraints, independent of whether the scanner binary
@@ -104,11 +104,11 @@ postures — know which one you're looking at:
 |===
 
 Configuration for the scan (depth, report format, and the suppression scope)
-lives in `.machine_readable/6a2/NEUROSYM.a2ml` — read that file alongside
+lives in `.machine_readable/descriptiles/NEUROSYM.a2ml` — read that file alongside
 this runbook when adjusting scan behaviour.
 
 **Current state**: advisory scan is clean — critical=0, high=0
-(`.machine_readable/6a2/STATE.a2ml`, PRs #41–#45). The one standing Hypatia
+(`.machine_readable/descriptiles/STATE.a2ml`, PRs #41–#45). The one standing Hypatia
 finding is rule `GS007` (merged/stale remote branches — a repo-hygiene
 signal, not a code-safety finding). The reported count drifts upward as each
 phase PR leaves its merged branch behind (the live scan has ranged from ~10 to
@@ -131,8 +131,8 @@ scan` never applied it — only an external `apply-baseline.sh` post-filter
 (which this estate's CI does not run) would have honoured it. If you find
 guidance elsewhere (older docs, a different repo, a stale AI suggestion)
 telling you to add findings to a `.hypatia-baseline.json`, it will silently
-do nothing here. See `.machine_readable/6a2/NEUROSYM.a2ml` and
-`.machine_readable/6a2/STATE.a2ml` (2026-06-21 entry) for the documented
+do nothing here. See `.machine_readable/descriptiles/NEUROSYM.a2ml` and
+`.machine_readable/descriptiles/STATE.a2ml` (2026-06-21 entry) for the documented
 history of the switch.
 ====
 

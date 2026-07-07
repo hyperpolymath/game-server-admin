@@ -75,3 +75,19 @@ jobs:
       - name: Type-check the ABI package
         working-directory: src/interface/abi
         run: idris2 --typecheck gsa-abi.ipkg
+
+  affine-ffi-contract:
+    name: AffineScript ↔ Zig FFI symbols in sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # Symbol-level contract only (pure grep/comm — no toolchain): every
+      # extern in src/ui/tea/gsa_ffi.affine must be a real Zig export, and
+      # the operational core set must all be bound. The AffineScript
+      # typecheck itself needs the affinescript compiler (not packaged);
+      # run it locally with `just affine-check`.
+      - name: AffineScript FFI symbol contract
+        run: bash scripts/affine-ffi-contract-check.sh

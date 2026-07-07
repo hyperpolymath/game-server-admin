@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// Copyright (c) 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 = Game Server Admin — Documentation Index
 :revdate: 2026-06-21
 
@@ -71,14 +73,14 @@ _You release, run CI/CD, operate containers, and manage governance + security sc
 NOTE: the standards-estate reusable-workflow pin cited historically as `4ddc926`
 has since been bumped (governance/scorecard and secret-scanner/mirror now pin
 newer SHAs — see `docs/maintainer/CI-CD-GUIDE.adoc` for the current values).
-`.machine_readable/6a2/NEUROSYM.a2ml` still cites the stale SHA and should be
+`.machine_readable/descriptiles/NEUROSYM.a2ml` still cites the stale SHA and should be
 updated in a follow-up.
 
 == Machine-readable layer
 _For AI agents and tooling. Read `0-AI-MANIFEST.a2ml` FIRST._
 
 * `0-AI-MANIFEST.a2ml` — canonical entry point, invariants, startup checklist.
-* `.machine_readable/6a2/` — `STATE.a2ml` (status, blockers, session history), `META`, `ECOSYSTEM`, `AGENTIC`, `NEUROSYM` (Hypatia config + `.hypatia-ignore` scope), `PLAYBOOK`.
+* `.machine_readable/descriptiles/` — `STATE.a2ml` (status, blockers, session history), `META`, `ECOSYSTEM`, `AGENTIC`, `NEUROSYM` (Hypatia config + `.hypatia-ignore` scope), `PLAYBOOK`.
 * `.machine_readable/` contractiles — `INTENT`/`MUST`/`TRUST`/`DUST` (purpose, hard CI rules, trust boundaries, cleanup).
 * `.hypatia-ignore` — reviewed false-positive suppressions (the active mechanism).
 * `.claude/CLAUDE.md` — human-friendly codebase guide.

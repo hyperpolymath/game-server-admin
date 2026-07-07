@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: CC-BY-SA-4.0
+// Copyright (c) 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 = Game Server Admin (GSA) Roadmap
 :author: Jonathan D.A. Jewell
-:revdate: 2026-06-20
+:revdate: 2026-07-07
 
 == Current State
 
 GSA is a universal game server probe, config management, and administration tool.
-93% complete. Gossamer GUI + Zig FFI + Idris2 ABI + VeriSimDB backing store.
+96% complete (v0.9.0). Gossamer GUI + Zig FFI + Idris2 ABI + VeriSimDB backing store.
 
 Key capabilities delivered:
 
-* 27 exported FFI symbols (Zig 0.15.2, libgsa.so)
-* 10 FFI modules: lifecycle, probe, config_extract, a2ml_emit, verisimdb_client, server_actions, game_profiles, groove_client, steam_client, cli
+* 40 exported FFI symbols (Zig 0.15.2, libgsa.so)
+* 13 FFI modules: lifecycle, probe, config_extract, a2ml_emit, verisimdb_client, server_actions, game_profiles, groove_client, steam_client, abi_layout, abi_serde, http_capability, cli
 * Protocol fingerprinting (8 protocols, 20+ known ports)
 * Config parsing (8 formats: XML, INI, JSON, ENV, YAML, TOML, Lua, KV)
 * 18 game profiles (A2ML files in profiles/)
@@ -22,15 +23,19 @@ Key capabilities delivered:
 * Server actions via Podman/Docker/systemd
 * Secret redaction in A2ML output and octad JSON
 * Chainguard Wolfi containers with quadlets
-* Idris2 ABI with 13 result codes
+* Idris2 ABI with 18 result codes
 * Desktop entry and icon assets (SVG + PNG)
 * Steam Web API client (vanity->Steam64 resolution, player summary, ownership check)
 * Nexus Setup GUI -- 7-step provisioning wizard (profile -> Steam resolve -> config -> SSH target -> file staging -> provision -> verify)
 * CryoFall container stack (Containerfile, Quadlet, schema-driven provisioner, self-heal watchdog)
+* HTTP capability gateway (Phase 11) -- capability-scoped REST surface over the FFI
+* Illustrated wiki + reference docs (Phase 12)
+* AffineScript TEA interface (src/ui/tea/gsa_gui.affine) -- any-game admin surface over the libgsa FFI, profile-registry driven
 
 Test suites:
-* Zig unit tests: passing
-* Integration tests: 36 tests, passing
+* Zig unit tests: 94, passing
+* Integration tests: 41 tests, passing
+* Smoke tests: 5, passing
 * E2E smoke tests: 8/8 against live VeriSimDB
 * Gossamer chain: 23/25 (2 Ephapax parser gaps)
 
