@@ -11,9 +11,11 @@
 #   4. Both libraries are ABI-compatible (same C calling convention)
 #   5. Shell.eph and panel HTML files exist
 #
-# NOTE: Full Ephapax→Gossamer→libgsa execution requires `let!`, `__ffi()`,
-# `module`, and `import` syntax support in the Ephapax parser, which is
-# tracked in nextgen-languages/ephapax. This test validates the pre-conditions.
+# NOTE (2026-07-07): the historical Ephapax parser gaps (`let!`, `;`
+# sequencing, zero-arg calls, lambda blocks) are CLOSED — step 6 verifies
+# both probe programs against the built compiler. The only remaining
+# environment prerequisite is a built libgossamer.so (needs the GTK3 +
+# webkit2gtk-4.1 dev packages: apt install libgtk-3-dev libwebkit2gtk-4.1-dev).
 #
 # Usage:
 #   ./scripts/gossamer-integration-test.sh
@@ -21,8 +23,11 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-EPHAPAX="${EPHAPAX:-/var/mnt/eclipse/repos/nextgen-languages/ephapax/target/debug/ephapax}"
-LIBGOSSAMER="${LIBGOSSAMER:-/var/mnt/eclipse/repos/gossamer/src/interface/ffi/zig-out/lib/libgossamer.so}"
+# Estate repos live under ~/developer/repos (see global CLAUDE.md); the
+# old /var/mnt/eclipse mount is dead. Override any of these via env.
+REPOS_ROOT="${REPOS_ROOT:-$HOME/developer/repos}"
+EPHAPAX="${EPHAPAX:-${REPOS_ROOT}/γ-languages/ephapax/target/debug/ephapax}"
+LIBGOSSAMER="${LIBGOSSAMER:-${REPOS_ROOT}/gossamer/src/interface/ffi/zig-out/lib/libgossamer.so}"
 LIBGSA="${LIBGSA:-${REPO_DIR}/src/interface/ffi/zig-out/lib/libgsa.so}"
 
 PASSED=0
@@ -170,9 +175,8 @@ EPHTEST
 if "$EPHAPAX" check "$EPHTEST_LINEAR" >/dev/null 2>&1; then
     pass "Linear let! binding works"
 else
-    fail "Linear let! binding not yet supported (parser gap)"
-    echo "  → Tracked in: nextgen-languages/ephapax"
-    echo "  → Shell.eph requires: let!, __ffi(), module, import"
+    fail "Linear let! binding regressed (was verified working 2026-07-07)"
+    echo "  → Parser lives in: γ-languages/ephapax"
 fi
 
 rm -f "$EPHTEST_BASIC" "$EPHTEST_LINEAR"
@@ -186,8 +190,10 @@ echo "════════════════════════�
 
 if [[ $FAILED -gt 0 ]]; then
     echo ""
-    echo "  Known gaps: Ephapax parser needs let!, __ffi(), module, import"
-    echo "  All non-parser tests should pass (libraries, symbols, files)"
+    echo "  The historical Ephapax parser gaps are closed; a failure here is"
+    echo "  usually a missing build artefact. libgossamer.so needs GTK dev"
+    echo "  libs: sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev,"
+    echo "  then: cd gossamer/src/interface/ffi && zig build"
     exit 1
 else
     echo "  All tests passed — ready for full GUI execution!"
