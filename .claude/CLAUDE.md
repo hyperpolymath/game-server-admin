@@ -90,7 +90,7 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 - **CI/Governance (2026-06-21, PRs #41–#45)**: workflows hardened (Scorecard wrapper job perms, presence-gated instant-sync, CodeQL `actions`, scoped `deno` perms); standards reusable pins at `4ddc926`; Hypatia false positives suppressed via `.hypatia-ignore` (the inert `.hypatia-baseline.json` was removed — `hypatia scan` never applied it); advisory scan at critical=0/high=0. Doc map + gaps: `docs/INDEX.adoc`.
 - **Zig version**: 0.15.2 (see `.tool-versions`)
 - **Exported FFI symbols**: 40 (comptime linker hints in main.zig)
-- **Tests**: 140 Zig tests across 3 suites (unit: 94, integration: 41, smoke: 5). All passing (verified 2026-07-07).
+- **Tests**: 140 Zig tests across 3 suites (unit: 94, integration: 41, smoke: 5). All passing (verified 2026-07-07). Gossamer chain test 25/25 (verified 2026-07-07).
   - Security tests for command injection in server_actions
   - Config parser edge cases for all 8 formats
   - A2ML round-trip, diff, and secret redaction tests
@@ -104,7 +104,7 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 - **Release CI**: release.yml builds Zig, packages tarball, uploads artifacts
 - **Groove**: Full manifest with probe/config/drift/alert capabilities
 - **Icon**: SVG + 256px PNG in assets/
-- **Remaining (v1.0.0 gates)**: Gossamer chain env prerequisite (libgossamer.so unbuilt — needs `libgtk-3-dev libwebkit2gtk-4.1-dev`; the historical Ephapax parser gaps are CLOSED, verified 2026-07-07); CryoFall game-file staging (blocker B4, manual SteamCMD); Bitbucket mirror (SSH key -- manual step); OpenSSF badge; full docs pass
+- **Remaining (v1.0.0 gates)**: CryoFall game-file staging (blocker B4, manual SteamCMD); Bitbucket mirror (SSH key -- manual step); OpenSSF badge; full docs pass
 
 ## Lint / Quality
 
