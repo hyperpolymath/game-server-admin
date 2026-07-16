@@ -190,6 +190,16 @@ fn bindAllHandlers(channel: I64, caps: &GsaCapSet) -> I64 =
   let! channel = __ffi("gossamer_channel_bind", channel, "groove_drift_alert",
     fn(payload: String) -> String { Bridge.handleGrooveDriftAlert(payload, caps) }) in
 
+  -- Nexus Setup panel handlers (Wizard steps 2, 5, 6, 7)
+  let! channel = __ffi("gossamer_channel_bind", channel, "steam_resolve_vanity",
+    fn(payload: String) -> String { Bridge.handleSteamResolveVanity(payload) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "nexus_stage_files",
+    fn(payload: String) -> String { Bridge.handleNexusStageFiles(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "nexus_provision",
+    fn(payload: String) -> String { Bridge.handleNexusProvision(payload, caps) }) in
+  let! channel = __ffi("gossamer_channel_bind", channel, "nexus_verify",
+    fn(payload: String) -> String { Bridge.handleNexusVerify(payload, caps) }) in
+
   channel
 
 -- =============================================================================
