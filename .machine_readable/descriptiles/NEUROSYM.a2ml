@@ -16,7 +16,10 @@ report-format = "logtalk"
 # NOT honoured by `hypatia scan` — it only excludes the file itself from being
 # scanned. The working mechanism is the repo-root `.hypatia-ignore`, consulted
 # by Hypatia.ScannerSuppression (code_safety + secret-detection paths).
-# Standards reusable pins: 4ddc926 (PR #45).
+# Standards reusable pins (current): governance/scorecard = d7c2271, secret-scanner = 891b1ed,
+# mirror = d135b05. History: 4ddc926 (PR #45) -> d135b05 (#49) -> d7c2271 (#55);
+# secret-scanner repinned d135b05 -> 891b1ed (#64). See docs/maintainer/CI-CD-GUIDE.adoc
+# for the authoritative per-workflow values.
 suppression-file = ".hypatia-ignore"
 suppression-scope = "7 reviewed false positives: 2 test-fixture secrets (fuzz_config.zig, .envrc), 3 escaped-markup innerHTML sinks (src/gui/fli/*.js), 1 loopback HTTP URL (template-hunt.k9.ncl), 1 syscall bitCast (probe.zig); plus a self-exemption so the file's own docs are not re-flagged"
 
