@@ -1,0 +1,88 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= GSA AffineScript TEA Interface
+:toc:
+
+The AffineScript surface of Game Server Admin: a formally-structured,
+resource-safe GUI interface that can drive *any* game GSA supports. It is the
+estate's AffineScript half of the seam `AffineScript (interface) → Zig (FFI) →
+Idris2 (ABI)`, and it is a parallel interface to the Ephapax/Gossamer GUI —
+both talk to the same `libgsa` C ABI.
+
+== Files
+
+[cols="1,3"]
+|===
+| File | Role
+
+| `gsa_gui.affine`
+| The **pure TEA core** — `init` / `update` / `view` / `subs`. No I/O. The
+  `Model` is driven by the A2ML game-profile registry (18 shipped profiles +
+  runtime adds), with generic protocol-fingerprint fallback for unknown games.
+| `gsa_ffi.affine`
+| The **effect layer** — typed `extern` declarations for the `libgsa` C ABI
+  (all 38 `gossamer_gsa_*` exports) plus `cmd_*` wrappers carrying the `/ IO`
+  effect row. A `ResultCode` enum mirrors `src/interface/abi/Types.idr`
+  (codes 0–17).
+|===
+
+The core performs no effects: the host runs a `cmd_*` and feeds the outcome
+back in as a `Msg`.
+
+== Typechecking
+
+AffineScript module resolution is **cwd-relative**, so typecheck from this
+directory:
+
+[source,bash]
+----
+just affine-check        # typecheck gsa_gui.affine + gsa_ffi.affine
+----
+
+The AffineScript compiler is not packaged in every environment (it is not
+available in CI or the web sandbox), so a local check is the only way to
+typecheck the `.affine` sources. What *is* enforced everywhere is the FFI
+symbol contract:
+
+[source,bash]
+----
+just affine-contract     # scripts/affine-ffi-contract-check.sh
+----
+
+This asserts that every `extern` declared in `gsa_ffi.affine` is a real Zig
+export and that the operational core symbol set is fully declared. It runs
+locally and as the `affine-ffi-contract` job in
+`.github/workflows/abi-contract.yml`. Because CI cannot typecheck the sources,
+**run `just affine-check` locally before pushing changes to these files.**
+
+== Language constraints (why the code looks the way it does)
+
+Three properties of the current AffineScript compiler shape both files. None is
+a defect in this code — each is a constraint the code is written *around*. They
+are repeated in the `gsa_gui.affine` header so an editor sees them in context.
+
+`handle` is a reserved word::
+  FFI handle parameters are named `server_handle`, never `handle`. Do not
+  rename them back.
+
+Record update by spread does not typecheck on nominal structs::
+  There is no `#{ m with field: ... }` form for nominal structs. Every arm of
+  `update` therefore reconstructs the full `Model` literal — all 13 fields,
+  changing only the one or two that move. This verbosity is **deliberate**, not
+  an oversight; do not try to DRY it with a spread (it will not compile). If a
+  future compiler gains record spread on nominal structs, the `update` arms can
+  be collapsed then — until then, restating the record is the supported idiom.
+
+Module resolution is cwd-relative::
+  Always typecheck from `src/ui/tea` (see above). A run from the repo root will
+  fail to resolve `use gsa_ffi::…`.
+
+== Relationship to the rest of GSA
+
+* Result codes here are a mirror of the single source of truth,
+  `src/interface/abi/Types.idr` — see
+  `docs/wikis/05-The-Proven-ABI.md` for how that contract is machine-checked.
+* The C ABI symbols come from the Zig FFI — see
+  `docs/developer/FFI-MODULE-REFERENCE.adoc`.
+* For the panel/wizard semantics the `view` renders, see
+  `docs/wikis/07-GUI-and-Nexus-Setup.md`.
