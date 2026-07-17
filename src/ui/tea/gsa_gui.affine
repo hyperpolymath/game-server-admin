@@ -24,6 +24,29 @@ use gsa_ffi::{cmd_bootstrap, cmd_probe, cmd_server_action, cmd_fetch_logs,
 // Stdlib canon extern (pure; see affinescript stdlib/effects.affine).
 extern fn int_to_string(n: Int) -> String;
 
+// ── AffineScript constraints (read before editing) ──────────────────────────
+//
+// Three properties of the current AffineScript compiler shape this file. They
+// are documented here (and in src/ui/tea/README.adoc) so they are not
+// rediscovered the hard way. None is a bug in this code — each is a language
+// constraint the code is written *around* on purpose:
+//
+//   1. `handle` is a reserved word. FFI externs and params therefore use
+//      `server_handle`, never `handle`. Do not "simplify" the name back.
+//
+//   2. Record update by spread (`#{ m with status_line: ... }`) does NOT
+//      typecheck on nominal structs. Consequently every arm of `update`
+//      below reconstructs the full `Model` literal, restating all 13 fields
+//      and changing only the one or two that move. This verbosity is
+//      DELIBERATE — it is the cost of nominal-struct + affine semantics, not
+//      an oversight. Do not try to DRY it with a spread; it will not compile.
+//      (If a future compiler gains spread, collapse the arms then.)
+//
+//   3. Module resolution is cwd-relative. Typecheck from `src/ui/tea`
+//      (`just affine-check`). The extern↔Zig symbol contract is enforced by
+//      `scripts/affine-ffi-contract-check.sh` (`just affine-contract`, also
+//      the `affine-ffi-contract` job in `.github/workflows/abi-contract.yml`).
+//
 // ── Types ─────────────────────────────────────────────────────────────────
 
 enum Panel {
