@@ -1,23 +1,5 @@
 # Security Policy
 
-<!-- 
-============================================================================
-TEMPLATE INSTRUCTIONS (delete this block before publishing)
-============================================================================
-Replace all {{PLACEHOLDER}} values with your information:
-  game-server-admin     - Your project name
-  hyperpolymath            - GitHub username or org (e.g., hyperpolymath)
-  game-server-admin             - Repository name
-  j.d.a.jewell@open.ac.uk   - Security contact email
-  {{PGP_FINGERPRINT}}  - Your PGP key fingerprint (40 chars, no spaces)
-  {{PGP_KEY_URL}}      - URL to your public PGP key
-  https://github.com/hyperpolymath/game-server-admin          - Your website/domain
-  2026     - Current year for copyright
-
-Optional: Remove sections that don't apply (e.g., PGP if you don't use it)
-============================================================================
--->
-
 We take security seriously. We appreciate your efforts to responsibly disclose vulnerabilities and will make every effort to acknowledge your contributions.
 
 ## Table of Contents
@@ -59,19 +41,7 @@ If you cannot use GitHub Security Advisories, you may email us directly:
 | | |
 |---|---|
 | **Email** | j.d.a.jewell@open.ac.uk |
-| **PGP Key** | [Download Public Key]({{PGP_KEY_URL}}) |
-| **Fingerprint** | `{{PGP_FINGERPRINT}}` |
 
-```bash
-# Import our PGP key
-curl -sSL {{PGP_KEY_URL}} | gpg --import
-
-# Verify fingerprint
-gpg --fingerprint j.d.a.jewell@open.ac.uk
-
-# Encrypt your report
-gpg --armor --encrypt --recipient j.d.a.jewell@open.ac.uk report.txt
-```
 
 > **⚠️ Important:** Do not report security vulnerabilities through public GitHub issues, pull requests, discussions, or social media.
 
@@ -370,7 +340,6 @@ When using game-server-admin, we recommend:
 
 ## Additional Resources
 
-- [Our PGP Public Key]({{PGP_KEY_URL}})
 - [Security Advisories](https://github.com/hyperpolymath/game-server-admin/security/advisories)
 - [Changelog](CHANGELOG.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
