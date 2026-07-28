@@ -32,4 +32,5 @@ jobs:
             -d "{\"repo\": \"${{ github.repository }}\", \"branch\": \"${{ github.ref_name }}\", \"engine\": \"casket\"}" \
             || echo "BoJ server unreachable — skipping (non-fatal)"
 permissions:
+  actions: read
   contents: read
