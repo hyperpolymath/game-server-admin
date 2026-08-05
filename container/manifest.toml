@@ -17,7 +17,7 @@ tracking.
 """
 license = "AGPL-3.0-or-later"
 homepage = "https://github/hyperpolymath/game-server-admin"
-maintainer = "Jonathan D.A. Jewell <{{EMAIL}}>"
+maintainer = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
 
 [provenance]
 upstream = "https://github/hyperpolymath/game-server-admin"
