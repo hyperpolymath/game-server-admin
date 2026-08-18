@@ -1,11 +1,9 @@
 # Proof Requirements
 
-## Current State (2026-06-21 — verified with Idris2 0.7.0 + Zig 0.15.2)
+## Current State (2026-06-21 — verified with Idris2 0.7.0)
 
 The ABI package typechecks end-to-end (all modules `%default total`, no
-`postulate` / `believe_me` / `assert_total`), and the hand-written Idris layout
-constants are now cross-checked against the real C layout the Zig compiler emits
-(see *Cross-language ABI* below):
+`postulate` / `believe_me` / `assert_total`):
 
 ```bash
 cd src/interface/abi && idris2 --typecheck gsa-abi.ipkg
@@ -56,36 +54,13 @@ Decidable `portInRange`, `nonEmptyId`, `configFieldCountPositive`,
 `allPortsValid`, the `Valid*` smart constructors, and the linear
 `ServerHandle` with its erased non-null witness.
 
-### Cross-language ABI (`abi_layout.zig` / `abi_serde.zig`)
-The Idris proofs above show the *model* is internally consistent; the Zig side
-now checks that model against reality and makes it a live runtime contract.
-
-- **Layout cross-check (was the open HIGH item).** Each of the 8 structs is
-  declared as a Zig `extern struct` (`abi_layout.zig`). A comptime block asserts
-  `@offsetOf` / `@sizeOf` / `@alignOf` of every field equals the proven Idris
-  constant — lifted verbatim from `Layout.idr` into `abi_layout_expected.zig` by
-  `scripts/gen_abi_expected.zig`. Any divergence is a **compile error**, so the
-  library cannot build against a layout the proofs do not describe. A negative
-  test (perturbing one offset) confirms the guard bites; the check also runs
-  under `zig build test`.
-- **Live offset contract.** The previously-unimplemented FFI readers that
-  `GSA.ABI.Foreign` binds are now real (`abi_serde.zig`): `read_int` /
-  `read_double` / `read_ptr` decode fields at a byte offset; `read_string`,
-  `array_len`, `array_get_string`, `is_null`, `free` handle strings/arrays;
-  `apply_config` / `close_handle` round out the surface. Emitters
-  (`serializeDriftReport` / `serializeFingerprint` / `serializeStringArray`)
-  write the wire structs, and `gossamer_gsa_drift_struct` exports one. Round-trip
-  tests read each field back at its **proven** `Layout.idr` offset, standing in
-  for the Idris reader — so agreement is an end-to-end cross-language guarantee.
-- **Idris consumer.** `Foreign.getDrift` now decodes a `DriftReport` at offsets
-  taken from `offsetOf … driftReportLayout` (not the previous, wrong hand-tuned
-  `0/4/12/20/28`), via `prim__driftStruct` + `prim__readPtr`/`readInt`/`readDouble`.
-
-> Regenerate the expected table whenever `Layout.idr` changes:
-> `zig run scripts/gen_abi_expected.zig` (then the Zig cross-check re-validates).
-
 ## What still needs proving
 
+- **Zig ↔ Idris layout cross-check (HIGH).** `Layout.idr` proves the Idris
+  model is internally consistent, but nothing yet checks the hand-written
+  field offsets/sizes against Zig's `@sizeOf`/`@offsetOf`. A generated test
+  emitting Zig's numbers and comparing them to the `Layout` constants would
+  close the actual cross-language ABI guarantee.
 - **Server probe safety (MEDIUM).** Prove probes cause no side effects on
   targets. Needs a specification first.
 - **Configuration drift-detection completeness (LOW).** Needs a richer spec.

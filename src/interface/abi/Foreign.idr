@@ -379,14 +379,13 @@ export
 covering
 applyConfig : (1 handle : ServerHandle) -> A2MLConfig -> IO (Either Result (), ServerHandle)
 applyConfig (MkServerHandle p sid v) config = do
-  -- Config application is delegated to the server_action mechanism, which
-  -- returns a JSON result string. We treat a response containing "success":true
-  -- as Ok; anything else (including a non-live handle, reported by the Zig
-  -- validator) as an error. Full struct-based apply via prim__applyConfig awaits
-  -- an Idris-side A2MLConfig emitter (documented follow-up).
-  resp <- primIO (prim__serverAction p ("{\"action\":\"apply\",\"path\":\"" ++ config.configPath ++ "\"}"))
-  let ok = isInfixOf (unpack "\"success\":true") (unpack resp)
-  let parsed = if ok then Right () else Left Error
+  -- The Zig layer accepts a serialised config struct.
+  -- For now we pass the config path and let the Zig layer handle serialisation.
+  -- A proper implementation would use prim__applyConfig with a packed struct.
+  result <- primIO (prim__serverAction p ("apply:" ++ config.configPath))
+  let parsed = if result == 0
+                 then Right ()
+                 else Left (fromMaybe Error (resultFromInt (negate result)))
   pure (parsed, MkServerHandle p sid v)
 
 ||| Send a named action to the server (start, stop, restart, status, etc.),
@@ -400,13 +399,10 @@ export
 covering
 serverAction : (1 handle : ServerHandle) -> String -> IO (Either Result String, ServerHandle)
 serverAction (MkServerHandle p sid v) action = do
-  -- gossamer_gsa_server_action returns a JSON result string, not an int code.
-  -- The sentinel "ERR" is emitted when the library is not initialised.
-  resp <- primIO (prim__serverAction p action)
-  let outcome = if resp == "ERR"
-                  then Left NotInitialized
-                  else Right resp
-  pure (outcome, MkServerHandle p sid v)
+  result <- primIO (prim__serverAction p action)
+  if result >= 0
+    then pure (Right ("Action '" ++ action ++ "' completed (code " ++ show result ++ ")"), MkServerHandle p sid v)
+    else pure (Left (fromMaybe Error (resultFromInt (negate result))), MkServerHandle p sid v)
 
 ||| Retrieve the last N lines of server log output, BORROWING the handle.
 ||| Log lines are returned in chronological order (oldest first).
@@ -418,13 +414,13 @@ export
 covering
 getLogs : (1 handle : ServerHandle) -> Nat -> IO (Either Result (List String), ServerHandle)
 getLogs (MkServerHandle p sid v) lineCount = do
-  -- gossamer_gsa_get_logs returns plain newline-delimited text, not a
-  -- serialised string-array struct. Split it into lines here.
-  text <- primIO (prim__getLogs p (cast lineCount))
-  let outcome = if text == "ERR"
-                  then Left NotInitialized
-                  else Right (lines text)
-  pure (outcome, MkServerHandle p sid v)
+  ptr <- primIO (prim__getLogs p (cast lineCount))
+  case prim__isNull ptr /= 0 of
+    True => pure (Left NullPointer, MkServerHandle p sid v)
+    False => do
+      lines <- readStringArray ptr
+      primIO (prim__free ptr)
+      pure (Right lines, MkServerHandle p sid v)
 
 ||| Close and release a server handle, CONSUMING it.
 ||| After this call, the handle is no longer valid. The linear type system
@@ -437,10 +433,8 @@ export
 covering
 closeHandle : (1 handle : ServerHandle) -> IO Result
 closeHandle (MkServerHandle p _ _) = do
-  -- Zig returns Ok on a clean close, double_free on a repeat close (which the
-  -- linear type prevents for well-typed callers), not_found for a stray id.
   result <- primIO (prim__closeHandle p)
-  pure (resultOf result)
+  pure (fromMaybe Error (resultFromInt result))
 
 --------------------------------------------------------------------------------
 -- Safe Wrappers: VeriSimDB Operations
