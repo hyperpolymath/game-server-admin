@@ -24,6 +24,15 @@ use gsa_ffi::{cmd_bootstrap, cmd_probe, cmd_server_action, cmd_fetch_logs,
 // Stdlib canon extern (pure; see affinescript stdlib/effects.affine).
 extern fn int_to_string(n: Int) -> String;
 
+module gsa_gui;
+
+use gsa_ffi::{cmd_bootstrap, cmd_probe, cmd_server_action, cmd_fetch_logs,
+              cmd_health, cmd_list_profiles, cmd_add_profile,
+              cmd_extract_config, cmd_provision, cmd_drift, cmd_alert};
+
+// Stdlib canon extern (pure; see affinescript stdlib/effects.affine).
+extern fn int_to_string(n: Int) -> String;
+
 // ── AffineScript constraints (read before editing) ──────────────────────────
 //
 // Three properties of the current AffineScript compiler shape this file. They

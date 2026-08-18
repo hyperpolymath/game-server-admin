@@ -14,10 +14,6 @@
 // `scripts/affine-ffi-contract-check.sh` keeps this file honest: every
 // symbol declared here must exist as a Zig export, and the operational
 // core set must all be declared here. Run it after touching either side.
-//
-// Naming note: `handle` is a reserved word in AffineScript, so the handle
-// params below are named `server_handle`. See src/ui/tea/README.adoc for the
-// full set of language constraints that shape this interface.
 
 module gsa_ffi;
 
