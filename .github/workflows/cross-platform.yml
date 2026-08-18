@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
-# CI for Game Server Admin — Linux only for now.
-# macOS and Windows are deferred to the dedicated cross-platform effort:
-# the FFI is currently POSIX-only (fcntl sockets, posix.getenv) and does
-# not compile on Windows. Re-add the matrix legs there.
+# Cross-platform CI for Game Server Admin
+# Builds and tests on Linux, macOS, and Windows
 
 name: Cross-Platform Build & Test
 
