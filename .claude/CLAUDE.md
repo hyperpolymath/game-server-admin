@@ -104,7 +104,7 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 - **Release CI**: release.yml builds Zig, packages tarball, uploads artifacts
 - **Groove**: Full manifest with probe/config/drift/alert capabilities
 - **Icon**: SVG + 256px PNG in assets/
-- **Remaining (v1.0.0 gates)**: CryoFall game-file staging (blocker B4, manual SteamCMD); Bitbucket mirror (SSH key -- manual step); OpenSSF badge; full docs pass
+- **Remaining (v1.0.0 gates)**: Gossamer chain env prerequisite (libgossamer.so unbuilt — needs `libgtk-3-dev libwebkit2gtk-4.1-dev`; the historical Ephapax parser gaps are CLOSED, verified 2026-07-07); CryoFall game-file staging (blocker B4, manual SteamCMD); Bitbucket mirror (SSH key -- manual step); OpenSSF badge; full docs pass
 
 ## Lint / Quality
 

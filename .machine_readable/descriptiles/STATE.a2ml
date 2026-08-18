@@ -50,6 +50,7 @@ blockers = [
 actions = [
   "STAGE CRYOFALL: STEAM_USER=hyperpolymath just cryofall-stage-verpex (one-time ~3GB download — needs Steam password + Guard code)",
   "After staging: just cryofall-watchdog-install (deploys self-heal watchdog as systemd service)",
+  "OWNER: install GTK dev libs (sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev) then build gossamer FFI (zig build) — last Gossamer-chain failure; the historical Ephapax parser gaps are CLOSED (verified 2026-07-07)",
   "Set up Bitbucket mirror (SSH key issue — manual step)",
   "OWNER: rotate FARM_DISPATCH_TOKEN to clear Instant Sync red (B5, estate-wide)",
   "OWNER: close issue #20 — all 8 panic-attack findings verified fixed/false-positive (triage evidence in the 2026-07-07 PR body)",
@@ -58,7 +59,6 @@ actions = [
 
 [session-history]
 sessions = [
-  { date = "2026-07-07c", summary = "Gossamer chain FULLY GREEN: owner installed libgtk-3-dev + libwebkit2gtk-4.1-dev (Ubuntu 24.04), gossamer FFI built clean (libgossamer.so 0.3.0), full chain test 25/25 — parser probes, both libraries, all symbols, ABI compat, all source files. The v1.0.0 chain gate is closed; remaining gates are CryoFall staging (B4), Bitbucket mirror, OpenSSF badge, docs pass." },
   { date = "2026-07-07b", summary = "Chain-test truth pass. VERIFIED the 'Ephapax parser gaps' v1.0 gate is STALE: ephapax 0.1.0 (γ-languages/ephapax) passes both step-6 probe programs (let and let! linear binding) — the parser caught up since 2026-03. Ran the full Gossamer chain test: 17/18, sole failure = libgossamer.so unbuilt in this environment (gossamer FFI needs gtk+-3.0 + webkit2gtk-4.1 dev libraries; sudo unavailable to this session — owner installs, then zig build in gossamer/src/interface/ffi). Fixed the dead /var/mnt/eclipse default paths in gossamer-integration-test.sh (now REPOS_ROOT=~/developer/repos, env-overridable) and rewrote its stale known-gaps messaging. Corrected the parser-gaps claims in CLAUDE.md, ROADMAP, STATE. Also confirmed standards#472 (merged 2026-07-07) fixed the Secret Scanner at source for standards itself + canonical example — the ~281-repo wrapper sweep remains the estate-level remainder." },
   { date = "2026-03-22", summary = "Created repo — 412 files, 28901 lines. Full ABI/FFI/Core/GUI/Profiles/Clades/VeriSimDB. Pushed to GitHub + GitLab. PanLL integration committed." },
   { date = "2026-03-29", summary = "Marathon session: Zig 0.15.2 full compat (all 9 FFI modules incl. cli.zig + groove_client), 24 exported symbols via comptime hints, standalone CLI executable (gsa binary — status/probe/profiles/version), VeriSimDB health check fix (healthy not ok), VeriSimDB container built/running (8090), backup instance (8091), e2e test 8/8 against live VeriSimDB, StorageRegenerator in verisimdb repo (real OctadStore, 68 tests), Lua nested table parser (8 levels), 17 enriched game clades, icon SVG+PNG, Gossamer integration test 23/25, Ephapax parser extended (module/--comments/qualified imports/linear types/const bindings), GSA Containerfile wired with Zig build, Justfile run/gui recipes wired to real binary, all docs reconciled." },
