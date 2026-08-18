@@ -94,7 +94,7 @@ output = "stdout"
 # on = ["failure", "recovery", "resource_critical"]
 
 # [notifications.email]
-# to = "{{EMAIL}}"
+# to = "j.d.a.jewell@open.ac.uk"
 # from = "vordr@gsa.local"
 # smtp = "smtp://localhost:25"
 # on = ["failure", "resource_critical"]
