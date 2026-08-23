@@ -100,7 +100,7 @@ VeriSimDB (8-modality octads)      -- container/verisimdb/
 - **Cross-language ABI**: `abi_layout.zig` asserts (at compile time + `zig build test`) that the 8 `extern struct`s match the proven `Layout.idr` offsets/sizes; `abi_serde.zig` implements the offset readers/emitters so those offsets are a live runtime contract (was the open HIGH proof item)
 - **VeriSimDB**: Main on 8090 (built, running), backup on 8091 (game saves)
 - **Container**: Containerfile wired with real Zig build, entrypoint.sh execs gsa
-- **Guix**: guix.scm has real build/install phases (flake.nix removed in the nix→guix migration)
+- **Guix**: guix.scm has real build/install phases (flake.guix removed in the guix→guix migration)
 - **Release CI**: release.yml builds Zig, packages tarball, uploads artifacts
 - **Groove**: Full manifest with probe/config/drift/alert capabilities
 - **Icon**: SVG + 256px PNG in assets/
