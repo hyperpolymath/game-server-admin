@@ -1,0 +1,29 @@
+%A2ML
+- suppression:
+    file: 'src/gui/fli/fli-gauge.js'
+    rule: 'DynamicCodeExecution'
+    justification: 'GUI component constructs local trusted DOM structures safely.'
+- suppression:
+    file: 'src/gui/fli/fli-editable.js'
+    rule: 'DynamicCodeExecution'
+    justification: 'GUI component constructs local trusted DOM structures safely.'
+- suppression:
+    file: 'src/gui/fli/fli-tooltip.js'
+    rule: 'DynamicCodeExecution'
+    justification: 'GUI component constructs local trusted DOM structures safely.'
+- suppression:
+    file: 'src/gui/fli/fli-terminal.js'
+    rule: 'DynamicCodeExecution'
+    justification: 'GUI component constructs local trusted DOM structures safely.'
+- suppression:
+    file: 'run.js'
+    rule: 'ExcessivePermissions'
+    justification: 'False positive context: run.js is a local build tool and task runner requiring unrestricted filesystem/subprocess access.'
+- suppression:
+    file: 'scripts/wizard.sh'
+    rule: 'HardcodedSecret'
+    justification: 'False positive: variables like STEAM_PASS reference dynamic user inputs, not static hardcoded secrets.'
+- suppression:
+    file: 'scripts/steam-stage.sh'
+    rule: 'HardcodedSecret'
+    justification: 'False positive: variables like STEAM_PASS reference dynamic user inputs, not static hardcoded secrets.'
