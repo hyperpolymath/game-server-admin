@@ -98,7 +98,7 @@ contents (not inferred from the name).
 | push to `main`/`master`, PR (any), manual dispatch
 | Single wrapper call into the estate `governance-reusable.yml`. Replaces
   eight per-repo governance workflows removed in the same commit (quality,
-  guix/nix policy, npm/bun blocker, ts blocker, security policy, RSR
+  guix/guix policy, npm/bun blocker, ts blocker, security policy, RSR
   anti-pattern, well-known enforcement, workflow linter) — those checks now
   live centrally in `standards`.
 

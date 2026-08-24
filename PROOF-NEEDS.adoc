@@ -1,0 +1,124 @@
+== Proof Requirements
+
+=== Current State (2026-06-21 — verified with Idris2 0.7.0 + Zig 0.15.2)
+
+The ABI package typechecks end-to-end (all modules `+%default total+`,
+no `+postulate+` / `+believe_me+` / `+assert_total+`), and the
+hand-written Idris layout constants are now cross-checked against the
+real C layout the Zig compiler emits (see _Cross-language ABI_ below):
+
+[source,bash]
+----
+cd src/interface/abi && idris2 --typecheck gsa-abi.ipkg
+# 1/3: Building Types (Types.idr)
+# 2/3: Building Layout (Layout.idr)
+# 3/3: Building Foreign (Foreign.idr)
+----
+
+Toolchain: Idris2 0.7.0, Chez backend (`+.tool-versions+` pins
+`+idris2 0.7.0+`).
+
+=== What is proven (machine-checked)
+
+==== Memory layout (`+Layout.idr+`)
+
+For every one of the 8 ABI structs — ServerHandle, ProbeResult,
+ConfigField, A2MLConfig, GameProfile, ServerOctad, Fingerprint,
+DriftReport — all four layout properties are proven:
+
+[width="100%",cols="53%,47%",options="header",]
+|===
+|Property |Meaning
+|`+NoOverlap+` |no two fields’ `+[offset, offset+size)+` ranges overlap
+
+|`+AllFieldsAligned+` |every field offset is a multiple of its alignment
+
+|`+SizeAligned+` |total struct size is a multiple of the struct
+alignment
+
+|`+SizeCoversFields+` |total size ≥ sum of field sizes (padding
+accounted)
+|===
+
+Discharged by decision procedures (`+decNoOverlap+`, `+decAllAligned+`,
+`+decSizeAligned+`, `+decSizeCovers+`) extracted via `+getYes+`; each
+proof typechecks only because its `+Dec+` reduces to `+Yes+` for that
+concrete layout — i.e. a malformed layout would fail to compile.
+
+Also still proven: the per-type size/alignment `+Refl+` proofs, the
+`+SizeOf+`↔layout agreement (`+LayoutMatchesSizeOf+`), and
+cross-platform x86_64 ≡ aarch64 equivalence.
+
+==== Alignment (`+Layout.idr+`)
+
+* `+alignUpCeil offset a = ceilDiv offset a * a+` (via an in-module
+total `+ceilDiv+`).
+* `+alignUpCeilIsMultiple+` — constructive `+Refl+` proof that the
+result is `+k * a+`.
+
+____
+Correction to the prior version of this file: the earlier
+`+alignUpCeilIsMultiple+` did *not* typecheck (the `+case+` form left
+the goal stuck). It was rewritten via `+ceilDiv+` so the witness is a
+direct `+Refl+`. There is no remaining `+alignUpEquiv+` postulate — the
+proven path uses `+alignUpCeil+`/`+ceilDiv+` directly, so that
+obligation is moot.
+____
+
+==== Domain validators (`+Types.idr+`)
+
+Decidable `+portInRange+`, `+nonEmptyId+`, `+configFieldCountPositive+`,
+`+allPortsValid+`, the `+Valid*+` smart constructors, and the linear
+`+ServerHandle+` with its erased non-null witness.
+
+==== Cross-language ABI (`+abi_layout.zig+` / `+abi_serde.zig+`)
+
+The Idris proofs above show the _model_ is internally consistent; the
+Zig side now checks that model against reality and makes it a live
+runtime contract.
+
+* *Layout cross-check (was the open HIGH item).* Each of the 8 structs
+is declared as a Zig `+extern struct+` (`+abi_layout.zig+`). A comptime
+block asserts `+@offsetOf+` / `+@sizeOf+` / `+@alignOf+` of every field
+equals the proven Idris constant — lifted verbatim from `+Layout.idr+`
+into `+abi_layout_expected.zig+` by `+scripts/gen_abi_expected.zig+`.
+Any divergence is a *compile error*, so the library cannot build against
+a layout the proofs do not describe. A negative test (perturbing one
+offset) confirms the guard bites; the check also runs under
+`+zig build test+`.
+* *Live offset contract.* The previously-unimplemented FFI readers that
+`+GSA.ABI.Foreign+` binds are now real (`+abi_serde.zig+`): `+read_int+`
+/ `+read_double+` / `+read_ptr+` decode fields at a byte offset;
+`+read_string+`, `+array_len+`, `+array_get_string+`, `+is_null+`,
+`+free+` handle strings/arrays; `+apply_config+` / `+close_handle+`
+round out the surface. Emitters (`+serializeDriftReport+` /
+`+serializeFingerprint+` / `+serializeStringArray+`) write the wire
+structs, and `+gossamer_gsa_drift_struct+` exports one. Round-trip tests
+read each field back at its *proven* `+Layout.idr+` offset, standing in
+for the Idris reader — so agreement is an end-to-end cross-language
+guarantee.
+* *Idris consumer.* `+Foreign.getDrift+` now decodes a `+DriftReport+`
+at offsets taken from `+offsetOf … driftReportLayout+` (not the
+previous, wrong hand-tuned `+0/4/12/20/28+`), via `+prim__driftStruct+`
++ `+prim__readPtr+`/`+readInt+`/`+readDouble+`.
+
+____
+Regenerate the expected table whenever `+Layout.idr+` changes:
+`+zig run scripts/gen_abi_expected.zig+` (then the Zig cross-check
+re-validates).
+____
+
+=== What still needs proving
+
+* *Server probe safety (MEDIUM).* Prove probes cause no side effects on
+targets. Needs a specification first.
+* *Configuration drift-detection completeness (LOW).* Needs a richer
+spec.
+* *Access control for admin panels (LOW).* Needs a specification.
+
+=== Notes
+
+* `+Foreign.idr+`’s linear `+ServerHandle+` wrappers now typecheck: each
+handle is consumed by a pattern match and rebuilt for the borrow-return,
+so linearity is respected (previously they used the handle twice and did
+not compile).

@@ -46,7 +46,7 @@
                         ┌─────────────────────────────────────────┐
                         │          PLATFORM INTEGRATION           │
                         │  ┌───────────┐  ┌───────────┐  ┌───────┐│
-                        │  │ GitHub    │  │ GitLab    │  │ Nix / ││
+                        │  │ GitHub    │  │ GitLab    │  │ Guix / ││
                         │  │ Workflows │  │ CI/CD     │  │ Guix  ││
                         │  └───────────┘  └───────────┘  └───────┘│
                         └─────────────────────────────────────────┘
@@ -88,7 +88,7 @@ CONTAINER ECOSYSTEM (Phase 2)
 REPO INFRASTRUCTURE
   .machine_readable/                ██████████ 100%    STATE/META/ECOSYSTEM active
   Governance & License              ██████████ 100%    PMPL & Ethical use verified
-  Development Shells (Nix/Guix)     ██████████ 100%    Reproducible env stable
+  Development Shells (Guix/Guix)     ██████████ 100%    Reproducible env stable
 
 ─────────────────────────────────────────────────────────────────────────────
 OVERALL:                            ██████████ 100%    RSR Template Stable & Certified

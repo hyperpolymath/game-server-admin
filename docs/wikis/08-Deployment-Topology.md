@@ -97,9 +97,9 @@ It expects `gsa-verisimdb` reachable on `:8090` (override with
 | `container/compose.toml`, `compose.example.toml` | compose reference (quadlets are canonical) |
 | `container/deploy.k9.ncl` | Nickel deployment descriptor |
 
-## Nix / Guix
+## Guix / Guix
 
-Both `flake.nix` and `guix.scm` carry **real** build/install phases (not stubs),
+Both `flake.guix` and `guix.scm` carry **real** build/install phases (not stubs),
 so GSA can also be built reproducibly outside containers.
 
 ## Reality check
