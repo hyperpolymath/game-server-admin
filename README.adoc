@@ -1,0 +1,208 @@
+Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+
+____
+[!TIP] *AI-Assisted Install:* Just tell any AI assistant: +
+`+Set+` `+up+` `+game-server-admin+` `+from+`
+https://github.com/hyperpolymath/game-server-admin[`+https://github.com/hyperpolymath/game-server-admin+`] +
+The AI reads the manifest, asks you a few questions, and handles
+everything.
+____
+
+== Overview
+
+*Universal game server probe, configuration management, and
+administration* — built on Gossamer (linearly-typed webview shell) with
+VeriSimDB (8-modality database) underpinning.
+
+GSA can attach to _any_ game server, fingerprint it via protocol
+probing, extract its configuration into A2ML format, and provide a rich
+GUI for viewing, editing, and tracking config changes with full
+provenance.
+
+*New in this version:* User-configurable server connections with support
+for default servers and favorites list. See Configuration for details.
+
+=== Architecture
+
+....
+┌─────────────────────────────────────────────────┐
+│  Gossamer GUI (Ephapax + HTML/JS)               │
+│  8 panels, each a Clade citizen with inheritance │
+└────────────────────┬────────────────────────────┘
+                     │ IPC (gossamer:// bridge)
+┌────────────────────┴────────────────────────────┐
+│  Probe Engine (Ephapax + Zig FFI)               │
+│  Protocol fingerprint → game profile → config   │
+└────────────────────┬────────────────────────────┘
+                     │ REST (localhost:8090)
+┌────────────────────┴────────────────────────────┐
+│  VeriSimDB Instance (gsa-verisimdb)             │
+│  8 modalities per server, drift detection       │
+└─────────────────────────────────────────────────┘
+....
+
+=== Panels
+
+[width="100%",cols="34%,33%,33%",options="header",]
+|===
+|Panel |Kind |Description
+|Server Browser |inspector |Discover/fingerprint servers, add to
+management
+
+|Config Editor |editor |A2ML-aware form generation with type validation
+
+|Server Actions |terminal |Start/stop/restart with confirmation
+
+|Live Logs |terminal |Real-time log streaming with ANSI color
+
+|Health Dashboard |scanner |VeriSimDB drift detection and health gauges
+
+|Config History |database |Temporal version timeline with diff viewer
+
+|Cross-Server Search |database |VQL full-text + vector search across
+configs
+|===
+
+All panels are registered in the PanLL Clade system with full
+inheritance. The cladogram grows automatically as new game profiles are
+added.
+
+=== Supported Games (Initial)
+
+Valheim, Barotrauma, Don’t Starve Together, Minecraft Java/Bedrock,
+Factorio, Terraria, ARK, Rust (game), CS2, Garry’s Mod, Project Zomboid,
+Starbound, DayZ, Void Expanse — plus IDApTIK and Burble.
+
+== Quick Start
+
+[source,bash]
+----
+# Start the VeriSimDB instance
+just verisimdb-up
+
+# Build and run the CLI
+just run status              # system status, VeriSimDB health, loaded profiles
+just run probe <host> [port] # fingerprint a game server (default port 27015)
+just run profiles            # list all 18 supported game profiles
+
+# Or build and launch the GUI
+just build && just gui
+----
+
+=== CLI Reference
+
+The `+gsa+` binary is built automatically by `+zig+` `+build+` and lives
+at `+src/interface/ffi/zig-out/bin/gsa+`.
+
+[width="100%",cols="50%,50%",options="header",]
+|===
+|Command |Description
+|`+gsa+` `+status+` |VeriSimDB health, build info, loaded game profiles
+
+|`+gsa+` `+probe+` `+<host>+` `+[port]+` |Fingerprint a game server
+(Steam, Minecraft, RCON, HTTP, TCP banner)
+
+|`+gsa+` `+profiles+` |JSON listing of all supported games with
+engine/port/config details
+
+|`+gsa+` `+version+` |Print version string
+
+|`+gsa+` `+help+` |Usage information
+|===
+
+Environment variables: `+GSA_VERISIMDB_URL+` (default
+http://localhost:8090[`+http://localhost:8090+`]), `+GSA_PROFILES_DIR+`
+(default `+./profiles+`).
+
+== Adding a Game Profile
+
+Create a new `+.a2ml+` file in `+profiles/+`:
+
+....
+@game-profile(id="my-game", name="My Game", engine="custom"):
+  @ports(query=27015, game=27016):@end
+  @protocol(type="steam-query", version="a2s"):@end
+  @config(format="json", path="/config/server.json"):
+    @field(key="name", type="string", label="Server Name"):@end
+  @end
+  @clade(inherits="gsa-game", kind="game-profile"):@end
+@end
+....
+
+Then run `+just+` `+generate-clades+` — the cladogram updates
+automatically.
+
+== ABI/FFI Standard
+
+* *ABI (Idris2):* `+src/interface/abi/+` — formal type specs with
+dependent type proofs
+* *FFI (Zig):* `+src/interface/ffi/+` — C-compatible implementation
+* *Core (Ephapax):* `+src/core/+` — linear type enforcement for resource
+safety
+
+== VeriSimDB Integration
+
+Each managed server is a VeriSimDB octad with all 8 modalities:
+
+* *Graph:* server→game-profile, server→cluster edges
+* *Vector:* config embedding for similarity search
+* *Tensor:* performance metrics over time
+* *Semantic:* game type, version, mods, status
+* *Document:* full config text (A2ML, full-text indexed)
+* *Temporal:* every config version with timestamp
+* *Provenance:* who changed what, when, why (hash-chain)
+* *Spatial:* datacenter geolocation
+
+Dedicated instance on port 8090 with persistent storage and 15s drift
+detection.
+
+== Configuration
+
+GSA now supports user-specific configuration through a Nickel (`+.ncl+`)
+configuration file. This allows you to:
+
+* Set a default server IP and port
+* Maintain a list of favorite servers
+* Customize UI preferences
+* Configure connection settings
+
+=== Initial Setup
+
+To create a default configuration file:
+
+[source,bash]
+----
+./gsa config init
+----
+
+This creates `+user-config.ncl+` from the template.
+
+=== Configuration Commands
+
+[source,bash]
+----
+# Show current configuration
+./gsa config show
+
+# Set default server
+./gsa config set-default mc.example.com 25565
+
+# Add a favorite server
+./gsa config add-favorite "My Minecraft" mc.example.com 25565
+
+# List favorite servers
+./gsa config list-favorites
+----
+
+=== Configuration File
+
+The configuration file (`+user-config.ncl+`) is *gitignored* to ensure
+your server credentials remain private. See `+USER-CONFIG.md+` for
+complete documentation.
+
+== License
+
+SPDX-License-Identifier: CC-BY-SA-4.0
+
+Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
+<j.d.a.jewell@open.ac.uk>
