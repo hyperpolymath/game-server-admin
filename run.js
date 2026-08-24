@@ -5,9 +5,9 @@
 // for Game Server Admin (GSA)
 //
 // Usage:
-//   deno run --allow-read --allow-run --allow-env run.js          # auto-detect and launch
-//   deno run --allow-read --allow-run --allow-env run.js --help   # show usage
-//   deno run --allow-read --allow-run --allow-env run.js --reflect
+//   bun run.js          # auto-detect and launch
+//   bun run.js --help   # show usage
+//   bun run.js --reflect
 
 // ─────────────────────────────────────────────────────────────────────────────
 // REGISTRY — homoiconic data; the script reads this at runtime via reflect()
@@ -48,7 +48,7 @@ const REGISTRY = {
 // ─────────────────────────────────────────────────────────────────────────────
 async function reflect() {
   const path = new URL(import.meta.url).pathname;
-  const src  = await Deno.readTextFile(path);
+  const src  = await Bun.file(path).text();
   return { path, lines: src.split("\n").length, capabilities: REGISTRY.capabilities };
 }
 
@@ -56,20 +56,20 @@ async function reflect() {
 // PLATFORM DETECTION
 // ─────────────────────────────────────────────────────────────────────────────
 async function detectPlatform() {
-  const os   = Deno.build.os;
-  const arch = Deno.build.arch;
+  const os   = process.platform;
+  const arch = process.arch;
 
   let display = "unknown";
   if (os === "linux") {
-    if (Deno.env.get("WAYLAND_DISPLAY"))    display = "wayland";
-    else if (Deno.env.get("DISPLAY"))       display = "x11";
+    if (process.env["WAYLAND_DISPLAY"])    display = "wayland";
+    else if (process.env["DISPLAY"])       display = "x11";
     else                                    display = "headless";
   } else if (os === "darwin")  display = "quartz";
   else if (os === "windows")   display = "win32";
 
   const has = async (cmd) => {
     try {
-      const p = new Deno.Command("which", { args: [cmd], stdout: "null", stderr: "null" });
+      const p = new Bun.Command("which", { args: [cmd], stdout: "null", stderr: "null" });
       return (await p.output()).success;
     } catch { return false; }
   };
@@ -78,7 +78,7 @@ async function detectPlatform() {
     os, arch, display,
     hasBash:  os !== "windows",
     hasJust:  await has("just"),
-    hasDeno:  await has("deno"),
+    hasBun:   await has("bun"),
   };
 }
 
@@ -87,12 +87,17 @@ async function detectPlatform() {
 // ─────────────────────────────────────────────────────────────────────────────
 async function run(cmd, args) {
   try {
-    const p = new Deno.Command(cmd, { args, stdout: "piped", stderr: "piped" });
-    const { code, stdout, stderr } = await p.output();
+    
+    const p = Bun.spawn([cmd, ...args], { stdout: "pipe", stderr: "pipe" });
+    const stdout = await new Response(p.stdout).text();
+    const stderr = await new Response(p.stderr).text();
+    const code = await p.exited;
+    const td = { decode: x => x }; // Mock TextDecoder
+
     return {
       ok:  code === 0,
-      out: new TextDecoder().decode(stdout).trim(),
-      err: new TextDecoder().decode(stderr).trim(),
+      out: stdout.trim(),
+      err: stderr.trim(),
     };
   } catch (e) {
     return { ok: false, out: "", err: e.message };
@@ -144,14 +149,14 @@ async function checkGitSync() {
 // ─────────────────────────────────────────────────────────────────────────────
 async function launchBash() {
   try {
-    await Deno.stat(REGISTRY.launchers.bash);
+    if (!await Bun.file(REGISTRY.launchers.bash).exists()) throw new Error("not found");
     log(`Delegating to ${REGISTRY.launchers.bash} (homoiconic bash launcher)...`);
-    const p = new Deno.Command("bash", {
-      args: [REGISTRY.launchers.bash, "run"],
+    
+    const p = Bun.spawn(["bash", REGISTRY.launchers.bash, "run"], {
       stdin: "inherit", stdout: "inherit", stderr: "inherit",
     });
-    const child = p.spawn();
-    await child.status;
+    await p.exited;
+
     return true;
   } catch { return false; }
 }
@@ -159,26 +164,28 @@ async function launchBash() {
 async function launchJust(platform) {
   if (!platform.hasJust) return false;
   try {
-    await Deno.stat(REGISTRY.launchers.just);
+    if (!await Bun.file(REGISTRY.launchers.just).exists()) throw new Error("not found");
     log("Launching via: just run");
-    const p = new Deno.Command("just", {
-      args: ["run"], stdin: "inherit", stdout: "inherit", stderr: "inherit",
+    
+    const p = Bun.spawn(["just", "run"], {
+      stdin: "inherit", stdout: "inherit", stderr: "inherit",
     });
-    const child = p.spawn();
-    await child.status;
+    await p.exited;
+
     return true;
   } catch { return false; }
 }
 
 async function launchBinary() {
   try {
-    await Deno.stat(REGISTRY.binary.zig);
+    if (!await Bun.file(REGISTRY.binary.zig).exists()) throw new Error("not found");
     log(`Running binary: ${REGISTRY.binary.zig}`);
-    const p = new Deno.Command(REGISTRY.binary.zig, {
-      args: ["status"], stdin: "inherit", stdout: "inherit", stderr: "inherit",
+    
+    const p = Bun.spawn([REGISTRY.binary.zig, "status"], {
+      stdin: "inherit", stdout: "inherit", stderr: "inherit",
     });
-    const child = p.spawn();
-    await child.status;
+    await p.exited;
+
     return true;
   } catch { return false; }
 }
@@ -241,14 +248,14 @@ async function gitCycle(sync) {
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 if (import.meta.main) {
-  const args = Deno.args;
+  const args = process.argv.slice(2);
 
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`
 ${c.bold}${REGISTRY.identity.display} — run.js${c.reset}
 ${REGISTRY.identity.license} | ${REGISTRY.identity.repo}
 
-Usage: deno run --allow-read --allow-run --allow-env run.js [OPTIONS]
+Usage: bun run.js [OPTIONS]
 
 Options:
   --help, -h       Show this help
@@ -256,13 +263,13 @@ Options:
   --no-launch      Git cycle only
   --reflect        Print reflection data and exit
 `);
-    Deno.exit(0);
+    process.exit(0);
   }
 
   if (args.includes("--reflect")) {
     const r = await reflect();
     console.log(JSON.stringify({ registry: REGISTRY, reflection: r }, null, 2));
-    Deno.exit(0);
+    process.exit(0);
   }
 
   const skipGit = args.includes("--no-git");
