@@ -2,8 +2,8 @@
 git clone https://github/hyperpolymath/game-server-admin.git
 cd game-server-admin
 
-# Using Nix (recommended for reproducibility)
-nix develop
+# Using Guix (recommended for reproducibility)
+guix develop
 
 # Or using toolbox/distrobox
 toolbox create game-server-admin-dev
@@ -45,7 +45,7 @@ game-server-admin/
 ├── MAINTAINERS.md
 ├── README.adoc
 ├── SECURITY.md
-├── flake.nix            # Nix flake — fallback (Perimeter 1)
+├── flake.guix            # Guix flake — fallback (Perimeter 1)
 ├── guix.scm             # Guix package — primary (Perimeter 1)
 └── Justfile             # Task runner (Perimeter 1)
 ```

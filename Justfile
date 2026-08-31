@@ -233,7 +233,7 @@ init:
 
     # Check for remaining placeholders
     PATTERN="${LB}[A-Z_]*${RB}"
-    REMAINING=$(grep -rl "$PATTERN" . --include='*.md' --include='*.adoc' --include='*.yml' --include='*.yaml' --include='*.a2ml' --include='*.toml' --include='*.scm' --include='*.ncl' --include='*.nix' --include='*.json' --include='*.sh' 2>/dev/null | grep -v '.git/' | grep -v '.machine_readable/ai/PLACEHOLDERS.adoc' || true)
+    REMAINING=$(grep -rl "$PATTERN" . --include='*.md' --include='*.adoc' --include='*.yml' --include='*.yaml' --include='*.a2ml' --include='*.toml' --include='*.scm' --include='*.ncl' --include='*.guix' --include='*.json' --include='*.sh' 2>/dev/null | grep -v '.git/' | grep -v '.machine_readable/ai/PLACEHOLDERS.adoc' || true)
     if [ -n "$REMAINING" ]; then
         echo "WARNING: Remaining placeholders in:"
         echo "$REMAINING" | sed 's/^/  /'
@@ -1103,7 +1103,7 @@ state-phase:
     @grep -oP 'phase\s*=\s*"\K[^"]+' .machine_readable/STATE.a2ml 2>/dev/null | head -1 || echo "unknown"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# GUIX & NIX
+# GUIX & GUIX
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Enter Guix development shell (primary)
@@ -1114,9 +1114,9 @@ guix-shell:
 guix-build:
     guix build -f guix.scm
 
-# Enter Nix development shell (fallback)
-nix-shell:
-    @if [ -f "flake.nix" ]; then nix develop; else echo "No flake.nix"; fi
+# Enter Guix development shell (fallback)
+guix-shell:
+    @if [ -f "flake.guix" ]; then guix develop; else echo "No flake.guix"; fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # HYBRID AUTOMATION
