@@ -9,7 +9,9 @@ if [[ "$build_root" != /* || "$build_root" == / ]]; then
   echo 'A dedicated absolute build directory is required.' >&2
   exit 2
 fi
-repo_root=$(git rev-parse --show-toplevel)
+# Resolve relative to this script, so source archives and CI containers with
+# different checkout/execution UIDs do not depend on Git's ownership settings.
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 mkdir -p "$build_root"
 
 (
