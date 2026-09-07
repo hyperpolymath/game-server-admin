@@ -62,6 +62,8 @@ profile-count/error ambiguity (including paired 13 and 15 controls), borrowed
 text signatures, repeated error-string use, fail-closed typed wrappers, input
 NUL/port rejection, actual fixture profile loading, stale-error clearing,
 initialization and shutdown. It does not operate a game server or exercise a UI.
+Its GitHub status name remains `Idris2 model type-checks` for required-check
+compatibility, but the job includes both typechecking and runtime execution.
 
 The test design was preceded by inspection of Standards' testing taxonomy and
 `proven-tests-and-benches/src/ProvenTests/Cells.idr`. Its lifecycle ordering,

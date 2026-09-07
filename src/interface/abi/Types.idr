@@ -8,7 +8,9 @@
 ||| layer, with formal guarantees on port ranges, non-empty identifiers,
 ||| configuration validity, and result classification.
 |||
-||| All record types map 1:1 to Zig structs in ffi/zig/src/.
+||| Layout.idr describes selected binary wire layouts. Text/JSON/A2ML endpoints
+||| in src/interface/ffi/src/ require separate serializers and decoders; these
+||| domain records do not all map directly to the actual native return values.
 ||| VeriSimDB integration uses the ServerOctad type for 8-modality storage.
 |||
 ||| @see GSA.ABI.Foreign for FFI declarations using these types

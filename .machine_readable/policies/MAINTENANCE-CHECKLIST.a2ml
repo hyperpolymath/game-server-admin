@@ -140,7 +140,7 @@ abi_ffi_policy = [
 docs_primary_format = "adoc"
 docs_structure = [
   "docs/theory",
-  "docs/practice",
+  "docs/governance",
   "docs/whitepapers/academic",
   "docs/whitepapers/industry",
   "docs/proofs",

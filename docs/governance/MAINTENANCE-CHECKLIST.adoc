@@ -5,7 +5,7 @@ Use this as a repeatable maintenance runbook for any repo.
 
 Companion policy:
 
-- `docs/practice/SOFTWARE-DEVELOPMENT-APPROACH.adoc` (human-readable)
+- `docs/governance/SOFTWARE-DEVELOPMENT-APPROACH.adoc` (human-readable)
 - `.machine_readable/policies/SOFTWARE-DEVELOPMENT-APPROACH.a2ml` (machine-readable)
 
 ## Canonical Repo Baseline (Final)
@@ -487,7 +487,7 @@ Repo: `/tmp/eclexia-releaseprep` (branch `release-prep`, base `533ec9e9447f37413
 Use this prompt with an LLM agent when you want the process run end-to-end:
 
 ```text
-Run the maintenance workflow for this repo using MAINTENANCE-CHECKLIST.md.
+Run the maintenance workflow for this repo using MAINTENANCE-CHECKLIST.adoc.
 
 Required behavior:
 1. Run ~/Desktop/run-maintenance.sh first and collect the JSON report.
@@ -502,7 +502,7 @@ Required behavior:
    - executable bit only where intended
    - use .maintenance-perms-ignore for justified exceptions
 9. Update docs/roadmap/checklist entries to reflect actual state.
-10. Produce a final report using the template in MAINTENANCE-CHECKLIST.md.
+10. Produce a final report using the template in MAINTENANCE-CHECKLIST.adoc.
 
 Constraints:
 - Do not revert unrelated existing dirty changes.

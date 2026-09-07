@@ -58,6 +58,9 @@ jobs:
         run: bash scripts/check_version_drift.sh
 
   idris-typecheck:
+    # Stable externally required status context. This gate now includes actual
+    # libgsa execution as well as typechecking; see src/interface/abi/README.adoc.
+    # Renaming it requires a coordinated update of required-status rules.
     name: Idris2 model type-checks
     runs-on: ubuntu-latest
     timeout-minutes: 20

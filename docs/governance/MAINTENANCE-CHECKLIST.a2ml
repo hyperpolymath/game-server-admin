@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: MPL-2.0
-# Cross-repo maintenance baseline (machine-readable canonical)
+# Published maintenance baseline; canonical machine policy is under .machine_readable/policies/.
 
 [metadata]
+name = "game-server-admin-maintenance-checklist"
+source-machine = ".machine_readable/policies/MAINTENANCE-CHECKLIST.a2ml"
 version = "1.1.0"
 last-updated = "2026-02-24"
 scope = "cross-repo"
-source-human = "docs/maintenance/MAINTENANCE-CHECKLIST.adoc"
-companion-human = "docs/practice/SOFTWARE-DEVELOPMENT-APPROACH.adoc"
+source-human = "docs/governance/MAINTENANCE-CHECKLIST.adoc"
+companion-human = "docs/governance/SOFTWARE-DEVELOPMENT-APPROACH.adoc"
 companion-machine = ".machine_readable/policies/SOFTWARE-DEVELOPMENT-APPROACH.a2ml"
 
 [policy]
@@ -140,7 +142,7 @@ abi_ffi_policy = [
 docs_primary_format = "adoc"
 docs_structure = [
   "docs/theory",
-  "docs/practice",
+  "docs/governance",
   "docs/whitepapers/academic",
   "docs/whitepapers/industry",
   "docs/proofs",

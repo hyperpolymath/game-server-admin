@@ -57,7 +57,7 @@ blockers = [
   { id = "B1", severity = "resolved", description = "Zig FFI now supports -Dgossamer-lib-path for optional Gossamer linking" },
   { id = "B2", severity = "low", description = "Bitbucket mirror needs manual repo creation or API token refresh" },
   { id = "B3", severity = "info", description = "VeriSimDB normaliser SummaryRegenerator is a dry-run stub (by design) — real storage backends needed for production. Stubs are in verisimdb/rust-core/verisim-normalizer/src/regeneration.rs." },
-  { id = "B4", severity = "high", description = "CryoFall game files not yet staged on Verpex. CryoFall AppID 1200170 requires authenticated SteamCMD (non-anonymous). Run: STEAM_USER=hyperpolymath just cryofall-stage-verpex — prompts for password + Steam Guard once, then server starts automatically." },
+  { id = "B4", severity = "high", description = "Historical staging gap reported in April 2026; current live-server state has not been reverified. This entry is not deployment authorization. Do not stage or start CryoFall until the target, credentials, operational checks and explicit authority are agreed." },
   { id = "B5", severity = "medium", description = "Instant Sync workflow red on main: FARM_DISPATCH_TOKEN is dead estate-wide (GitHub identity rebuild) — presence gate passes but the repository-dispatch 403s. Owner-gated on token rotation; no repo-side fix." },
 ]
 

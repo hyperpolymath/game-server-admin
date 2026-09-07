@@ -11,8 +11,8 @@ scope = "repo"
 [discovery]
 human-entrypoints = [
   "README.adoc",
-  "docs/maintenance/MAINTENANCE-CHECKLIST.md",
-  "docs/practice/SOFTWARE-DEVELOPMENT-APPROACH.adoc",
+  "docs/governance/MAINTENANCE-CHECKLIST.adoc",
+  "docs/governance/SOFTWARE-DEVELOPMENT-APPROACH.adoc",
 ]
 machine-entrypoints = [
   ".machine_readable/policies/MAINTENANCE-AXES.a2ml",
