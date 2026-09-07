@@ -111,6 +111,7 @@ pub const GsaResult = enum(c_int) {
     io_error = 15,
     permission_denied = 16,
     not_found = 17,
+    unsupported_operation = 18,
 };
 
 // Cross-language contract check: every (constructor, code) pair extracted from
@@ -433,7 +434,7 @@ test "GsaResult sanity (cross-language check is the comptime block above)" {
     // pins the two values other modules rely on unconditionally.
     try std.testing.expectEqual(@as(c_int, 0), @intFromEnum(GsaResult.ok));
     try std.testing.expectEqual(@as(c_int, 1), @intFromEnum(GsaResult.err));
-    try std.testing.expectEqual(@as(usize, 18), @typeInfo(GsaResult).@"enum".fields.len);
+    try std.testing.expectEqual(@as(usize, 19), @typeInfo(GsaResult).@"enum".fields.len);
 }
 
 test "error buffer round-trip" {

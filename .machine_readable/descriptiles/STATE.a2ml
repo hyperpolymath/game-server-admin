@@ -6,19 +6,30 @@
 [metadata]
 project = "game-server-admin"
 version = "0.9.0"
-last-updated = "2026-07-07"
+last-updated = "2026-09-07"
 status = "active"
 
 [project-context]
 name = "game-server-admin"
 purpose = "Universal game server probe, configuration management, and administration via Gossamer webview + VeriSimDB backing store. Extracts config into A2ML format with full provenance tracking."
-completion-percentage = 96
+completion-assessment = "Unmeasured. Historical 96% estimate is not a current beta-readiness measurement. See ABI qualification limits."
 
 [position]
 phase = "implementation"
 maturity = "alpha"
 
 [route-to-mvp]
+milestones = [
+  { name = "ABI ownership/signature and false-success containment", status = "implemented; 37 local Idris-to-libgsa checks passed; CI not yet established" },
+  { name = "Bounded game-server change with independent read-back and recovery", status = "open; no live target authorized" },
+  { name = "Gossamer-hosted GSA operation", status = "open; asset checks are not UI acceptance" },
+  { name = "Scoped Burble delivery and revocation", status = "open; queue acceptance is not delivery" },
+  { name = "PanLL same-session attach/detach via panel-clades", status = "open; receiver and ownership protocol need qualification" },
+  { name = "Plexus/Nexus deployment, release and protected-main qualification", status = "open" },
+]
+
+[historical-route-to-mvp]
+qualification = "Earlier implementation reports retained for history only; completion values below are not current tests, proofs or deployment evidence."
 milestones = [
   { name = "Phase 1: Repo bootstrap from rsr-template-repo", completion = 100 },
   { name = "Phase 2: Idris2 ABI layer (Types, Foreign, Layout)", completion = 100 },
@@ -39,6 +50,10 @@ milestones = [
 
 [blockers-and-issues]
 blockers = [
+  { id = "B6", severity = "high", description = "Native action/log/extraction paths do not enforce the supplied handle. Typed wrappers fail closed with UnsupportedOperation until target and authority binding are qualified." },
+  { id = "B7", severity = "high", description = "Typed config write/read-back, A2ML serialization/decoding, complete fingerprint and storage receipt are not implemented. Validation/reachability must not imply completed mutation." },
+  { id = "B8", severity = "high", description = "ServerHandle positivity and layout proofs do not prove global unique ownership, native issuance, authorization or proof-to-binary refinement. Public constructor and unrestricted result protocol remain open." },
+  { id = "B9", severity = "high", description = "Gossamer/Burble/PanLL user-story acceptance and deployment qualification remain open; ABI fixture success is not end-to-end evidence." },
   { id = "B1", severity = "resolved", description = "Zig FFI now supports -Dgossamer-lib-path for optional Gossamer linking" },
   { id = "B2", severity = "low", description = "Bitbucket mirror needs manual repo creation or API token refresh" },
   { id = "B3", severity = "info", description = "VeriSimDB normaliser SummaryRegenerator is a dry-run stub (by design) — real storage backends needed for production. Stubs are in verisimdb/rust-core/verisim-normalizer/src/regeneration.rs." },
@@ -48,8 +63,9 @@ blockers = [
 
 [critical-next-actions]
 actions = [
-  "STAGE CRYOFALL: STEAM_USER=hyperpolymath just cryofall-stage-verpex (one-time ~3GB download — needs Steam password + Guard code)",
-  "After staging: just cryofall-watchdog-install (deploys self-heal watchdog as systemd service)",
+  "Qualify the ABI containment patch in CI, including the real Idris-to-libgsa runtime gate; do not bypass protected-main requirements",
+  "Implement and test handle-bound operations in isolated fixtures, including wrong-target, expiry/revocation, independent read-back and cleanup",
+  "Do not stage or deploy CryoFall until a live target and deployment authority are explicitly agreed; older staging instructions are not current authorization",
   "OWNER: install GTK dev libs (sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev) then build gossamer FFI (zig build) — last Gossamer-chain failure; the historical Ephapax parser gaps are CLOSED (verified 2026-07-07)",
   "Set up Bitbucket mirror (SSH key issue — manual step)",
   "OWNER: rotate FARM_DISPATCH_TOKEN to clear Instant Sync red (B5, estate-wide)",
@@ -59,6 +75,7 @@ actions = [
 
 [session-history]
 sessions = [
+  { date = "2026-09-07", summary = "Reproduced the main Idris ABI failure; corrected borrowed-text signatures and libgsa linkage, removed false-success typed paths in favor of UnsupportedOperation (new code 18), disambiguated profile counts from native errors, validated port/NUL inputs, and added real shared-library fixture tests. 37 runtime checks passed locally; intentionally invalid fixture path failed at the expected real-load assertion. No game operation, UI acceptance, deployment or complete mathematical refinement claimed. CI and other beta gates remain open." },
   { date = "2026-07-07b", summary = "Chain-test truth pass. VERIFIED the 'Ephapax parser gaps' v1.0 gate is STALE: ephapax 0.1.0 (γ-languages/ephapax) passes both step-6 probe programs (let and let! linear binding) — the parser caught up since 2026-03. Ran the full Gossamer chain test: 17/18, sole failure = libgossamer.so unbuilt in this environment (gossamer FFI needs gtk+-3.0 + webkit2gtk-4.1 dev libraries; sudo unavailable to this session — owner installs, then zig build in gossamer/src/interface/ffi). Fixed the dead /var/mnt/eclipse default paths in gossamer-integration-test.sh (now REPOS_ROOT=~/developer/repos, env-overridable) and rewrote its stale known-gaps messaging. Corrected the parser-gaps claims in CLAUDE.md, ROADMAP, STATE. Also confirmed standards#472 (merged 2026-07-07) fixed the Secret Scanner at source for standards itself + canonical example — the ~281-repo wrapper sweep remains the estate-level remainder." },
   { date = "2026-03-22", summary = "Created repo — 412 files, 28901 lines. Full ABI/FFI/Core/GUI/Profiles/Clades/VeriSimDB. Pushed to GitHub + GitLab. PanLL integration committed." },
   { date = "2026-03-29", summary = "Marathon session: Zig 0.15.2 full compat (all 9 FFI modules incl. cli.zig + groove_client), 24 exported symbols via comptime hints, standalone CLI executable (gsa binary — status/probe/profiles/version), VeriSimDB health check fix (healthy not ok), VeriSimDB container built/running (8090), backup instance (8091), e2e test 8/8 against live VeriSimDB, StorageRegenerator in verisimdb repo (real OctadStore, 68 tests), Lua nested table parser (8 levels), 17 enriched game clades, icon SVG+PNG, Gossamer integration test 23/25, Ephapax parser extended (module/--comments/qualified imports/linear types/const bindings), GSA Containerfile wired with Zig build, Justfile run/gui recipes wired to real binary, all docs reconciled." },

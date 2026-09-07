@@ -5,7 +5,8 @@
 # encoded different concepts on each side):
 #   1. The generated expected-tables (result codes, struct layout) must match
 #      what the generators produce from Types.idr / Layout.idr right now.
-#   2. The Idris2 model itself must type-check.
+#   2. The Idris2 model itself must type-check and its wrappers must execute
+#      against the actual libgsa shared library with success/failure fixtures.
 # The Zig comptime cross-checks (abi_layout.zig, the GsaResult block in
 # main.zig) turn any table drift into a compile error, so `zig build` is the
 # enforcement; this workflow regenerates first so a stale committed table
@@ -73,9 +74,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Type-check the ABI package
-        working-directory: src/interface/abi
-        run: idris2 --typecheck gsa-abi.ipkg
+      - name: Install Zig 0.15.2 for the real shared-library boundary
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.15.2
+
+      - name: Type-check and execute Idris wrappers against libgsa
+        run: bash scripts/test-idris-ffi.sh "$RUNNER_TEMP/gsa-abi-contract"
 
   affine-ffi-contract:
     name: AffineScript ↔ Zig FFI symbols in sync

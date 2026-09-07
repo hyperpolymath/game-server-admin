@@ -33,4 +33,5 @@ pub const all = [_]ResultCode{
     .{ .idris_ctor = "IoError", .zig_field = "io_error", .code = 15 },
     .{ .idris_ctor = "PermissionDenied", .zig_field = "permission_denied", .code = 16 },
     .{ .idris_ctor = "NotFound", .zig_field = "not_found", .code = 17 },
+    .{ .idris_ctor = "UnsupportedOperation", .zig_field = "unsupported_operation", .code = 18 },
 };

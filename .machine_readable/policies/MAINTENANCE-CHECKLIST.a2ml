@@ -5,8 +5,8 @@
 version = "1.1.0"
 last-updated = "2026-02-24"
 scope = "cross-repo"
-source-human = "docs/maintenance/MAINTENANCE-CHECKLIST.adoc"
-companion-human = "docs/practice/SOFTWARE-DEVELOPMENT-APPROACH.adoc"
+source-human = "docs/governance/MAINTENANCE-CHECKLIST.adoc"
+companion-human = "docs/governance/SOFTWARE-DEVELOPMENT-APPROACH.adoc"
 companion-machine = ".machine_readable/policies/SOFTWARE-DEVELOPMENT-APPROACH.a2ml"
 
 [policy]

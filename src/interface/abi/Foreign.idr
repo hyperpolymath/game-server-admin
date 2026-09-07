@@ -4,15 +4,16 @@
 ||| GSA.ABI.Foreign — FFI declarations for Game Server Admin
 |||
 ||| Declares all C ABI function signatures that map to Zig implementations
-||| in ffi/zig/src/. Functions use "C:gossamer_gsa_*" foreign pragmas,
-||| linking against libgossamer_gsa.
+||| in src/interface/ffi/src/. Functions use "C:gossamer_gsa_*" foreign pragmas,
+||| linking against libgsa (src/interface/ffi/build.zig).
 |||
 ||| This module provides two layers:
 |||   1. Primitive FFI declarations (prim__*) — raw C calls via PrimIO
-|||   2. Safe wrappers — encode linear resource semantics, convert error codes,
-|||      and enforce the ServerHandle lifecycle (probe creates, close consumes)
+|||   2. Typed wrappers — preserve handles on returned results and convert
+|||      errors. Unimplemented or unscoped operations fail closed. This is not
+|||      a proof of native behavior or exception-safe cleanup.
 |||
-||| Linear resource protocol:
+||| Intended resource protocol (the current record does not enforce it globally):
 |||   - `probe` PRODUCES a ServerHandle (caller now owns it)
 |||   - `extractConfig`, `applyConfig`, `serverAction`, `getLogs` BORROW the handle
 |||     (return it alongside the result so ownership is preserved)
@@ -25,6 +26,7 @@ module Foreign
 
 import Types
 import Layout
+import Responses
 
 import Data.List
 import Data.Maybe
@@ -35,7 +37,7 @@ import Data.String
 
 ||| First integer a successful probe returns as a linear handle id. Must equal
 ||| main.FIRST_HANDLE_ID on the Zig side (probe returns id >= this; error codes
-||| are the GsaResult range 0-17, strictly below it). The gap is what lets a
+||| are the GsaResult range 0-18, strictly below it). The gap is what lets a
 ||| caller classify probe's return value by magnitude without ambiguity.
 public export
 firstHandleId : Int
@@ -49,39 +51,38 @@ firstHandleId = 1000
 
 ||| Probe a game server at host:port to detect what game is running.
 ||| Returns a handle id (>= firstHandleId) on success, or a GsaResult error
-||| code (0-17) on failure. Values are non-negative in both cases; classify by
+||| code (0-18) on failure. Values are non-negative in both cases; classify by
 ||| magnitude, not sign.
 |||
 ||| C signature: int32_t gossamer_gsa_probe(const char* host, int32_t port)
 export
-%foreign "C:gossamer_gsa_probe, libgossamer_gsa"
+%foreign "C:gossamer_gsa_probe, libgsa"
 prim__probe : String -> Int -> PrimIO Int
 
-||| Fingerprint a server by sending protocol-specific probe packets to
-||| one or more ports. The port list is passed as a packed array pointer
-||| with a count parameter.
+||| Fingerprint ports supplied as a JSON array. Returns borrowed JSON text;
+||| the native parser and multi-result typed decoder are not yet qualified.
 |||
-||| C signature: int32_t gossamer_gsa_fingerprint(const char* host, void* ports, int32_t port_count)
+||| C signature: const char* gossamer_gsa_fingerprint(const char* host, const char* ports_json)
 export
-%foreign "C:gossamer_gsa_fingerprint, libgossamer_gsa"
-prim__fingerprint : String -> AnyPtr -> Int -> PrimIO Int
+%foreign "C:gossamer_gsa_fingerprint, libgsa"
+prim__fingerprint : String -> String -> PrimIO String
 
 ||| Extract configuration from a managed server given its handle and
-||| the game profile ID to use for parsing. Returns a pointer to a
-||| serialised A2MLConfig struct, or NULL on error.
+||| the game profile ID to use for parsing. Returns borrowed A2ML text or ERR,
+||| NOT a binary A2MLConfig. Never pass this text to prim__free.
 |||
-||| C signature: void* gossamer_gsa_extract_config(int32_t handle, const char* profile_id)
+||| C signature: const char* gossamer_gsa_extract_config(int32_t handle, const char* profile_id)
 export
-%foreign "C:gossamer_gsa_extract_config, libgossamer_gsa"
-prim__extractConfig : Int -> String -> PrimIO AnyPtr
+%foreign "C:gossamer_gsa_extract_config, libgsa"
+prim__extractConfig : Int -> String -> PrimIO String
 
-||| Apply a modified configuration to the server. The config pointer
-||| must point to a valid serialised A2MLConfig struct.
-||| Returns 0 on success or a negative error code.
+||| Legacy validation-only endpoint: checks a binary config and handle, but
+||| DOES NOT write configuration. Do not interpret Ok as an applied change.
+||| Returns 0 on validation success or a positive GsaResult error code.
 |||
 ||| C signature: int32_t gossamer_gsa_apply_config(int32_t handle, void* config)
 export
-%foreign "C:gossamer_gsa_apply_config, libgossamer_gsa"
+%foreign "C:gossamer_gsa_apply_config, libgsa"
 prim__applyConfig : Int -> AnyPtr -> PrimIO Int
 
 ||| Send a named action to the server (e.g., "start", "stop", "restart",
@@ -90,7 +91,7 @@ prim__applyConfig : Int -> AnyPtr -> PrimIO Int
 |||
 ||| C signature: const char* gossamer_gsa_server_action(int32_t handle, const char* action_json)
 export
-%foreign "C:gossamer_gsa_server_action, libgossamer_gsa"
+%foreign "C:gossamer_gsa_server_action, libgsa"
 prim__serverAction : Int -> String -> PrimIO String
 
 ||| Retrieve the last N lines of the server's log output as plain,
@@ -98,64 +99,70 @@ prim__serverAction : Int -> String -> PrimIO String
 |||
 ||| C signature: const char* gossamer_gsa_get_logs(int32_t handle, int32_t line_count)
 export
-%foreign "C:gossamer_gsa_get_logs, libgossamer_gsa"
+%foreign "C:gossamer_gsa_get_logs, libgsa"
 prim__getLogs : Int -> Int -> PrimIO String
 
-||| Store a ServerOctad in VeriSimDB. The pointer must reference a
-||| valid serialised octad struct. Returns 0 on success or error code.
+||| Store JSON in VeriSimDB. Returns 0 on success or a positive error code.
+||| The native function does not return the assigned document ID.
 |||
-||| C signature: int32_t gossamer_gsa_verisimdb_store(void* octad)
+||| C signature: int32_t gossamer_gsa_verisimdb_store(const char* octad_json)
 export
-%foreign "C:gossamer_gsa_verisimdb_store, libgossamer_gsa"
-prim__verisimdbStore : AnyPtr -> PrimIO Int
+%foreign "C:gossamer_gsa_verisimdb_store, libgsa"
+prim__verisimdbStore : String -> PrimIO Int
 
 ||| Execute a VQL (VeriSimDB Query Language) query string.
-||| Returns a pointer to the serialised result set, or NULL on error.
+||| Returns borrowed JSON text, or ERR on error. Never free it.
 |||
-||| C signature: void* gossamer_gsa_verisimdb_query(const char* vql)
+||| C signature: const char* gossamer_gsa_verisimdb_query(const char* vql)
 export
-%foreign "C:gossamer_gsa_verisimdb_query, libgossamer_gsa"
-prim__verisimdbQuery : String -> PrimIO AnyPtr
+%foreign "C:gossamer_gsa_verisimdb_query, libgsa"
+prim__verisimdbQuery : String -> PrimIO String
 
-||| Check VeriSimDB instance health. Returns a HealthStatus code (0-3)
-||| or a negative error code if the instance is unreachable.
+||| Check VeriSimDB reachability. Returns 0 or a positive GsaResult error,
+||| NOT a HealthStatus code or evidence of completed storage/scoring.
 |||
 ||| C signature: int32_t gossamer_gsa_verisimdb_health()
 export
-%foreign "C:gossamer_gsa_verisimdb_health, libgossamer_gsa"
+%foreign "C:gossamer_gsa_verisimdb_health, libgsa"
 prim__verisimdbHealth : PrimIO Int
 
-||| Get a drift report for a server by its ID. Returns a pointer to
-||| a serialised DriftReport struct, or NULL on error.
+||| Get borrowed drift JSON for a server, or ERR. For the allocated binary
+||| report use prim__driftStruct instead. Never free this JSON text.
 |||
-||| C signature: void* gossamer_gsa_verisimdb_drift(const char* server_id)
+||| C signature: const char* gossamer_gsa_verisimdb_drift(const char* server_id)
 export
-%foreign "C:gossamer_gsa_verisimdb_drift, libgossamer_gsa"
-prim__verisimdbDrift : String -> PrimIO AnyPtr
+%foreign "C:gossamer_gsa_verisimdb_drift, libgsa"
+prim__verisimdbDrift : String -> PrimIO String
 
-||| Load all game profiles from a directory path. Profiles are JSON files
-||| with a .profile extension. Returns count of loaded profiles or negative error.
+||| Load .a2ml profiles from a directory. Counts overlap positive error codes;
+||| read prim__lastError immediately on the same thread to distinguish them.
 |||
 ||| C signature: int32_t gossamer_gsa_load_profiles(const char* dir_path)
 export
-%foreign "C:gossamer_gsa_load_profiles, libgossamer_gsa"
+%foreign "C:gossamer_gsa_load_profiles, libgsa"
 prim__loadProfiles : String -> PrimIO Int
 
-||| Register a single game profile at runtime. The pointer must reference
-||| a valid serialised GameProfile struct. Returns 0 on success or error code.
+||| Register a single game profile supplied as A2ML text, not a struct or path.
+||| Returns 0 on success or a positive error code.
 |||
-||| C signature: int32_t gossamer_gsa_add_profile(void* profile)
+||| C signature: int32_t gossamer_gsa_add_profile(const char* a2ml)
 export
-%foreign "C:gossamer_gsa_add_profile, libgossamer_gsa"
-prim__addProfile : AnyPtr -> PrimIO Int
+%foreign "C:gossamer_gsa_add_profile, libgsa"
+prim__addProfile : String -> PrimIO Int
+
+||| Borrowed thread-local error text. Read immediately after the operation;
+||| another native operation on that thread can overwrite/clear it.
+export
+%foreign "C:gossamer_gsa_last_error, libgsa"
+prim__lastError : PrimIO String
 
 ||| Close and release a server handle, freeing all associated resources.
 ||| After this call the handle integer is invalid and must not be reused.
-||| Returns 0 on success or a negative error code.
+||| Returns 0 on success or a positive error code.
 |||
 ||| C signature: int32_t gossamer_gsa_close_handle(int32_t handle)
 export
-%foreign "C:gossamer_gsa_close_handle, libgossamer_gsa"
+%foreign "C:gossamer_gsa_close_handle, libgsa"
 prim__closeHandle : Int -> PrimIO Int
 
 ||| Read a C string from a pointer. Used to deserialise string results
@@ -163,16 +170,17 @@ prim__closeHandle : Int -> PrimIO Int
 |||
 ||| C signature: const char* (standard C string access)
 export
-%foreign "C:gossamer_gsa_read_string, libgossamer_gsa"
+%foreign "C:gossamer_gsa_read_string, libgsa"
 prim__readString : AnyPtr -> PrimIO String
 
 ||| Free a pointer allocated by the Zig FFI layer.
-||| Must be called for every non-NULL pointer returned by prim__* functions
-||| that return AnyPtr, to avoid memory leaks.
+||| Only free owned emitter allocations (such as prim__driftStruct), once.
+||| Never free borrowed text, pointer fields returned by prim__readPtr, or
+||| interior pointers into another allocation.
 |||
 ||| C signature: void gossamer_gsa_free(void* ptr)
 export
-%foreign "C:gossamer_gsa_free, libgossamer_gsa"
+%foreign "C:gossamer_gsa_free, libgsa"
 prim__free : AnyPtr -> PrimIO ()
 
 ||| Read an integer field from a serialised struct at a byte offset.
@@ -180,28 +188,28 @@ prim__free : AnyPtr -> PrimIO ()
 |||
 ||| C signature: int32_t gossamer_gsa_read_int(void* ptr, int32_t offset)
 export
-%foreign "C:gossamer_gsa_read_int, libgossamer_gsa"
+%foreign "C:gossamer_gsa_read_int, libgsa"
 prim__readInt : AnyPtr -> Int -> PrimIO Int
 
 ||| Read a double field from a serialised struct at a byte offset.
 |||
 ||| C signature: double gossamer_gsa_read_double(void* ptr, int32_t offset)
 export
-%foreign "C:gossamer_gsa_read_double, libgossamer_gsa"
+%foreign "C:gossamer_gsa_read_double, libgsa"
 prim__readDouble : AnyPtr -> Int -> PrimIO Double
 
 ||| Get the number of elements in a serialised array/list result.
 |||
 ||| C signature: int32_t gossamer_gsa_array_len(void* ptr)
 export
-%foreign "C:gossamer_gsa_array_len, libgossamer_gsa"
+%foreign "C:gossamer_gsa_array_len, libgsa"
 prim__arrayLen : AnyPtr -> PrimIO Int
 
 ||| Read the i-th string element from a serialised string array.
 |||
 ||| C signature: const char* gossamer_gsa_array_get_string(void* ptr, int32_t index)
 export
-%foreign "C:gossamer_gsa_array_get_string, libgossamer_gsa"
+%foreign "C:gossamer_gsa_array_get_string, libgsa"
 prim__arrayGetString : AnyPtr -> Int -> PrimIO String
 
 ||| Read a pointer field at a byte offset from a serialised struct. Combined
@@ -210,7 +218,7 @@ prim__arrayGetString : AnyPtr -> Int -> PrimIO String
 |||
 ||| C signature: void* gossamer_gsa_read_ptr(void* ptr, int32_t offset)
 export
-%foreign "C:gossamer_gsa_read_ptr, libgossamer_gsa"
+%foreign "C:gossamer_gsa_read_ptr, libgsa"
 prim__readPtr : AnyPtr -> Int -> PrimIO AnyPtr
 
 ||| Emit a binary DriftReport wire struct (canonical Layout.idr layout) for a
@@ -218,7 +226,7 @@ prim__readPtr : AnyPtr -> Int -> PrimIO AnyPtr
 |||
 ||| C signature: void* gossamer_gsa_drift_struct(const char* server_id)
 export
-%foreign "C:gossamer_gsa_drift_struct, libgossamer_gsa"
+%foreign "C:gossamer_gsa_drift_struct, libgsa"
 prim__driftStruct : String -> PrimIO AnyPtr
 
 --------------------------------------------------------------------------------
@@ -229,9 +237,8 @@ prim__driftStruct : String -> PrimIO AnyPtr
 
 ||| Interpret a raw FFI integer result under the Zig calling convention:
 ||| the code is `resultToInt Ok` (0) on success, or a positive GsaResult code
-||| (1-17) on failure. There is no negation — the Zig layer never negates
-||| (verified: `grep -c '-@intFromEnum' src/*.zig` == 0). This is the fix for
-||| the contract bug where every wrapper assumed negative error codes.
+||| (1-18) on failure. Status-code endpoints use this positive convention;
+||| JSON/text/count endpoints must be decoded using their own contracts.
 covering
 resultOf : Int -> Result
 resultOf code =
@@ -250,7 +257,7 @@ parseResultCode code mkSuccess =
 
 ||| Check if an AnyPtr is null (represented as prim__getNullAnyPtr).
 ||| This is a runtime check wrapping the C NULL pointer concept.
-%foreign "C:gossamer_gsa_is_null, libgossamer_gsa"
+%foreign "C:gossamer_gsa_is_null, libgsa"
 prim__isNull : AnyPtr -> Int
 
 ||| Check pointer validity and convert to Either
@@ -280,7 +287,7 @@ readStringArray ptr = do
 
 --------------------------------------------------------------------------------
 -- Safe Wrappers: Server Lifecycle
--- These functions enforce the linear ServerHandle protocol:
+-- These functions express the intended ServerHandle protocol:
 -- probe PRODUCES, operations BORROW, closeHandle CONSUMES.
 --------------------------------------------------------------------------------
 
@@ -288,22 +295,25 @@ readStringArray ptr = do
 ||| On success, PRODUCES a linear ServerHandle that the caller must eventually
 ||| consume by calling closeHandle. On failure, returns a Result error code.
 |||
-||| The returned handle encodes a compile-time proof that the underlying
-||| pointer is non-null (So (rawPtr > 0)).
+||| The returned handle encodes integer positivity (So (rawPtr > 0)), not a
+||| pointer proof or a global uniqueness/authority guarantee.
 |||
 ||| @param host Hostname or IP address to probe
-||| @param port Port number to probe (validated at call site via ValidPort)
+||| @param port Port number to probe (checked before narrowing to the C ABI)
 ||| @return Left Result on failure, Right ServerHandle on success
 export
 covering
 probe : String -> Nat -> IO (Either Result ServerHandle)
 probe host port = do
-  result <- primIO (prim__probe host (cast port))
-  if result >= firstHandleId
-    then case choose (result > 0) of
-           Left prf => pure (Right (MkServerHandle result (host ++ ":" ++ show port) prf))
-           Right _ => pure (Left Error)
-    else pure (Left (resultOf result))
+  if port == 0 || port > 65535 || host == "" || elem '\0' (unpack host)
+    then pure (Left InvalidParam)
+    else do
+      result <- primIO (prim__probe host (cast port))
+      if result >= firstHandleId
+        then case choose (result > 0) of
+               Left prf => pure (Right (MkServerHandle result (host ++ ":" ++ show port) prf))
+               Right _ => pure (Left Error)
+        else pure (Left (if result == 0 then ProtocolError else resultOf result))
 
 ||| Fingerprint a server by probing multiple ports.
 ||| This is a pure query operation — no linear handle is produced or consumed.
@@ -313,64 +323,31 @@ probe host port = do
 ||| @param host Hostname or IP address to fingerprint
 ||| @param ports List of port numbers to probe
 ||| @return Left Result on failure, Right Fingerprint on success
+||| Currently UnsupportedOperation: the native multi-port result does not
+||| provide the signature required by this record. Do not invent it.
 export
 covering
 fingerprint : String -> List Nat -> IO (Either Result Fingerprint)
-fingerprint host ports = do
-  -- NOTE (honest scope): this wrapper probes only the first port and returns a
-  -- summary Fingerprint. The richer multi-port fingerprint (response signature,
-  -- latency) is emitted by gossamer_gsa_fingerprint as JSON; decoding it here
-  -- requires an Idris-side JSON reader that is a documented follow-up. Until
-  -- then the response signature is empty and latency is 0.
-  let firstPort = fromMaybe 0 (head' ports)
-  result <- primIO (prim__probe host (cast firstPort))
-  if result >= firstHandleId
-    then do
-      -- Consume the handle immediately — fingerprint is a pure query and must
-      -- not leak the linear resource the probe just produced.
-      _ <- primIO (prim__closeHandle result)
-      pure (Right (MkFingerprint host firstPort SteamQuery "" 0))
-    else pure (Left (resultOf result))
+fingerprint _ _ = pure (Left UnsupportedOperation)
 
 ||| Extract configuration from a server, BORROWING the handle.
 ||| The handle is returned alongside the result so the caller retains
-||| ownership. The linear type system ensures the handle cannot be
-||| dropped or duplicated during this operation.
+||| its fields. See Types.ServerHandle for the current uniqueness-proof limits.
 |||
 ||| @param handle Linear server handle (borrowed, returned in result)
 ||| @param profile Game profile defining how to parse the configuration
 ||| @return (Either error config, handle) — handle always returned
+||| Currently UnsupportedOperation: native target binding and an A2ML decoder
+||| are missing. The primitive returns text, not a binary config structure.
 export
 covering
 extractConfig : (1 handle : ServerHandle) -> GameProfile -> IO (Either Result A2MLConfig, ServerHandle)
-extractConfig (MkServerHandle p sid v) profile = do
-  ptr <- primIO (prim__extractConfig p profile.id)
-  case prim__isNull ptr /= 0 of
-    True => pure (Left NullPointer, MkServerHandle p sid v)
-    False => do
-      -- Deserialise the A2MLConfig from the returned pointer
-      serverId <- primIO (prim__readString ptr)
-      gameId <- primIO (prim__arrayGetString ptr 1)
-      formatCode <- primIO (prim__readInt ptr 2)
-      configPath <- primIO (prim__arrayGetString ptr 3)
-      primIO (prim__free ptr)
-      let format = fromMaybe KeyValue (parseConfigFormat formatCode)
-      pure (Right (MkA2MLConfig serverId gameId format configPath []), MkServerHandle p sid v)
-  where
-    parseConfigFormat : Int -> Maybe ConfigFormat
-    parseConfigFormat 0 = Just XML
-    parseConfigFormat 1 = Just INI
-    parseConfigFormat 2 = Just JSON
-    parseConfigFormat 3 = Just ENV
-    parseConfigFormat 4 = Just YAML
-    parseConfigFormat 5 = Just TOML
-    parseConfigFormat 6 = Just Lua
-    parseConfigFormat 7 = Just KeyValue
-    parseConfigFormat _ = Nothing
+extractConfig (MkServerHandle p sid v) _ =
+  pure (Left UnsupportedOperation, MkServerHandle p sid v)
 
 ||| Apply a modified configuration to the server, BORROWING the handle.
-||| The configuration is serialised and sent to the Zig layer, which
-||| writes it to disk in the appropriate format.
+||| Currently UnsupportedOperation: there is no typed serializer/write/read-back
+||| path. The native apply_config endpoint validates only; it does not write.
 |||
 ||| @param handle Linear server handle (borrowed, returned in result)
 ||| @param config The configuration to apply
@@ -378,19 +355,13 @@ extractConfig (MkServerHandle p sid v) profile = do
 export
 covering
 applyConfig : (1 handle : ServerHandle) -> A2MLConfig -> IO (Either Result (), ServerHandle)
-applyConfig (MkServerHandle p sid v) config = do
-  -- The Zig layer accepts a serialised config struct.
-  -- For now we pass the config path and let the Zig layer handle serialisation.
-  -- A proper implementation would use prim__applyConfig with a packed struct.
-  result <- primIO (prim__serverAction p ("apply:" ++ config.configPath))
-  let parsed = if result == 0
-                 then Right ()
-                 else Left (fromMaybe Error (resultFromInt (negate result)))
-  pure (parsed, MkServerHandle p sid v)
+applyConfig (MkServerHandle p sid v) _ =
+  pure (Left UnsupportedOperation, MkServerHandle p sid v)
 
 ||| Send a named action to the server (start, stop, restart, status, etc.),
-||| BORROWING the handle. The action string must match one of the actions
-||| declared in the server's GameProfile.
+||| BORROWING the handle. Currently UnsupportedOperation: the native JSON
+||| dispatcher ignores the handle and accepts an independent target. A named
+||| action must not be forwarded until target/authority binding is implemented.
 |||
 ||| @param handle Linear server handle (borrowed, returned in result)
 ||| @param action Action identifier string (e.g., "start", "stop")
@@ -398,14 +369,13 @@ applyConfig (MkServerHandle p sid v) config = do
 export
 covering
 serverAction : (1 handle : ServerHandle) -> String -> IO (Either Result String, ServerHandle)
-serverAction (MkServerHandle p sid v) action = do
-  result <- primIO (prim__serverAction p action)
-  if result >= 0
-    then pure (Right ("Action '" ++ action ++ "' completed (code " ++ show result ++ ")"), MkServerHandle p sid v)
-    else pure (Left (fromMaybe Error (resultFromInt (negate result))), MkServerHandle p sid v)
+serverAction (MkServerHandle p sid v) _ =
+  pure (Left UnsupportedOperation, MkServerHandle p sid v)
 
 ||| Retrieve the last N lines of server log output, BORROWING the handle.
-||| Log lines are returned in chronological order (oldest first).
+||| Currently UnsupportedOperation: the native implementation selects the
+||| first tracked server instead of resolving the supplied handle. Its text
+||| is borrowed and must never be interpreted/freed as a string-array struct.
 |||
 ||| @param handle Linear server handle (borrowed, returned in result)
 ||| @param lineCount Number of log lines to retrieve
@@ -413,19 +383,12 @@ serverAction (MkServerHandle p sid v) action = do
 export
 covering
 getLogs : (1 handle : ServerHandle) -> Nat -> IO (Either Result (List String), ServerHandle)
-getLogs (MkServerHandle p sid v) lineCount = do
-  ptr <- primIO (prim__getLogs p (cast lineCount))
-  case prim__isNull ptr /= 0 of
-    True => pure (Left NullPointer, MkServerHandle p sid v)
-    False => do
-      lines <- readStringArray ptr
-      primIO (prim__free ptr)
-      pure (Right lines, MkServerHandle p sid v)
+getLogs (MkServerHandle p sid v) _ =
+  pure (Left UnsupportedOperation, MkServerHandle p sid v)
 
 ||| Close and release a server handle, CONSUMING it.
-||| After this call, the handle is no longer valid. The linear type system
-||| ensures the caller cannot use it again — any attempt to reference
-||| the handle after close is a compile-time error.
+||| On native success the registry entry is closed. Native checks must reject
+||| subsequent use: the public record currently permits forged/copied IDs.
 |||
 ||| @param handle Linear server handle (consumed — caller loses access)
 ||| @return Result code indicating success or failure of cleanup
@@ -443,25 +406,15 @@ closeHandle (MkServerHandle p _ _) = do
 --------------------------------------------------------------------------------
 
 ||| Store a ServerOctad in VeriSimDB.
-||| The octad is serialised into the 8-modality format and written to
-||| the database. Returns the assigned document ID on success.
+||| Currently UnsupportedOperation: typed serialization and an assigned-ID
+||| response are absent. A health check cannot establish that storage occurred.
 |||
 ||| @param octad The server octad to store
 ||| @return Left Result on failure, Right document_id on success
 export
 covering
 storeOctad : ServerOctad -> IO (Either Result String)
-storeOctad octad = do
-  -- HONEST SCOPE: a real store calls prim__verisimdbStore with a serialised
-  -- octad wire struct, which needs an Idris-side ServerOctad emitter (the same
-  -- follow-up applyConfig/fingerprint await). Until that lands we gate on a live
-  -- VeriSimDB so callers get VeriSimDBUnavailable rather than a false success.
-  -- gossamer_gsa_verisimdb_health returns 0 (Ok) when reachable, 12
-  -- (VeriSimDBUnavailable) otherwise — positive codes, never negative.
-  result <- primIO prim__verisimdbHealth
-  if result == resultToInt Ok
-    then pure (Right ("octad-" ++ show octad.temporalVersion))
-    else pure (Left VeriSimDBUnavailable)
+storeOctad _ = pure (Left UnsupportedOperation)
 
 ||| Execute a VQL (VeriSimDB Query Language) query.
 ||| VQL queries can span all 8 modalities — see VQL-UT specification
@@ -473,13 +426,16 @@ export
 covering
 queryVQL : String -> IO (Either Result String)
 queryVQL vql = do
-  ptr <- primIO (prim__verisimdbQuery vql)
-  case prim__isNull ptr /= 0 of
-    True => pure (Left VeriSimDBUnavailable)
-    False => do
-      resultStr <- primIO (prim__readString ptr)
-      primIO (prim__free ptr)
-      pure (Right resultStr)
+  if vql == "" || elem '\0' (unpack vql)
+    then pure (Left InvalidParam)
+    else do
+      result <- primIO (prim__verisimdbQuery vql)
+      err <- primIO prim__lastError
+      -- The Idris FFI copies the returned C string. It is not an allocated
+      -- wire struct and must not be passed to prim__free.
+      pure (if result == "ERR" || err /= ""
+              then Left Error
+              else Right result)
 
 ||| Check the health of the VeriSimDB instance.
 ||| Returns the current HealthStatus or an error if the instance
@@ -490,13 +446,12 @@ export
 covering
 checkHealth : IO (Either Result HealthStatus)
 checkHealth = do
-  -- gossamer_gsa_verisimdb_health reports reachability as a GsaResult code
-  -- (0 = Ok/reachable, 12 = VeriSimDBUnavailable), not a HealthStatus. Map the
-  -- reachable case to Healthy; any non-Ok code to VeriSimDBUnavailable.
+  -- Preserve the native error, including NotInitialized. Healthy here means
+  -- reachable, not that storage or scoring has been verified.
   result <- primIO prim__verisimdbHealth
   if result == resultToInt Ok
     then pure (Right Healthy)
-    else pure (Left VeriSimDBUnavailable)
+    else pure (Left (resultOf result))
 
 ||| Get a drift report for a specific server, decoded from the binary
 ||| DriftReport wire struct emitted by gossamer_gsa_drift_struct.
@@ -540,7 +495,7 @@ getDrift serverId = do
 --------------------------------------------------------------------------------
 
 ||| Load all game profiles from a directory.
-||| Each .profile file in the directory is parsed and registered.
+||| Each .a2ml file in the directory is parsed and registered.
 ||| Returns the count of successfully loaded profiles on success.
 |||
 ||| @param dirPath Absolute path to the profiles directory
@@ -549,32 +504,23 @@ export
 covering
 loadProfiles : String -> IO (Either Result Nat)
 loadProfiles dirPath = do
-  -- Returns a non-negative loaded count on success; a positive GsaResult code
-  -- would indicate failure. The Zig loader currently returns the count or 0.
-  result <- primIO (prim__loadProfiles dirPath)
-  if result >= 0
-    then pure (Right (cast result))
-    else pure (Left Error)
+  if dirPath == "" || elem '\0' (unpack dirPath)
+    then pure (Left InvalidParam)
+    else do
+      result <- primIO (prim__loadProfiles dirPath)
+      err <- primIO prim__lastError
+      pure (decodeProfileCount result err)
 
 ||| Register a single game profile at runtime.
-||| The profile is validated and added to the in-memory registry.
-||| It will be available for probe identification immediately.
+||| Currently UnsupportedOperation: there is no typed A2ML serializer. Loading
+||| a directory named after the ID does not register the supplied profile.
 |||
 ||| @param profile The game profile to register
 ||| @return Left Result on failure, Right () on success
 export
 covering
 addProfile : GameProfile -> IO (Either Result ())
-addProfile profile = do
-  -- HONEST SCOPE: registering a single profile needs prim__addProfile with a
-  -- serialised GameProfile wire struct (the Idris-side emitter follow-up). This
-  -- wrapper currently asks the Zig registry to (re)load the named profile so it
-  -- returns a real result rather than a fabricated success; it does not yet
-  -- transmit the in-memory GameProfile fields.
-  result <- primIO (prim__loadProfiles profile.id)
-  if result >= 0
-    then pure (Right ())
-    else pure (Left Error)
+addProfile _ = pure (Left UnsupportedOperation)
 
 --------------------------------------------------------------------------------
 -- Lifecycle Combinators
@@ -588,7 +534,8 @@ addProfile profile = do
 ||| completes, whether it succeeds or fails.
 |||
 ||| This is the recommended way to interact with a server: it makes
-||| resource leaks impossible by construction.
+||| cleanup explicit on returned success/error paths. It does not establish
+||| cleanup on exceptions, cancellation or process termination.
 |||
 ||| @param host Hostname or IP address
 ||| @param port Port number

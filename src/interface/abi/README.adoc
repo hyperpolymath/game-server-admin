@@ -1,1 +1,72 @@
-= abi Logic
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// Copyright (c) 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= GSA ABI: contract and qualification boundary
+
+The native artifact is `libgsa`. `Foreign.idr` binds its real C signatures;
+the string endpoints return borrowed NUL-terminated text. Idris copies that
+text; callers must not free it as an allocated ABI structure. Only the binary
+emitter allocations (for example `gossamer_gsa_drift_struct`) use `prim__free`.
+
+== Current typed API limitations
+
+`fingerprint`, `extractConfig`, `applyConfig`, `serverAction`, `getLogs`,
+`storeOctad`, and `addProfile` return `UnsupportedOperation` (code 18) until
+their actual typed operation can be established. Existing result codes 0–17
+are unchanged. An unknown-code consumer must continue to fail closed.
+
+* Fingerprint: the previous wrapper invented protocol, signature and latency.
+  The native multi-port parser and the complete typed result need qualification.
+* Extraction: the native endpoint returns A2ML text, not a binary config;
+  the decoder and correct target binding are missing.
+* Apply: the native `apply_config` endpoint is validation-only. A bounded write,
+  independent read-back and recovery are not implemented by the typed wrapper.
+* Actions/logs: the native dispatcher ignores the supplied handle; logs select
+  the first tracked connection. Typed calls are disabled pending target and
+  authority binding. Raw primitives remain unsafe and are not an authorization API.
+* Storage: reachability is not a write receipt or an assigned document ID.
+* Profile registration: loading a directory with the profile ID as its name
+  does not transmit the supplied profile fields.
+
+`loadProfiles` uses the immediately captured native error text to distinguish
+counts from positive error codes. `queryVQL` copies borrowed response text and
+rejects native errors; it does not validate the returned VQL result schema or
+establish completeness of potentially truncated native response buffers.
+`checkHealth` reports reachability, not completed storage. `getDrift` still
+contains unmeasured zero metrics until the native scoring emitter is wired.
+
+== Mathematical limits
+
+Layout and result-code checks establish correspondence for their explicit
+tables, not correctness of arbitrary pointer reads or the whole native binary.
+`ServerHandle.valid` proves integer positivity only. The public constructor,
+unrestricted record fields and ordinary IO/Either/Pair result types do not
+establish global unique ownership, native issuance or authorization. Those
+need a private constructor / linear result protocol and native checks.
+
+Borrow wrappers preserve handle fields on their returned failure paths.
+`withServer` closes on returned success/error paths; cancellation, exceptions,
+process death and distributed revocation are separate obligations. No complete
+proof-to-binary refinement or game-operation end-to-end proof is claimed here.
+
+== Executable evidence
+
+With Zig 0.15.2 and Idris2 on PATH, from the repository root:
+
+[source,bash]
+----
+bash scripts/test-idris-ffi.sh /absolute/dedicated/build-directory
+----
+
+This Linux gate builds the real shared library and Idris executable. It checks
+profile-count/error ambiguity (including paired 13 and 15 controls), borrowed
+text signatures, repeated error-string use, fail-closed typed wrappers, input
+NUL/port rejection, actual fixture profile loading, stale-error clearing,
+initialization and shutdown. It does not operate a game server or exercise a UI.
+
+The test design was preceded by inspection of Standards' testing taxonomy and
+`proven-tests-and-benches/src/ProvenTests/Cells.idr`. Its lifecycle ordering,
+contract and regression expectations apply; the abstract tropical/ceremonial
+cells are not a GSA ABI fixture. These tests are concrete point-to-point,
+contract, regression and lifecycle examples, not a claim to fill the entire
+taxonomy, demonstrate a mutation kill rate, or achieve a coverage percentage.
+Reusable upstream fixture extraction remains follow-up work.
