@@ -3,12 +3,11 @@
 Primary tracks:
 
 * `theory/` for formal and conceptual material
-* `practice/` for operational and implementation material
-* `maintenance/` for baseline checklists and release hard-pass runbooks
+* `governance/` for development policy, maintenance checklists and release runbooks
 * `whitepapers/academic/` for research-facing whitepapers
 * `whitepapers/industry/` for industry/outreach whitepapers
 
 Core docs:
 
-* `maintenance/MAINTENANCE-CHECKLIST.md`
-* `practice/SOFTWARE-DEVELOPMENT-APPROACH.adoc`
+* `governance/MAINTENANCE-CHECKLIST.adoc`
+* `governance/SOFTWARE-DEVELOPMENT-APPROACH.adoc`

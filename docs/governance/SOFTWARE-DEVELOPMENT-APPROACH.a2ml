@@ -5,7 +5,7 @@
 version = "1.0.0"
 last-updated = "2026-02-24"
 scope = "cross-repo"
-source-human = "docs/practice/SOFTWARE-DEVELOPMENT-APPROACH.adoc"
+source-human = "docs/governance/SOFTWARE-DEVELOPMENT-APPROACH.adoc"
 
 [execution]
 order = ["axis-1", "axis-2", "axis-3"]

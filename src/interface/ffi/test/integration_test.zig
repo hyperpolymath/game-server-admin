@@ -25,7 +25,7 @@ const game_profiles = gsa.game_profiles;
 // 1. Result code mapping — all 18 values match Idris2 ABI
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test "result codes: all 18 GsaResult values have correct integer mappings" {
+test "result codes: all 19 GsaResult values have correct integer mappings" {
     // These must match GameServerAdmin.ABI.Types.Result.resultToInt.
     // The comptime block in main.zig checks the same contract against the
     // generated result_codes_expected.zig; this test restates it at runtime
@@ -49,20 +49,21 @@ test "result codes: all 18 GsaResult values have correct integer mappings" {
         .{ .result = .io_error, .value = 15 },
         .{ .result = .permission_denied, .value = 16 },
         .{ .result = .not_found, .value = 17 },
+        .{ .result = .unsupported_operation, .value = 18 },
     };
 
     // Verify total count
-    try testing.expectEqual(@as(usize, 18), expected.len);
+    try testing.expectEqual(@as(usize, 19), expected.len);
 
     for (expected) |e| {
         try testing.expectEqual(e.value, @intFromEnum(e.result));
     }
 }
 
-test "result codes: enum is exhaustive at 18 variants" {
+test "result codes: enum is exhaustive at 19 variants" {
     // Count all variants in the enum by trying to iterate
     const fields = @typeInfo(main.GsaResult).@"enum".fields;
-    try testing.expectEqual(@as(usize, 18), fields.len);
+    try testing.expectEqual(@as(usize, 19), fields.len);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

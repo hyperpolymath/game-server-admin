@@ -9,7 +9,7 @@
 // `gossamer_gsa_`, `pub export fn ... callconv(.c)`); the Idris2 ABI
 // contract for those symbols lives at `src/interface/abi/Foreign.idr`,
 // and the result codes mirror `src/interface/abi/Types.idr` (the single
-// source of truth — codes 0-17 are stable across ABI versions).
+// source of truth — codes 0-18; prior codes 0-17 remain unchanged).
 //
 // `scripts/affine-ffi-contract-check.sh` keeps this file honest: every
 // symbol declared here must exist as a Zig export, and the operational
@@ -17,7 +17,7 @@
 
 module gsa_ffi;
 
-// ── Result codes (mirrors Types.idr `Result`, codes 0-17) ──────────────────
+// ── Result codes (mirrors Types.idr `Result`, codes 0-18) ──────────────────
 
 enum ResultCode {
   Ok,
@@ -38,6 +38,7 @@ enum ResultCode {
   IoError,
   PermissionDenied,
   NotFound,
+  UnsupportedOperation,
   UnknownCode(Int)
 }
 
@@ -63,6 +64,7 @@ pub fn result_from_int(code: Int) -> ResultCode {
   else if code == 15 { ResultCode::IoError }
   else if code == 16 { ResultCode::PermissionDenied }
   else if code == 17 { ResultCode::NotFound }
+  else if code == 18 { ResultCode::UnsupportedOperation }
   else { ResultCode::UnknownCode(code) }
 }
 
@@ -96,6 +98,7 @@ pub fn result_label(rc: ResultCode) -> String {
     ResultCode::IoError => "I/O error",
     ResultCode::PermissionDenied => "permission denied",
     ResultCode::NotFound => "not found",
+    ResultCode::UnsupportedOperation => "operation not implemented or not safely bound to target",
     ResultCode::UnknownCode(_) => "unknown result code"
   }
 }

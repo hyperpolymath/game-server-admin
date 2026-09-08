@@ -8,7 +8,9 @@
 ||| layer, with formal guarantees on port ranges, non-empty identifiers,
 ||| configuration validity, and result classification.
 |||
-||| All record types map 1:1 to Zig structs in ffi/zig/src/.
+||| Layout.idr describes selected binary wire layouts. Text/JSON/A2ML endpoints
+||| in src/interface/ffi/src/ require separate serializers and decoders; these
+||| domain records do not all map directly to the actual native return values.
 ||| VeriSimDB integration uses the ServerOctad type for 8-modality storage.
 |||
 ||| @see GSA.ABI.Foreign for FFI declarations using these types
@@ -34,7 +36,7 @@ import Data.Vect
 --------------------------------------------------------------------------------
 
 ||| Result codes for all FFI operations.
-||| Maps to C int32 values 0-17. Each variant has a fixed integer encoding
+||| Maps to C int32 values 0-18. Each variant has a fixed integer encoding
 ||| used across the ABI boundary. Results are classified as terminal (no retry)
 ||| or transient (retry may succeed).
 |||
@@ -80,6 +82,8 @@ data Result : Type where
   PermissionDenied : Result
   ||| A requested entity (profile, server, file) does not exist (code 17)
   NotFound         : Result
+  ||| The requested operation has no qualified implementation (code 18).
+  UnsupportedOperation : Result
 
 ||| Convert a Result to its C-compatible integer representation.
 ||| These values are stable across ABI versions and must not change.
@@ -103,6 +107,7 @@ resultToInt ProtocolError       = 14
 resultToInt IoError             = 15
 resultToInt PermissionDenied    = 16
 resultToInt NotFound            = 17
+resultToInt UnsupportedOperation = 18
 
 ||| Parse a C integer back into a Result.
 ||| Returns Nothing for unrecognised codes, providing forward compatibility
@@ -127,6 +132,7 @@ resultFromInt 14 = Just ProtocolError
 resultFromInt 15 = Just IoError
 resultFromInt 16 = Just PermissionDenied
 resultFromInt 17 = Just NotFound
+resultFromInt 18 = Just UnsupportedOperation
 resultFromInt _  = Nothing
 
 ||| Classify whether a Result is terminal (will never succeed on retry)
@@ -161,6 +167,7 @@ resultIsTerminal ProtocolError       = True
 resultIsTerminal IoError             = False
 resultIsTerminal PermissionDenied    = True
 resultIsTerminal NotFound            = True
+resultIsTerminal UnsupportedOperation = True
 
 ||| Human-readable description of each result code.
 ||| Used for logging and error reporting.
@@ -184,6 +191,7 @@ resultDescription ProtocolError       = "Wire protocol violation"
 resultDescription IoError             = "I/O operation failed"
 resultDescription PermissionDenied    = "Permission denied"
 resultDescription NotFound            = "Requested entity not found"
+resultDescription UnsupportedOperation = "Operation not implemented or not safely bound to the target"
 
 ||| Decidable equality for Result, enabling pattern matching and proof
 ||| construction over result codes at the type level.
@@ -207,6 +215,7 @@ Eq Result where
   IoError == IoError = True
   PermissionDenied == PermissionDenied = True
   NotFound == NotFound = True
+  UnsupportedOperation == UnsupportedOperation = True
   _ == _ = False
 
 ||| Show instance for logging and debugging
@@ -427,19 +436,21 @@ Ord HealthStatus where
 --------------------------------------------------------------------------------
 
 ||| A linear server handle representing an active connection to a game server.
-||| This is a linear resource: it MUST be consumed exactly once by calling
-||| closeHandle. The Idris2 type system enforces this at compile time.
+||| Wrapper arguments use multiplicity 1, but this public record and ordinary
+||| IO/Either/Pair results do NOT enforce unique ownership globally. Callers can
+||| construct or copy its unrestricted fields. Native handle validation remains
+||| required; a private constructor and linear result protocol are open work.
 |||
-||| The `valid` field is an erased proof that the underlying pointer is
-||| non-null, preventing null-pointer dereferences at the type level.
+||| The `valid` field proves integer positivity only, not native issuance,
+||| liveness, target binding, authorization or pointer validity.
 |||
-||| @param rawPtr The raw C pointer (as Int) to the server connection state
+||| @param rawPtr The integer ID in the native handle registry (not a pointer)
 ||| @param serverId The identifier string for this server instance
 ||| @param valid Erased proof that rawPtr is strictly positive (non-null)
 public export
 record ServerHandle where
   constructor MkServerHandle
-  ||| Raw C pointer to the server connection state, encoded as Int.
+  ||| Integer ID in the native handle registry; never dereference it.
   ||| This value is opaque — do not interpret or modify it.
   rawPtr   : Int
   ||| Identifier string for the connected server instance.

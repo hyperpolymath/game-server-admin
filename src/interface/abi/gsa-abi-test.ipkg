@@ -1,0 +1,8 @@
+package gsa-abi-test
+version = 0.1.0
+authors = "Jonathan D.A. Jewell"
+license = "AGPL-3.0-or-later"
+sourcedir = "."
+modules = Types, Layout, Responses, Foreign, AbiRuntimeTest
+main = AbiRuntimeTest
+executable = gsa-abi-runtime-test
