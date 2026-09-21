@@ -1,3 +1,4 @@
+# This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
 # ABI contract gate — keeps the Zig FFI and the Idris2 model in lockstep.
 #
@@ -31,10 +32,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4.2.2
 
       - name: Install Zig 0.15.2
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.15.2
 
@@ -75,7 +76,7 @@ jobs:
       image: ghcr.io/stefan-hoeck/idris2-pack@sha256:370e2ab066251cf278ac6928d9201ade0aca70c4e7ee1cc434d25bcea1669b29
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4.2.2
 
       - name: Install Zig archive prerequisite in the Idris image
         run: |
@@ -83,7 +84,7 @@ jobs:
           apt-get install --no-install-recommends -y xz-utils
 
       - name: Install Zig 0.15.2 for the real shared-library boundary
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        uses: mlugg/setup-zig@v2.2.1
         with:
           version: 0.15.2
 
@@ -96,7 +97,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v4.2.2
 
       # Symbol-level contract only (pure grep/comm — no toolchain): every
       # extern in src/ui/tea/gsa_ffi.affine must be a real Zig export, and
