@@ -1,3 +1,4 @@
+# This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
 # Static Analysis Gate — Required by branch protection rules.
 # Runs panic-attack and hypatia, deposits findings for gitbot-fleet learning.
@@ -24,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
 
@@ -127,7 +128,7 @@ jobs:
           echo "Skipped: panic-attack not available in this environment." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload panic-attack findings
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: panic-attack-findings
           path: panic-attack-findings.json
@@ -149,14 +150,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
 
       - name: Setup Elixir for Hypatia scanner
         id: beam
         continue-on-error: true
-        uses: erlef/setup-beam@e6d7c94229049569db56a7ad5a540c051a010af9 # v1.18.2
+        uses: erlef/setup-beam@v1.20.4
         with:
           elixir-version: '1.19.4'
           otp-version: '28.3'
@@ -262,7 +263,7 @@ jobs:
           echo "Skipped: Hypatia scanner not available in this environment." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload hypatia findings
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: hypatia-findings
           path: hypatia-findings.json
@@ -284,7 +285,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
 
@@ -351,7 +352,7 @@ jobs:
           echo "Skipped: panic-attack not available in this environment." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload bridge report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: bridge-report
           path: bridge-report.json
@@ -376,19 +377,19 @@ jobs:
 
     steps:
       - name: Download panic-attack findings
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        uses: actions/download-artifact@v4.1.8
         with:
           name: panic-attack-findings
           path: findings/
 
       - name: Download hypatia findings
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        uses: actions/download-artifact@v4.1.8
         with:
           name: hypatia-findings
           path: findings/
 
       - name: Download bridge report
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        uses: actions/download-artifact@v4.1.8
         with:
           name: bridge-report
           path: findings/
@@ -450,7 +451,7 @@ jobs:
           echo "low=$LOW"           >> "$GITHUB_OUTPUT"
 
       - name: Upload unified findings (fleet scanner picks these up)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: unified-findings
           path: findings/unified-findings.json
