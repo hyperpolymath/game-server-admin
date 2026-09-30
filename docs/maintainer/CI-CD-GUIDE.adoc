@@ -158,7 +158,7 @@ failure instead of a runtime surprise. It has two jobs.
 
 === Job `zig-contract` — "Zig ↔ Idris tables in sync"
 
-Runs on `ubuntu-latest` with Zig 0.15.2 installed via `mlugg/setup-zig`.
+Runs on `ubuntu-latest` with Zig 0.15.2 installed by `scripts/install-zig.sh` (pinned ziglang.org tarball, sha256-verified; no third-party action).
 Steps, in order:
 
 . **Regenerate expected tables from the Idris2 model** —
