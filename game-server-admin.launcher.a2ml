@@ -17,8 +17,6 @@ path = "/var/mnt/eclipse/repos/fleet-ecosystem/game-server-admin"
 [runtime]
 kind    = "process"
 command = ["/home/hyper/.local/bin/game-server-admin-launcher", "--gossamer"]
-pid-file = "/tmp/game-server-admin.pid"
-log-file = "/tmp/game-server-admin.log"
 
 [icon]
 source = "{repo-dir}/assets/icon-256.png"
