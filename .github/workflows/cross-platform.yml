@@ -36,9 +36,8 @@ jobs:
         uses: actions/checkout@v4.2.2
 
       - name: Install Zig 0.15.2
-        uses: mlugg/setup-zig@v2.2.1
-        with:
-          version: 0.15.2
+        # Pinned + sha256-verified tarball; no third-party action (#103).
+        run: bash scripts/install-zig.sh
 
       - name: Cache Zig
         uses: actions/cache@v4.2.0

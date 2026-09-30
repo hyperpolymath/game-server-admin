@@ -35,9 +35,8 @@ jobs:
         uses: actions/checkout@v4.2.2
 
       - name: Install Zig 0.15.2
-        uses: mlugg/setup-zig@v2.2.1
-        with:
-          version: 0.15.2
+        # Pinned + sha256-verified tarball; no third-party action (#103).
+        run: bash scripts/install-zig.sh
 
       - name: Regenerate expected tables from the Idris2 model
         run: |
@@ -78,15 +77,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4.2.2
 
-      - name: Install Zig archive prerequisite in the Idris image
+      - name: Install Zig download prerequisites in the Idris image
         run: |
           apt-get update
-          apt-get install --no-install-recommends -y xz-utils
+          apt-get install --no-install-recommends -y xz-utils curl ca-certificates
 
       - name: Install Zig 0.15.2 for the real shared-library boundary
-        uses: mlugg/setup-zig@v2.2.1
-        with:
-          version: 0.15.2
+        # Pinned + sha256-verified tarball; no third-party action (#103).
+        run: bash scripts/install-zig.sh
 
       - name: Type-check and execute Idris wrappers against libgsa
         run: bash scripts/test-idris-ffi.sh "$RUNNER_TEMP/gsa-abi-contract"
