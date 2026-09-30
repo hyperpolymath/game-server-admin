@@ -5,7 +5,6 @@ version: 'v0.0.2'
 workflows:
     '.github/workflows/abi-contract.yml':
         - 'actions/checkout@v4.2.2'
-        - 'mlugg/setup-zig@v2.2.1'
     '.github/workflows/boj-build.yml':
         - 'actions/checkout@v4.1.7'
     '.github/workflows/casket-pages.yml':
@@ -21,7 +20,6 @@ workflows:
     '.github/workflows/cross-platform.yml':
         - 'actions/cache@v4.2.0'
         - 'actions/checkout@v4.2.2'
-        - 'mlugg/setup-zig@v2.2.1'
     '.github/workflows/dogfood-gate.yml':
         - 'actions/checkout@v4.3.1'
         - 'hyperpolymath/deed-ecosystem@main'
@@ -196,11 +194,6 @@ dependencies:
         commit: 'sha1-ede1191ef6ff3ac02c4f4d9efdf837ee517e11d7'
         owner_id: 6759885
         repo_id: 1352485172
-    'mlugg/setup-zig@v2.2.1':
-        ref: 'v2.2.1'
-        commit: 'sha1-d1434d08867e3ee9daa34448df10607b98908d29'
-        owner_id: 7289241
-        repo_id: 812112570
     'peter-evans/repository-dispatch@v4.0.1':
         ref: 'v4.0.1'
         commit: 'sha1-28959ce8df70de7be546dd1250a005dd32156697'
