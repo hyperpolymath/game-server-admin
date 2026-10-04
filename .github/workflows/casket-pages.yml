@@ -34,12 +34,20 @@ jobs:
           repository: hyperpolymath/casket-ssg
           path: .casket-ssg
 
-      - name: Setup GHCup
-        id: setup
-        uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
-        with:
-          ghc-version: '9.8.2'
-          cabal-version: '3.10'
+      # MEASURED, not assumed. A throwaway probe workflow on this branch
+      # (since deleted) loaded both actions and GitHub refused both in one
+      # message:
+      #
+      #   The actions editorconfig-checker/action-editorconfig-checker@51f6331
+      #   and haskell-actions/setup@0f8e8c99 are not allowed in
+      #   hyperpolymath/game-server-admin because all actions must be from a
+      #   repository owned by hyperpolymath, created by GitHub, or verified in
+      #   the GitHub Marketplace.
+      #
+      # So the toolchain is installed from a pinned, hash-verified script —
+      # the same remedy used for setup-zig in scripts/install-zig.sh.
+      - name: Setup GHC and cabal
+        run: bash scripts/setup-haskell.sh
 
       # The checked-out casket-ssg tracks its default branch, so hashing only
       # the .cabal file can restore a store built against different source.
@@ -54,7 +62,7 @@ jobs:
             ~/.cabal/packages
             ~/.cabal/store
             .casket-ssg/dist-newstyle
-          key: ${{ runner.os }}-casket-${{ steps.setup.outputs.ghc-version }}-${{ steps.casket.outputs.sha }}
+          key: ${{ runner.os }}-casket-9.8.2-${{ steps.casket.outputs.sha }}
 
       - name: Build casket-ssg
         working-directory: .casket-ssg
