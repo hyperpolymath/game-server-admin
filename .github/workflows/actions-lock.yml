@@ -58,7 +58,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
+      # `relock` is computed in the shell, not in an `if:` expression:
+      # `inputs.mode` is not a recognised named value outside
+      # workflow_dispatch, and referencing it there is a start-up error.
       in_sync: ${{ steps.check.outputs.in_sync }}
+      relock: ${{ steps.check.outputs.relock }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,6 +77,8 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_MODE: ${{ github.event.inputs.mode }}
         run: |
           set -uo pipefail
           code=0
@@ -83,6 +89,13 @@ jobs:
 
           if [ "$code" -eq 0 ]; then
             echo "in_sync=true" >> "$GITHUB_OUTPUT"
+            # An explicit relock dispatch still wins even when the file looks
+            # fine: it is how a maintainer refreshes pins that have moved.
+            if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DISPATCH_MODE" = "relock" ]; then
+              echo "relock=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "relock=false" >> "$GITHUB_OUTPUT"
+            fi
             echo "actions.lock agrees with every workflow." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -93,6 +106,7 @@ jobs:
             # Re-emit the tool's stderr as annotations — a bare exit code on a
             # runner nobody can read logs from is worse than a verbose diff.
             echo "in_sync=unknown" >> "$GITHUB_OUTPUT"
+            echo "relock=false" >> "$GITHUB_OUTPUT"
             echo "::error::gh actions-lock --verify exited ${code} (tool failure, not a lockfile mismatch)"
             while IFS= read -r line; do
               [ -n "$line" ] && echo "::error::[gh actions-lock] ${line}"
@@ -101,6 +115,7 @@ jobs:
           fi
 
           echo "in_sync=false" >> "$GITHUB_OUTPUT"
+          echo "relock=true" >> "$GITHUB_OUTPUT"
           echo "::error::actions.lock is out of step with .github/workflows — every onboarded workflow will fail with startup_failure until it is regenerated"
           {
             echo '## actions.lock is out of sync'
@@ -120,7 +135,7 @@ jobs:
     needs: verify
     # Only for a genuine mismatch. `unknown` means the tool itself broke, and
     # committing whatever it produced would be worse than leaving the diff.
-    if: needs.verify.outputs.in_sync == 'false' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'relock')
+    if: always() && needs.verify.outputs.relock == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
