@@ -1,0 +1,25 @@
+# TEMPORARY — deleted immediately after it reports. A workflow that only has
+# to be *loaded*: GitHub validates every `uses:` at start-up, so a rejected
+# action produces startup_failure with zero jobs, which is exactly the signal
+# game-server-admin#103 turns on. editorconfig-checker is the control (known
+# rejected); haskell-actions/setup is the question.
+name: Allowlist probe
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Load-only probe
+    runs-on: ubuntu-latest
+    steps:
+      - name: Control (known rejected)
+        uses: editorconfig-checker/action-editorconfig-checker@51f63319f592f97930c73d9c46184d20bd206393 # v3.0.0
+        continue-on-error: true
+      - name: Candidate
+        uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
+        with:
+          ghc-version: '9.8.2'
