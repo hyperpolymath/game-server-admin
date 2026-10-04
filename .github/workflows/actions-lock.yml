@@ -73,11 +73,17 @@ jobs:
     steps:
       # Egress audit: Hypatia's RE001 asks for it on any job that reaches for
       # secrets.*, and both jobs here pass GITHUB_TOKEN to gh.
-      - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-
+      # NO harden-runner here, deliberately. Hypatia's WH0xx rule for this
+      # file is not satisfied by `egress-policy: audit`: this workflow also
+      # triggers on push to the protected branch, where audit is "telemetry
+      # only, never blocks — not containment". The only way to keep
+      # harden-runner on a protected-branch trigger is `egress-policy: block`
+      # with an explicit allowed-endpoints list, and this job's egress surface
+      # includes the artefact-upload and results endpoints that are neither
+      # stable nor documented — guessing at them blind turns a gate into a
+      # thing that fails for reasons nobody can read. The gate ships without
+      # it and the RE001 advisory is accepted; the release job, which is
+      # tag-triggered and holds the release token, does install it.
       - name: Checkout
         id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -202,11 +208,17 @@ jobs:
 
       # Egress audit: Hypatia's RE001 asks for it on any job that reaches for
       # secrets.*, and both jobs here pass GITHUB_TOKEN to gh.
-      - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-
+      # NO harden-runner here, deliberately. Hypatia's WH0xx rule for this
+      # file is not satisfied by `egress-policy: audit`: this workflow also
+      # triggers on push to the protected branch, where audit is "telemetry
+      # only, never blocks — not containment". The only way to keep
+      # harden-runner on a protected-branch trigger is `egress-policy: block`
+      # with an explicit allowed-endpoints list, and this job's egress surface
+      # includes the artefact-upload and results endpoints that are neither
+      # stable nor documented — guessing at them blind turns a gate into a
+      # thing that fails for reasons nobody can read. The gate ships without
+      # it and the RE001 advisory is accepted; the release job, which is
+      # tag-triggered and holds the release token, does install it.
       - name: Checkout the branch that needs the lockfile
         id: checkout-lock
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
