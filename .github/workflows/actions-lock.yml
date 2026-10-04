@@ -189,14 +189,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
-          gh actions-lock --relock --no-interactive
+          set -uo pipefail
+          code=0
+          gh actions-lock --relock --no-interactive >relock.out 2>relock.err || code=$?
+          cat relock.out || true
+          cat relock.err || true
+          # A non-zero exit here does NOT mean nothing was written. The tool
+          # writes the lockfile and then reports whatever it still objects to
+          # (a bare SHA with no symbolic ref, say) — findings that do not
+          # invalidate the file. Only "the file did not change" is a real
+          # failure, and that is checked below.
+          if [ "$code" -ne 0 ]; then
+            echo "::warning::gh actions-lock --relock exited ${code}; the regenerated lockfile is still delivered if it changed"
+            while IFS= read -r line; do
+              [ -n "$line" ] && echo "::warning::[gh actions-lock] ${line}"
+            done < <(tail -n 30 relock.err | tr -d '\r' | cut -c1-200)
+          fi
           git --no-pager diff --stat -- .github/workflows/actions.lock || true
 
       - name: Push the regenerated lockfile back to the branch
         if: steps.target.outputs.skipped == 'false' && steps.target.outputs.on_default == 'false'
         run: |
-          set -euo pipefail
+          set -uo pipefail
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/workflows/actions.lock
@@ -218,7 +232,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_BRANCH: ${{ steps.target.outputs.branch }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           branch="ci/actions-lock-relock-${GITHUB_RUN_ID}"
