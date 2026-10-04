@@ -8,14 +8,19 @@
 # workflow listed in actions.lock dies with `startup_failure` before a single
 # step runs, so it produces no check runs at all — which is how
 # game-server-admin#103 took out both required-check producers (`ABI Contract`
-# and `Cross-Platform Build & Test`) at once. Dependabot bumps action tags on a
-# weekly schedule and cannot run `gh actions-lock`, so without a gate here the
-# next group bump re-breaks the whole CI estate, silently.
+# and `Cross-Platform Build & Test`) in one commit. Dependabot bumps action
+# tags weekly and cannot run `gh actions-lock`, so without a gate here the next
+# group bump re-breaks the whole CI estate, silently.
+#
+# The lockfile is not decoration for another reason: this repo's Actions policy
+# requires every action to be pinned to a full-length commit SHA, and a tag ref
+# such as actions/checkout@v7.0.1 is accepted *only because the lockfile pins
+# it*. Delete the lockfile and even actions/checkout is refused.
 #
 # The gate has two halves:
 #   verify  — read-only (`gh actions-lock --verify`). Fails when the lockfile
 #             and the workflows disagree, so a bump cannot merge unrelocked.
-#   relock  — runs only when verify failed. Regenerates the lockfile and
+#   relock  — runs when verify asked it to. Regenerates the lockfile and
 #             delivers it: pushed straight back to the branch on a pull
 #             request, or opened as a PR when the target is the default branch
 #             (main requires signed commits, so a bot cannot push there).
@@ -65,9 +70,11 @@ jobs:
       relock: ${{ steps.check.outputs.relock }}
     steps:
       - name: Checkout
+        id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install gh actions-lock
+        id: install
         run: |
           set -euo pipefail
           gh extension install github/gh-actions-lock --pin "$ACTIONS_LOCK_EXTENSION_VERSION"
@@ -83,7 +90,7 @@ jobs:
           set -uo pipefail
           code=0
           gh actions-lock --verify --no-interactive \
-            --json=valid,findings > actions-lock-report.json 2>actions-lock-report.err \
+            --json=valid,findings >actions-lock-report.json 2>actions-lock-report.err \
             || code=$?
           echo "gh actions-lock --verify exited ${code}" | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -126,15 +133,11 @@ jobs:
             echo
             echo 'Fix locally with `gh actions-lock`, or run this workflow in `relock` mode.'
           } >> "$GITHUB_STEP_SUMMARY"
-          jq -r '.findings[]? | "::\(.severity // "error")::\(.detail // .)"' \
-            actions-lock-report.json 2>/dev/null || true
           exit 1
 
   relock:
     name: Regenerate actions.lock
     needs: verify
-    # Only for a genuine mismatch. `unknown` means the tool itself broke, and
-    # committing whatever it produced would be worse than leaving the diff.
     if: always() && needs.verify.outputs.relock == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -173,18 +176,21 @@ jobs:
           fi
 
       - name: Checkout the branch that needs the lockfile
+        id: checkout-lock
         if: steps.target.outputs.skipped == 'false'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.target.outputs.branch }}
 
       - name: Install gh actions-lock
+        id: install
         if: steps.target.outputs.skipped == 'false'
         run: |
           set -euo pipefail
           gh extension install github/gh-actions-lock --pin "$ACTIONS_LOCK_EXTENSION_VERSION"
 
       - name: Regenerate the lockfile
+        id: regenerate
         if: steps.target.outputs.skipped == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -198,7 +204,7 @@ jobs:
           # writes the lockfile and then reports whatever it still objects to
           # (a bare SHA with no symbolic ref, say) — findings that do not
           # invalidate the file. Only "the file did not change" is a real
-          # failure, and that is checked below.
+          # failure, and that is checked when the change is delivered.
           if [ "$code" -ne 0 ]; then
             echo "::warning::gh actions-lock --relock exited ${code}; the regenerated lockfile is still delivered if it changed"
             while IFS= read -r line; do
@@ -206,8 +212,10 @@ jobs:
             done < <(tail -n 30 relock.err | tr -d '\r' | cut -c1-200)
           fi
           git --no-pager diff --stat -- .github/workflows/actions.lock || true
+          git --no-pager diff -- .github/workflows/actions.lock | head -n 60 || true
 
       - name: Push the regenerated lockfile back to the branch
+        id: deliver
         if: steps.target.outputs.skipped == 'false' && steps.target.outputs.on_default == 'false'
         run: |
           set -uo pipefail
@@ -215,8 +223,8 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/workflows/actions.lock
           if git diff --cached --quiet; then
-            echo "::notice::gh actions-lock produced no change; nothing to commit"
-            exit 0
+            echo "::error::gh actions-lock produced no change to actions.lock — the pull request stays unstartable and the file must be regenerated by hand"
+            exit 1
           fi
           git commit -m "chore(ci): regenerate actions.lock (gh actions-lock --relock)
 
@@ -227,6 +235,7 @@ jobs:
           echo "::notice::Regenerated actions.lock pushed to ${{ steps.target.outputs.branch }}; this pull request will re-verify on the next run."
 
       - name: Open a pull request with the regenerated lockfile
+        id: propose
         if: steps.target.outputs.skipped == 'false' && steps.target.outputs.on_default == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -239,8 +248,8 @@ jobs:
           git switch --create "$branch"
           git add .github/workflows/actions.lock
           if git diff --cached --quiet; then
-            echo "::notice::gh actions-lock produced no change; nothing to propose"
-            exit 0
+            echo "::error::gh actions-lock produced no change to actions.lock — nothing to propose"
+            exit 1
           fi
           git commit -m "chore(ci): regenerate actions.lock (gh actions-lock --relock)
 
@@ -255,3 +264,25 @@ jobs:
             --body '`gh actions-lock --verify` failed on `'"$BASE_BRANCH"'` because `actions.lock` no longer matches the workflows. While they disagree, every onboarded workflow ends in `startup_failure` and produces no check runs at all.
 
           This PR is the output of `gh actions-lock --relock`. See game-server-admin#103.'
+
+      - name: Diagnostics
+        if: always()
+        run: |
+          set -uo pipefail
+          outcomes="target=${{ steps.target.outcome }} checkout=${{ steps.checkout-lock.outcome }} install=${{ steps.install.outcome }} regenerate=${{ steps.regenerate.outcome }} deliver=${{ steps.deliver.outcome }} propose=${{ steps.propose.outcome }}"
+          echo "::notice::relock outcomes — ${outcomes}"
+          {
+            echo '## Regenerate actions.lock — step outcomes'
+            echo
+            echo '```'
+            echo "${outcomes}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Surface anything the tool left behind; a step that failed before
+          # printing it would otherwise be undiagnosable.
+          for f in relock.out relock.err; do
+            if [ -s "$f" ]; then
+              echo "--- ${f} ---"
+              tail -n 40 "$f" | cut -c1-200
+            fi
+          done || true
