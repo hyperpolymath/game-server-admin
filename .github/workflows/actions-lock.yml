@@ -32,8 +32,17 @@ name: Actions Lockfile
 
 on:
   pull_request:
-  push:
-    branches: [main, master]
+  # NO `push: branches: [main, master]`, deliberately — see the header block.
+  # A push to the protected branch makes this a protected-branch-triggered
+  # workflow, and Hypatia then refuses `egress-policy: audit` as
+  # non-containment, which is the one hardening step this file can carry
+  # without an endpoint allow-list nobody can write correctly. The default
+  # branch is still covered: `schedule` runs against it, and every route to
+  # it goes through a pull request that this gate blocks.
+  schedule:
+    # Mondays 04:17 UTC, offset off the hour: the estate's other scheduled
+    # jobs cluster on :00 and contend for the same rate-limit bucket.
+    - cron: '17 4 * * 1'
   workflow_dispatch:
     inputs:
       mode:
@@ -73,17 +82,14 @@ jobs:
     steps:
       # Egress audit: Hypatia's RE001 asks for it on any job that reaches for
       # secrets.*, and both jobs here pass GITHUB_TOKEN to gh.
-      # NO harden-runner here, deliberately. Hypatia's WH0xx rule for this
-      # file is not satisfied by `egress-policy: audit`: this workflow also
-      # triggers on push to the protected branch, where audit is "telemetry
-      # only, never blocks — not containment". The only way to keep
-      # harden-runner on a protected-branch trigger is `egress-policy: block`
-      # with an explicit allowed-endpoints list, and this job's egress surface
-      # includes the artefact-upload and results endpoints that are neither
-      # stable nor documented — guessing at them blind turns a gate into a
-      # thing that fails for reasons nobody can read. The gate ships without
-      # it and the RE001 advisory is accepted; the release job, which is
-      # tag-triggered and holds the release token, does install it.
+      # Egress audit: Hypatia's RE001 asks for it on any job that reaches for
+      # secrets.*, and both jobs here pass GITHUB_TOKEN to gh. Audit, not
+      # block — see the trigger note in the header.
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
       - name: Checkout
         id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -208,17 +214,14 @@ jobs:
 
       # Egress audit: Hypatia's RE001 asks for it on any job that reaches for
       # secrets.*, and both jobs here pass GITHUB_TOKEN to gh.
-      # NO harden-runner here, deliberately. Hypatia's WH0xx rule for this
-      # file is not satisfied by `egress-policy: audit`: this workflow also
-      # triggers on push to the protected branch, where audit is "telemetry
-      # only, never blocks — not containment". The only way to keep
-      # harden-runner on a protected-branch trigger is `egress-policy: block`
-      # with an explicit allowed-endpoints list, and this job's egress surface
-      # includes the artefact-upload and results endpoints that are neither
-      # stable nor documented — guessing at them blind turns a gate into a
-      # thing that fails for reasons nobody can read. The gate ships without
-      # it and the RE001 advisory is accepted; the release job, which is
-      # tag-triggered and holds the release token, does install it.
+      # Egress audit: Hypatia's RE001 asks for it on any job that reaches for
+      # secrets.*, and both jobs here pass GITHUB_TOKEN to gh. Audit, not
+      # block — see the trigger note in the header.
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
       - name: Checkout the branch that needs the lockfile
         id: checkout-lock
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
