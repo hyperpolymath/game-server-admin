@@ -47,6 +47,12 @@ on:
 
 permissions:
   contents: write
+  # actions.lock lives under .github/workflows/, and GitHub treats every path
+  # there as workflow-governed: pushing a change to it with GITHUB_TOKEN and
+  # only `contents: write` is rejected outright —
+  #   ! [remote rejected] (refusing to allow a GitHub App to create or update
+  #     workflow `.github/workflows/actions.lock` without `workflows` permission)
+  workflows: write
 
 concurrency:
   group: actions-lockfile-${{ github.ref }}
