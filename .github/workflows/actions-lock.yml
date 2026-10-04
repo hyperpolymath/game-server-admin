@@ -230,8 +230,22 @@ jobs:
 
           The lockfile and the workflows had drifted apart. While they do,
           every onboarded workflow ends in startup_failure and produces no
-          check runs at all. See game-server-admin#103."
-          git push origin "HEAD:refs/heads/${{ steps.target.outputs.branch }}"
+          check runs at all. See game-server-admin#103." >commit.out 2>&1
+          if [ $? -ne 0 ]; then
+            cat commit.out || true
+            while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::[git commit] ${line}"
+            done < <(tail -n 20 commit.out | tr -d '\r' | cut -c1-200)
+            exit 1
+          fi
+          git push origin "HEAD:refs/heads/${{ steps.target.outputs.branch }}" >push.out 2>&1
+          if [ $? -ne 0 ]; then
+            cat push.out || true
+            while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::[git push] ${line}"
+            done < <(tail -n 20 push.out | tr -d '\r' | cut -c1-200)
+            exit 1
+          fi
           echo "::notice::Regenerated actions.lock pushed to ${{ steps.target.outputs.branch }}; this pull request will re-verify on the next run."
 
       - name: Open a pull request with the regenerated lockfile
@@ -269,6 +283,11 @@ jobs:
         if: always()
         run: |
           set -uo pipefail
+          echo "--- git state ---"
+          git --no-pager log --oneline -1 || true
+          git status --short || true
+          echo "--- actions.lock ---"
+          ls -la .github/workflows/actions.lock || true
           outcomes="target=${{ steps.target.outcome }} checkout=${{ steps.checkout-lock.outcome }} install=${{ steps.install.outcome }} regenerate=${{ steps.regenerate.outcome }} deliver=${{ steps.deliver.outcome }} propose=${{ steps.propose.outcome }}"
           echo "::notice::relock outcomes — ${outcomes}"
           {
