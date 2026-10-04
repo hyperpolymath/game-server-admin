@@ -108,16 +108,28 @@ jobs:
           path: artifacts/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3.0.3
-        with:
-          body: ${{ needs.changelog.outputs.changelog }}
-          draft: false
-          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
-          generate_release_notes: false
-          files: |
-            artifacts/gsa-linux-x86_64.tar.gz
+        # softprops/action-gh-release is not from a hyperpolymath-owned,
+        # GitHub-created or Marketplace-verified-creator repo, so the allow-list
+        # rejects the action and the workflow dies with startup_failure
+        # (game-server-admin#103). `gh release create` covers the same ground and
+        # `gh` is preinstalled on every runner.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_NOTES: ${{ needs.changelog.outputs.changelog }}
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TAG" in
+            *-rc*|*-beta*|*-alpha*) prerelease=(--prerelease) ;;
+            *)                      prerelease=() ;;
+          esac
+          printf '%s\n' "$RELEASE_NOTES" > release-notes.md
+          gh release create "$RELEASE_TAG" \
+            --title "$RELEASE_TAG" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            "${prerelease[@]}" \
+            artifacts/gsa-linux-x86_64.tar.gz
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4.2.2

@@ -2,71 +2,25 @@ K9!
 # SPDX-License-Identifier: MPL-2.0
 # deploy.k9.ncl — game-server-admin deployment component (Hunt level)
 #
-# k9-svc deployment specification with full pedigree (L1-L5).
+# k9-svc deployment specification with full pedigree.
 # Security Level: 'Hunt (requires cryptographic handshake for execution).
 #
 # WARNING: This component can execute shell commands!
 # It requires explicit authorisation via the Leash system.
 #
+# Layout note: the pedigree is written inline, in the canonical K9 shape
+# (`pedigree = { schema_version, security, metadata, … }`), not let-bound and
+# exported. K9's validators are lexical — they read the record, they do not
+# evaluate Nickel — so the component's own name, version and leash have to be
+# visible inside the `pedigree = { … }` record. Factoring the pedigree through
+# `let component_pedigree = { … }` hid all three and turned
+# `Validate K9 contracts` red (game-server-admin#103). `deployment` and
+# `scripts` carry no pedigree fields, so they stay let-bound.
+#
 # Usage:
 #   nickel typecheck container/deploy.k9.ncl
 #   k9-svc validate container/deploy.k9.ncl
 #   k9-svc deploy container/deploy.k9.ncl --env production
-
-# The component's pedigree (self-description across five layers)
-let component_pedigree = {
-  # ─────────────────────────────────────────────────────────────
-  # L1: The Snout — Identity
-  # ─────────────────────────────────────────────────────────────
-  metadata = {
-    name = "gsa-deploy",
-    version = "{{VERSION}}",
-    breed = "application/vnd.k9+nickel",
-    magic_number = "K9!",
-    description = "game-server-admin deployment component (Hunt level)",
-  },
-
-  # ─────────────────────────────────────────────────────────────
-  # L2: The Scent — Target Environment
-  # ─────────────────────────────────────────────────────────────
-  target = {
-    os = 'Linux,
-    is_edge = false,
-    requires_podman = true,
-    min_memory_mb = 256,
-  },
-
-  # ─────────────────────────────────────────────────────────────
-  # L3: The Leash — Security
-  # ─────────────────────────────────────────────────────────────
-  security = {
-    trust_level = 'Hunt,
-    allow_network = true,
-    allow_filesystem_write = true,
-    allow_subprocess = true,
-    # In production, replace with a real Ed25519 signature.
-    signature = "PLACEHOLDER-SIGNATURE-REQUIRED-FOR-HUNT",
-  },
-
-  # ─────────────────────────────────────────────────────────────
-  # L4: The Gut — Self-Validation
-  # ─────────────────────────────────────────────────────────────
-  validation = {
-    checksum = "sha256:placeholder",
-    pedigree_version = "1.0.0",
-    hunt_authorized = false,  # Must be set true after handshake
-  },
-
-  # ─────────────────────────────────────────────────────────────
-  # L5: The Muscle — Deployment Recipes
-  # ─────────────────────────────────────────────────────────────
-  recipes = {
-    install = "just container-build",
-    validate = "just container-verify",
-    deploy = "just container-up",
-    migrate = "just container-build && just container-up",
-  },
-} in
 
 # Deployment configuration
 let deployment = {
@@ -144,7 +98,73 @@ echo "K9: Rollback complete."
 
 # Export the component
 {
-  pedigree = component_pedigree,
+  # The component's pedigree (self-description)
+  pedigree = {
+    # ─────────────────────────────────────────────────────────
+    # L1: The Snout — Identity
+    # ─────────────────────────────────────────────────────────
+    metadata = {
+      name = "gsa-deploy",
+      version = "1.0.0",
+      description = "game-server-admin deployment component (Hunt level)",
+      author = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",
+    },
+
+    # K9 schema conformance and format marker
+    schema_version = "1.0.0",
+    component_type = "deployment",
+    breed = "application/vnd.k9+nickel",
+    magic_number = "K9!",
+
+    # ─────────────────────────────────────────────────────────
+    # L2: The Scent — Target Environment
+    # ─────────────────────────────────────────────────────────
+    target = {
+      os = 'Linux,
+      is_edge = false,
+      requires_podman = true,
+      min_memory_mb = 256,
+    },
+
+    # ─────────────────────────────────────────────────────────
+    # L3: The Leash — Security
+    # ─────────────────────────────────────────────────────────
+    security = {
+      leash = 'Hunt,
+      trust_level = "full-system-access",
+      allow_network = true,
+      allow_filesystem_write = true,
+      allow_subprocess = true,
+      signature_required = true,
+      # In production, replace with a real Ed25519 signature.
+      signature = "PLACEHOLDER-SIGNATURE-REQUIRED-FOR-HUNT",
+    },
+
+    # ─────────────────────────────────────────────────────────
+    # L4: The Gut — Self-Validation
+    # ─────────────────────────────────────────────────────────
+    validation = {
+      checksum = "sha256:placeholder",
+      hunt_authorized = false,  # Must be set true after handshake
+    },
+
+    # ─────────────────────────────────────────────────────────
+    # L5: The Muscle — Deployment Recipes
+    # ─────────────────────────────────────────────────────────
+    recipes = {
+      install = "just container-build",
+      validate = "just container-verify",
+      deploy = "just container-up",
+      migrate = "just container-build && just container-up",
+    },
+
+    warnings = [
+      "This component has full system access",
+      "Only run from trusted sources with verified signatures",
+      "Review the deployment scripts above before execution",
+    ],
+  },
+
   deployment = deployment,
   scripts = scripts,
 

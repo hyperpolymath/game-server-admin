@@ -30,7 +30,7 @@ ZIG_SHA256_X86_64_LINUX="02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9e
 
 os="$(uname -s)"
 arch="$(uname -m)"
-if [ "$os" != "Linux" ] || [ "$arch" != "x86_64" ]; then
+if [[ "$os" != "Linux" ]] || [[ "$arch" != "x86_64" ]]; then
   echo "::error::install-zig.sh pins only x86_64-linux; got ${os}/${arch}. Add a pinned sha256 for this platform." >&2
   exit 1
 fi
@@ -52,7 +52,7 @@ tar -xJf "${work}/${tarball}" -C "$dest" --strip-components=1
 rm -rf "$work"
 
 got="$("${dest}/zig" version)"
-if [ "$got" != "$ZIG_VERSION" ]; then
+if [[ "$got" != "$ZIG_VERSION" ]]; then
   echo "::error::installed zig reports '${got}', expected '${ZIG_VERSION}'" >&2
   exit 1
 fi

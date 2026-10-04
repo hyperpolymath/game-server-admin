@@ -157,7 +157,7 @@ jobs:
       - name: Setup Elixir for Hypatia scanner
         id: beam
         continue-on-error: true
-        uses: erlef/setup-beam@v1.24.1
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
         with:
           elixir-version: '1.19.4'
           otp-version: '28.3'
