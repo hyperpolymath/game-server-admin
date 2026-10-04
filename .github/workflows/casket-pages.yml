@@ -20,9 +20,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # casket-ssg pulls in pandoc, which is a from-source build of roughly an
-    # hour on a cold cabal store. 30 minutes was never enough: every run that
-    # got past workflow start-up died on the job timeout (game-server-admin#103).
+    # casket-ssg pulls in pandoc, a from-source build. Measured on main: run
+    # 35361659693 took 1h40m before failing. 30 minutes was never going to be
+    # enough.
     timeout-minutes: 120
     steps:
       - name: Checkout
@@ -34,13 +34,12 @@ jobs:
           repository: hyperpolymath/casket-ssg
           path: .casket-ssg
 
-      # haskell-actions/setup is not from a hyperpolymath-owned, GitHub-created
-      # or Marketplace-verified-creator repo, so the allow-list rejects it and
-      # the whole workflow dies with startup_failure. Install the toolchain
-      # from a pinned, hash-verified script instead — the same remedy used for
-      # mlugg/setup-zig in scripts/install-zig.sh.
-      - name: Setup GHC and cabal
-        run: bash scripts/setup-haskell.sh
+      - name: Setup GHCup
+        id: setup
+        uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
+        with:
+          ghc-version: '9.8.2'
+          cabal-version: '3.10'
 
       # The checked-out casket-ssg tracks its default branch, so hashing only
       # the .cabal file can restore a store built against different source.
@@ -55,7 +54,7 @@ jobs:
             ~/.cabal/packages
             ~/.cabal/store
             .casket-ssg/dist-newstyle
-          key: ${{ runner.os }}-casket-9.8.2-${{ steps.casket.outputs.sha }}
+          key: ${{ runner.os }}-casket-${{ steps.setup.outputs.ghc-version }}-${{ steps.casket.outputs.sha }}
 
       - name: Build casket-ssg
         working-directory: .casket-ssg
