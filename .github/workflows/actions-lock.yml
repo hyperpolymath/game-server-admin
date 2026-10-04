@@ -1,0 +1,220 @@
+# This workflow is managed by gh actions-lock.
+# SPDX-License-Identifier: MPL-2.0
+#
+# actions-lock.yml — keep .github/workflows/actions.lock in step with the
+# workflows themselves.
+#
+# Why this exists: an out-of-date lockfile is not a soft failure. Every
+# workflow listed in actions.lock dies with `startup_failure` before a single
+# step runs, so it produces no check runs at all — which is how
+# game-server-admin#103 took out both required-check producers (`ABI Contract`
+# and `Cross-Platform Build & Test`) at once. Dependabot bumps action tags on a
+# weekly schedule and cannot run `gh actions-lock`, so without a gate here the
+# next group bump re-breaks the whole CI estate, silently.
+#
+# The gate has two halves:
+#   verify  — read-only (`gh actions-lock --verify`). Fails when the lockfile
+#             and the workflows disagree, so a bump cannot merge unrelocked.
+#   relock  — runs only when verify failed. Regenerates the lockfile and
+#             delivers it: pushed straight back to the branch on a pull
+#             request, or opened as a PR when the target is the default branch
+#             (main requires signed commits, so a bot cannot push there).
+#
+# A push made with GITHUB_TOKEN does not start a new workflow run, so the
+# relock commit cannot loop.
+
+name: Actions Lockfile
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'verify = report only; relock = regenerate and deliver'
+        required: false
+        default: 'verify'
+        type: choice
+        options:
+          - verify
+          - relock
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actions-lockfile-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Bump deliberately: the lockfile format is pre-1.0 and its shape can
+  # change between releases.
+  ACTIONS_LOCK_EXTENSION_VERSION: v0.1.7-rc.1
+
+jobs:
+  verify:
+    name: Verify actions.lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      in_sync: ${{ steps.check.outputs.in_sync }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install gh actions-lock
+        run: |
+          set -euo pipefail
+          gh extension install github/gh-actions-lock --pin "$ACTIONS_LOCK_EXTENSION_VERSION"
+          gh actions-lock --help
+
+      - name: Check the lockfile matches the workflows
+        id: check
+        run: |
+          set -uo pipefail
+          code=0
+          gh actions-lock --verify --no-interactive \
+            --json=valid,findings > actions-lock-report.json 2>actions-lock-report.err \
+            || code=$?
+          echo "gh actions-lock --verify exited ${code}" | tee -a "$GITHUB_STEP_SUMMARY"
+          cat actions-lock-report.err || true
+
+          if [ "$code" -eq 0 ]; then
+            echo "in_sync=true" >> "$GITHUB_OUTPUT"
+            echo "actions.lock agrees with every workflow." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$code" -ne 1 ]; then
+            # 1 = blocking findings (out of sync). Anything else is the tool
+            # failing, not the repo: do not let the relock job paper over it.
+            echo "in_sync=unknown" >> "$GITHUB_OUTPUT"
+            echo "::error::gh actions-lock --verify exited ${code} (tool failure, not a lockfile mismatch) — see the log above"
+            exit "$code"
+          fi
+
+          echo "in_sync=false" >> "$GITHUB_OUTPUT"
+          echo "::error::actions.lock is out of step with .github/workflows — every onboarded workflow will fail with startup_failure until it is regenerated"
+          {
+            echo '## actions.lock is out of sync'
+            echo
+            echo '```json'
+            jq . actions-lock-report.json 2>/dev/null || cat actions-lock-report.json
+            echo '```'
+            echo
+            echo 'Fix locally with `gh actions-lock`, or run this workflow in `relock` mode.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.findings[]? | "::\(.severity // "error")::\(.detail // .)"' \
+            actions-lock-report.json 2>/dev/null || true
+          exit 1
+
+  relock:
+    name: Regenerate actions.lock
+    needs: verify
+    # Only for a genuine mismatch. `unknown` means the tool itself broke, and
+    # committing whatever it produced would be worse than leaving the diff.
+    if: needs.verify.outputs.in_sync == 'false' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'relock')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Decide where the fix goes
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [ "$HEAD_REPO" != "$REPO" ]; then
+              echo "skipped=true" >> "$GITHUB_OUTPUT"
+              echo "::warning::Fork pull request: cannot push the regenerated lockfile back to ${HEAD_REPO}. Run \`gh actions-lock\` locally."
+              exit 0
+            fi
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+            echo "branch=${HEAD_REF}" >> "$GITHUB_OUTPUT"
+            echo "on_default=false" >> "$GITHUB_OUTPUT"
+          else
+            branch="${REF#refs/heads/}"
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+            echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+            if [ "$branch" = "$DEFAULT_BRANCH" ]; then
+              # main requires signed commits, so a bot commit cannot land
+              # there: deliver the fix as a pull request instead.
+              echo "on_default=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "on_default=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Checkout the branch that needs the lockfile
+        if: steps.target.outputs.skipped == 'false'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.target.outputs.branch }}
+
+      - name: Install gh actions-lock
+        if: steps.target.outputs.skipped == 'false'
+        run: |
+          set -euo pipefail
+          gh extension install github/gh-actions-lock --pin "$ACTIONS_LOCK_EXTENSION_VERSION"
+
+      - name: Regenerate the lockfile
+        if: steps.target.outputs.skipped == 'false'
+        run: |
+          set -euo pipefail
+          gh actions-lock --relock --no-interactive
+          git --no-pager diff --stat -- .github/workflows/actions.lock || true
+
+      - name: Push the regenerated lockfile back to the branch
+        if: steps.target.outputs.skipped == 'false' && steps.target.outputs.on_default == 'false'
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/actions.lock
+          if git diff --cached --quiet; then
+            echo "::notice::gh actions-lock produced no change; nothing to commit"
+            exit 0
+          fi
+          git commit -m "chore(ci): regenerate actions.lock (gh actions-lock --relock)
+
+          The lockfile and the workflows had drifted apart. While they do,
+          every onboarded workflow ends in startup_failure and produces no
+          check runs at all. See game-server-admin#103."
+          git push origin "HEAD:refs/heads/${{ steps.target.outputs.branch }}"
+          echo "::notice::Regenerated actions.lock pushed to ${{ steps.target.outputs.branch }}; this pull request will re-verify on the next run."
+
+      - name: Open a pull request with the regenerated lockfile
+        if: steps.target.outputs.skipped == 'false' && steps.target.outputs.on_default == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_BRANCH: ${{ steps.target.outputs.branch }}
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          branch="ci/actions-lock-relock-${GITHUB_RUN_ID}"
+          git switch --create "$branch"
+          git add .github/workflows/actions.lock
+          if git diff --cached --quiet; then
+            echo "::notice::gh actions-lock produced no change; nothing to propose"
+            exit 0
+          fi
+          git commit -m "chore(ci): regenerate actions.lock (gh actions-lock --relock)
+
+          The lockfile and the workflows had drifted apart. While they do,
+          every onboarded workflow ends in startup_failure and produces no
+          check runs at all. See game-server-admin#103."
+          git push --set-upstream origin "$branch"
+          gh pr create \
+            --base "$BASE_BRANCH" \
+            --head "$branch" \
+            --title 'chore(ci): regenerate actions.lock' \
+            --body '`gh actions-lock --verify` failed on `'"$BASE_BRANCH"'` because `actions.lock` no longer matches the workflows. While they disagree, every onboarded workflow ends in `startup_failure` and produces no check runs at all.
+
+          This PR is the output of `gh actions-lock --relock`. See game-server-admin#103.'
