@@ -71,6 +71,8 @@ jobs:
 
       - name: Check the lockfile matches the workflows
         id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
           code=0
@@ -78,7 +80,6 @@ jobs:
             --json=valid,findings > actions-lock-report.json 2>actions-lock-report.err \
             || code=$?
           echo "gh actions-lock --verify exited ${code}" | tee -a "$GITHUB_STEP_SUMMARY"
-          cat actions-lock-report.err || true
 
           if [ "$code" -eq 0 ]; then
             echo "in_sync=true" >> "$GITHUB_OUTPUT"
@@ -89,8 +90,13 @@ jobs:
           if [ "$code" -ne 1 ]; then
             # 1 = blocking findings (out of sync). Anything else is the tool
             # failing, not the repo: do not let the relock job paper over it.
+            # Re-emit the tool's stderr as annotations — a bare exit code on a
+            # runner nobody can read logs from is worse than a verbose diff.
             echo "in_sync=unknown" >> "$GITHUB_OUTPUT"
-            echo "::error::gh actions-lock --verify exited ${code} (tool failure, not a lockfile mismatch) — see the log above"
+            echo "::error::gh actions-lock --verify exited ${code} (tool failure, not a lockfile mismatch)"
+            while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::[gh actions-lock] ${line}"
+            done < <(tail -n 30 actions-lock-report.err | tr -d '\r' | cut -c1-200)
             exit "$code"
           fi
 
@@ -165,6 +171,8 @@ jobs:
 
       - name: Regenerate the lockfile
         if: steps.target.outputs.skipped == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           gh actions-lock --relock --no-interactive
