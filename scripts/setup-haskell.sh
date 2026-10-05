@@ -50,6 +50,10 @@ sudo apt-get install -y --no-install-recommends \
 
 fetch_verify() {
   # fetch_verify <url> <sha256> <destination tarball>
+  # Download an HTTPS tarball to the destination and check its expected SHA-256.
+  # Overwrites an existing destination; a checksum failure leaves the file there.
+  # Returns zero on a match. With this script's set -e, download or verification
+  # failures abort setup without removing the destination file.
   local url="$1" want="$2" dest="$3"
   curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-delay 5 \
     -o "$dest" "$url"
