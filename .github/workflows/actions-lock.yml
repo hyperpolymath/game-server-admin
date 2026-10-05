@@ -1,0 +1,419 @@
+# This workflow is managed by gh actions-lock.
+# SPDX-License-Identifier: MPL-2.0
+#
+# actions-lock.yml — keep .github/workflows/actions.lock in step with the
+# workflows themselves.
+#
+# Why this exists: an out-of-date lockfile is not a soft failure. Every
+# workflow listed in actions.lock dies with `startup_failure` before a single
+# step runs, so it produces no check runs at all — which is how
+# game-server-admin#103 took out both required-check producers (`ABI Contract`
+# and `Cross-Platform Build & Test`) in one commit. Dependabot bumps action
+# tags weekly and cannot run `gh actions-lock`, so without a gate here the next
+# group bump re-breaks the whole CI estate, silently.
+#
+# The lockfile is not decoration for another reason: this repo's Actions policy
+# requires every action to be pinned to a full-length commit SHA, and a tag ref
+# such as actions/checkout@v7.0.1 is accepted *only because the lockfile pins
+# it*. Delete the lockfile and even actions/checkout is refused.
+#
+# The gate has two halves:
+#   verify  — read-only (`gh actions-lock --verify`). Fails when the lockfile
+#             and the workflows disagree, so a bump cannot merge unrelocked.
+#   relock  — runs when verify asked it to. Regenerates the lockfile and
+#             delivers it: pushed straight back to the branch on a pull
+#             request, or opened as a PR when the target is the default branch
+#             (main requires signed commits, so a bot cannot push there).
+#
+# A push made with GITHUB_TOKEN does not start a new workflow run, so the
+# relock commit cannot loop.
+
+name: Actions Lockfile
+
+on:
+  pull_request:
+  # NO `push: branches: [main, master]`, deliberately — see the header block.
+  # A push to the protected branch makes this a protected-branch-triggered
+  # workflow, and Hypatia then refuses `egress-policy: audit` as
+  # non-containment, which is the one hardening step this file can carry
+  # without an endpoint allow-list nobody can write correctly. The default
+  # branch is still covered: `schedule` runs against it, and every route to
+  # it goes through a pull request that this gate blocks.
+  schedule:
+    # Mondays 04:17 UTC, offset off the hour: the estate's other scheduled
+    # jobs cluster on :00 and contend for the same rate-limit bucket.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'verify = report only; relock = regenerate and deliver'
+        required: false
+        default: 'verify'
+        type: choice
+        options:
+          - verify
+          - relock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actions-lockfile-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Bump deliberately: the lockfile format is pre-1.0 and its shape can
+  # change between releases.
+  ACTIONS_LOCK_EXTENSION_VERSION: v0.1.7-rc.1
+
+jobs:
+  verify:
+    name: Verify actions.lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      # `relock` is computed in the shell, not in an `if:` expression:
+      # `inputs.mode` is not a recognised named value outside
+      # workflow_dispatch, and referencing it there is a start-up error.
+      in_sync: ${{ steps.check.outputs.in_sync }}
+      relock: ${{ steps.check.outputs.relock }}
+    steps:
+      # Egress audit: Hypatia's RE001 asks for it on any job that reaches for
+      # secrets.*, and both jobs here pass GITHUB_TOKEN to gh.
+      # Egress audit: Hypatia's RE001 asks for it on any job that reaches for
+      # secrets.*, and both jobs here pass GITHUB_TOKEN to gh. Audit, not
+      # block — see the trigger note in the header.
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install gh actions-lock
+        id: install
+        run: |
+          set -euo pipefail
+          gh extension install github/gh-actions-lock --pin "$ACTIONS_LOCK_EXTENSION_VERSION"
+          gh actions-lock --help
+
+      - name: Check the lockfile matches the workflows
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_MODE: ${{ github.event.inputs.mode }}
+        run: |
+          # The runner's default shell is `bash -e {0}`, and `set -uo pipefail`
+          # does NOT clear errexit — so every step that inspects an exit code
+          # has to switch it off explicitly, or a failing command aborts the
+          # script before the handler below it can report anything.
+          set -uo pipefail
+          set +e
+          code=0
+          gh actions-lock --verify --no-interactive \
+            --json=valid,findings >actions-lock-report.json 2>actions-lock-report.err \
+            || code=$?
+          echo "gh actions-lock --verify exited ${code}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          if [ "$code" -eq 0 ]; then
+            echo "in_sync=true" >> "$GITHUB_OUTPUT"
+            # An explicit relock dispatch still wins even when the file looks
+            # fine: it is how a maintainer refreshes pins that have moved.
+            if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DISPATCH_MODE" = "relock" ]; then
+              echo "relock=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "relock=false" >> "$GITHUB_OUTPUT"
+            fi
+            echo "actions.lock agrees with every workflow." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$code" -ne 1 ]; then
+            # 1 = blocking findings (out of sync). Anything else is the tool
+            # failing, not the repo: do not let the relock job paper over it.
+            # Re-emit the tool's stderr as annotations — a bare exit code on a
+            # runner nobody can read logs from is worse than a verbose diff.
+            echo "in_sync=unknown" >> "$GITHUB_OUTPUT"
+            echo "relock=false" >> "$GITHUB_OUTPUT"
+            echo "::error::gh actions-lock --verify exited ${code} (tool failure, not a lockfile mismatch)"
+            while IFS= read -r line; do
+              if [ -n "$line" ]; then echo "::error::[gh actions-lock] ${line}"; fi
+            done < <(tail -n 30 actions-lock-report.err | tr -d '\r' | cut -c1-200)
+            exit "$code"
+          fi
+
+          echo "in_sync=false" >> "$GITHUB_OUTPUT"
+          echo "relock=true" >> "$GITHUB_OUTPUT"
+          echo "::error::actions.lock is out of step with .github/workflows — every onboarded workflow will fail with startup_failure until it is regenerated"
+          {
+            echo '## actions.lock is out of sync'
+            echo
+            echo '```json'
+            jq . actions-lock-report.json 2>/dev/null || cat actions-lock-report.json
+            echo '```'
+            echo
+            echo 'Fix locally with `gh actions-lock`, or run this workflow in `relock` mode.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+  relock:
+    name: Regenerate actions.lock
+    needs: verify
+    if: always() && needs.verify.outputs.relock == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The write lives here, on the only job that writes. `contents: write` is
+    # what lets the PAT-backed push land, and `pull-requests: write` is what
+    # lets the fallback publish the regenerated file as a comment.
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Decide where the fix goes
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELOCK_TOKEN: ${{ secrets.ACTIONS_LOCK_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${RELOCK_TOKEN:-}" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            fork=no
+            if [ "$HEAD_REPO" != "$REPO" ]; then fork=yes; fi
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+            echo "fork=${fork}" >> "$GITHUB_OUTPUT"
+            echo "branch=${HEAD_REF}" >> "$GITHUB_OUTPUT"
+            echo "on_default=false" >> "$GITHUB_OUTPUT"
+          else
+            branch="${REF#refs/heads/}"
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+            echo "fork=no" >> "$GITHUB_OUTPUT"
+            echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+            if [ "$branch" = "$DEFAULT_BRANCH" ]; then
+              # main requires signed commits, so a bot commit cannot land
+              # there even with a token: deliver the fix as a pull request.
+              echo "on_default=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "on_default=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # Egress audit: Hypatia's RE001 asks for it on any job that reaches for
+      # secrets.*, and both jobs here pass GITHUB_TOKEN to gh.
+      # Egress audit: Hypatia's RE001 asks for it on any job that reaches for
+      # secrets.*, and both jobs here pass GITHUB_TOKEN to gh. Audit, not
+      # block — see the trigger note in the header.
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout the branch that needs the lockfile
+        id: checkout-lock
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.target.outputs.branch }}
+          persist-credentials: false
+
+      - name: Install gh actions-lock
+        id: install
+        run: |
+          set -euo pipefail
+          gh extension install github/gh-actions-lock --pin "$ACTIONS_LOCK_EXTENSION_VERSION"
+
+      # NOT --relock. --relock means "bump moved branch/version refs to their
+      # current upstream SHA", so it upgrades every ref to latest and writes a
+      # lockfile keyed by TAG — which is the wrong shape for a repo whose
+      # workflows are SHA-pinned. The estate's validator keys on
+      # `owner/repo@<40-hex>` exactly as written in the workflow, so a
+      # tag-keyed lockfile contradicts every workflow in the repo and GitHub
+      # rejects the lot at startup with "The lockfile could not be validated."
+      #
+      # Plain fix mode with --no-migrate-local-actions --no-narrow is the
+      # canonical regeneration: it keys each entry by the ref the workflow
+      # actually names. See hyperpolymath/standards
+      # .githooks/validate-actions-lock.sh.
+      - name: Regenerate the lockfile
+        id: regenerate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          set +e
+          code=0
+          gh actions-lock --no-migrate-local-actions --no-narrow --no-interactive \
+            >relock.out 2>relock.err || code=$?
+          cat relock.out || true
+          cat relock.err || true
+          # A non-zero exit here does NOT mean nothing was written. The tool
+          # writes the lockfile and then reports whatever it still objects to
+          # (a bare SHA with no symbolic ref, say) — findings that do not
+          # invalidate the file. "The file did not change" is the real
+          # failure, and that is checked below.
+          if [ "$code" -ne 0 ]; then
+            echo "::warning::gh actions-lock exited ${code}; the regenerated lockfile is still delivered if it changed"
+            while IFS= read -r line; do
+              if [ -n "$line" ]; then echo "::warning::[gh actions-lock] ${line}"; fi
+            done < <(tail -n 30 relock.err | tr -d '\r' | cut -c1-200)
+          fi
+
+          # Regenerating the lockfile must not rewrite the workflows. If it
+          # did, the file it just wrote describes a tree that is not on disk —
+          # name the files, then put them back and keep only the lockfile.
+          touched="$(git status --porcelain -- '.github/workflows/*.yml' '.github/workflows/*.yaml' || true)"
+          if [ -n "$touched" ]; then
+            echo "::warning::gh actions-lock modified workflow files while regenerating the lockfile; they have been reverted and only actions.lock is kept"
+            while IFS= read -r line; do
+              if [ -n "$line" ]; then echo "::warning::[workflow touched] ${line}"; fi
+            done <<< "$touched"
+            git checkout -- .github/workflows || true
+          fi
+
+          if git diff --quiet -- .github/workflows/actions.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::error::gh actions-lock produced no change to actions.lock — the branch stays unstartable and the file must be regenerated by hand"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff --stat -- .github/workflows/actions.lock || true
+          fi
+
+      - name: Upload the regenerated lockfile
+        id: upload
+        if: steps.regenerate.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: actions-lock-regenerated
+          path: .github/workflows/actions.lock
+          if-no-files-found: error
+          retention-days: 14
+
+      # A GitHub App cannot write under .github/workflows/ at all: `permissions:`
+      # has no `workflows` key, and a GITHUB_TOKEN push is rejected outright with
+      # "refusing to allow a GitHub App to create or update workflow
+      # `.github/workflows/actions.lock` without `workflows` permission". So the
+      # push path needs a PAT (fine-grained, Workflows + Contents write) supplied
+      # as ACTIONS_LOCK_TOKEN. Without it the file is still delivered — as an
+      # artefact and, on a pull request, as a comment anyone can apply.
+      - name: Deliver the fix with a PAT
+        id: deliver
+        if: steps.regenerate.outputs.changed == 'true' && steps.target.outputs.has_token == 'true'
+        env:
+          RELOCK_TOKEN: ${{ secrets.ACTIONS_LOCK_TOKEN }}
+          GH_TOKEN: ${{ secrets.ACTIONS_LOCK_TOKEN }}
+          BRANCH: ${{ steps.target.outputs.branch }}
+        run: |
+          set -uo pipefail
+          set +e
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote set-url origin "https://x-access-token:${RELOCK_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          code=0
+          git commit --only -m "chore(ci): regenerate actions.lock (gh actions-lock --relock)
+
+          The lockfile and the workflows had drifted apart. While they do,
+          every onboarded workflow ends in startup_failure and produces no
+          check runs at all. See game-server-admin#103." -- .github/workflows/actions.lock >commit.out 2>&1 \
+            || code=$?
+          if [ "$code" -ne 0 ]; then
+            cat commit.out || true
+            while IFS= read -r line; do
+              if [ -n "$line" ]; then echo "::error::[git commit] ${line}"; fi
+            done < <(tail -n 20 commit.out | tr -d '\r' | cut -c1-200)
+            exit 1
+          fi
+          if [ "${{ steps.target.outputs.on_default }}" = "true" ]; then
+            branch="ci/actions-lock-relock-${GITHUB_RUN_ID}"
+            git switch --create "$branch" >/dev/null 2>&1
+            code=0
+            git push --set-upstream origin "$branch" >push.out 2>&1 || code=$?
+            if [ "$code" -ne 0 ]; then
+              cat push.out || true
+              while IFS= read -r line; do
+                if [ -n "$line" ]; then echo "::error::[git push] ${line}"; fi
+              done < <(tail -n 20 push.out | tr -d '\r' | cut -c1-200)
+              exit 1
+            fi
+            gh pr create --base "$BRANCH" --head "$branch" \
+              --title 'chore(ci): regenerate actions.lock' \
+              --body '`gh actions-lock --verify` failed because `actions.lock` no longer matches the workflows. While they disagree, every onboarded workflow ends in `startup_failure` and produces no check runs at all. This is the output of `gh actions-lock --relock`. See game-server-admin#103.'
+          else
+            code=0
+            git push origin "HEAD:refs/heads/${BRANCH}" >push.out 2>&1 || code=$?
+            if [ "$code" -ne 0 ]; then
+              cat push.out || true
+              while IFS= read -r line; do
+                if [ -n "$line" ]; then echo "::error::[git push] ${line}"; fi
+              done < <(tail -n 20 push.out | tr -d '\r' | cut -c1-200)
+              exit 1
+            fi
+            echo "::notice::Regenerated actions.lock pushed to ${BRANCH}; this pull request will re-verify on the next run."
+          fi
+
+      - name: Publish the regenerated lockfile on the pull request
+        id: publish
+        if: always() && steps.regenerate.outputs.changed == 'true' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RELOCK_TOKEN: ${{ secrets.ACTIONS_LOCK_TOKEN }}
+        run: |
+          set -uo pipefail
+          set +e
+          body="$(mktemp)"
+          {
+            echo '## regenerated `.github/workflows/actions.lock`'
+            echo
+            echo '`gh actions-lock --verify` failed on this pull request: the lockfile and the workflows disagree, so every onboarded workflow ends in `startup_failure` and produces no check runs at all.'
+            echo
+            if [ -n "${RELOCK_TOKEN:-}" ]; then
+              echo 'The workflow tried to deliver this automatically; see the `deliver` step for whether it landed.'
+            else
+              echo 'Automatic delivery is not configured: a GitHub App cannot write under `.github/workflows/` (`permissions:` has no `workflows` key), so pushing the fix needs `ACTIONS_LOCK_TOKEN` — a fine-grained PAT with Contents and Workflows write. Until that secret exists, apply the file below by hand:'
+              echo
+              echo '```sh'
+              echo 'gh run download ${{ github.run_id }} -n actions-lock-regenerated'
+              echo 'mv actions.lock .github/workflows/actions.lock && gh actions-lock --verify'
+              echo '```'
+            fi
+            echo
+            echo '<details><summary>actions.lock</summary>'
+            echo
+            echo '```yaml'
+            cat .github/workflows/actions.lock
+            echo '```'
+            echo
+            echo '</details>'
+          } > "$body"
+          gh pr comment "$PR_NUMBER" --body-file "$body"
+
+      - name: Diagnostics
+        if: always()
+        run: |
+          set -uo pipefail
+          set +e
+          echo "--- git state ---"
+          git --no-pager log --oneline -1 || true
+          git status --short || true
+          outcomes="target=${{ steps.target.outcome }} checkout=${{ steps.checkout-lock.outcome }} install=${{ steps.install.outcome }} regenerate=${{ steps.regenerate.outcome }} upload=${{ steps.upload.outcome }} deliver=${{ steps.deliver.outcome }} publish=${{ steps.publish.outcome }}"
+          echo "::notice::relock outcomes — ${outcomes}"
+          {
+            echo '## Regenerate actions.lock — step outcomes'
+            echo
+            echo '```'
+            echo "${outcomes}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
